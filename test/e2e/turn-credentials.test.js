@@ -383,12 +383,18 @@ test('server credentials never appear in logs, events or the serialized session'
   session.disconnect();
 });
 
-test('a 401 counts against credentials applied to a peer after it was built', async () => {
+test('a 401 counts against credentials applied to a peer only after its next ICE restart', async () => {
   for (const first of [{ turn: serverTurn({ credential: 'cred-a' }) }, {}]) {
-    const { session, sockets } = await connected({ perSocket: () => first });
+    const { session, sockets, events } = await connected({ perSocket: () => first });
     sockets[0].server('turnCredentials', serverTurn({ credential: 'cred-b' }));
-    assert.equal(stvPeer().config.iceServers[0].credential, 'cred-b');
-    stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+    const pc = asrPeer();
+    assert.equal(pc.config.iceServers[0].credential, 'cred-b');
+    pc.fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+    assert.equal(session._serverTurn.bad, false, 'the peer still gathers with the servers it had');
+    pc.setIce('failed');
+    await until(() => events.some((e) => e.ev === 'mediaRecovered'));
+    assert.equal(pc.iceRestarted, 1);
+    pc.fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
     assert.equal(session._serverTurn.bad, true, first.turn ? 'rotated credentials' : 'peer built with no server entry');
     session.disconnect();
   }
@@ -428,7 +434,11 @@ test('the third ASR recovery with no ICE up in between ends with reconnect_faile
   for (let i = 0; i < 2; i++) { pc.setIce('failed'); await until(() => events.filter((e) => e.ev === 'mediaRecovered').length === i + 1); }
   pc.setIce('failed');
   await until(() => session.state !== 'connected');
-  assert.equal(errs.at(-1)?.code, 'reconnect_failed');
+  const err = errs.at(-1);
+  assert.equal(err?.code, 'reconnect_failed');
+  assert.equal(err.phase, 'reconnect');
+  assert.equal(err.retryable, true);
+  assert.ok(err.ice?.cause, 'carries the ICE report');
   assert.equal(pc.iceRestarted, 2);
 });
 
@@ -442,5 +452,375 @@ test('ICE coming back up resets the recovery count', async () => {
   }
   assert.equal(session.state, 'connected');
   assert.equal(pc.iceRestarted, 4);
+  session.disconnect();
+});
+
+// ── how a browser spells the URL of a TURN error ──
+
+for (const [name, url, reported] of [
+  ['Chromium adds the transport to a URL with none', 'turn:relay.example.net:3478', 'turn:relay.example.net:3478?transport=udp'],
+  ['Chromium adds the default port', 'turn:relay.example.net?transport=udp', 'turn:relay.example.net:3478?transport=udp'],
+  ['Chromium lower-cases the scheme and the host', 'TURN:Relay.Example.NET:3478?transport=udp', 'turn:relay.example.net:3478?transport=udp'],
+  ['Chromium drops the IPv6 brackets', 'turn:[2001:db8::1]:3478?transport=udp', 'turn:2001:db8::1:3478?transport=udp'],
+  ['Chromium adds the turns: default port', 'turns:relay.example.net?transport=tcp', 'turns:relay.example.net:5349?transport=tcp'],
+  ['Firefox drops the query string', 'turn:relay.example.net:3478?transport=udp', 'turn:relay.example.net:3478'],
+]) {
+  test(`401 with the URL as a browser reports it marks the server entry (${name})`, async () => {
+    const { session, logs } = await connected({ perSocket: () => ({ turn: serverTurn({ url }) }) });
+    stvPeer().fireCandidateError({ errorCode: 401, url: reported });
+    assert.equal(session._serverTurn.bad, true);
+    assert.equal(logs.filter((l) => l.msg.startsWith('[turn] The relay refused the TURN credentials the server sent')).length, 1);
+    session.disconnect();
+  });
+}
+
+test('401 on a query-less URL that may stand for a shared TCP URL marks nothing (Firefox)', async () => {
+  const { session } = await connected({ perSocket: () => ({ turn: serverTurn({ url: HOST }) }) });
+  stvPeer().fireCandidateError({ errorCode: 401, url: `turn:${HOST}:80` });
+  assert.equal(session._serverTurn.bad, false);
+  assert.equal(session._fallbackBad, false);
+  session.disconnect();
+});
+
+test('a 401 on the server entry warns once, and says when no configured entry is left', async () => {
+  for (const [turnServerUrl, text] of [[HOST, 'New connections use the configured TURN entry only.'], ['', 'no turnServerUrl is set']]) {
+    const { session, logs } = await connected({ cfg: { turnServerUrl } });
+    stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+    asrPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[1] });
+    const warned = logs.filter((l) => l.msg.startsWith('[turn] '));
+    assert.equal(warned.length, 1);
+    assert.ok(warned[0].msg.includes(text), warned[0].msg);
+    session.disconnect();
+  }
+});
+
+// ── the relay or the browser refuses the configured entry ──
+
+test('401 on a configured-only URL: later peers use the server entry alone, with all its URLs', async () => {
+  const { session, logs } = await connected({ perSocket: () => ({ turn: serverTurn({ url: HOST }) }) });
+  stvPeer().fireCandidateError({ errorCode: 401, url: FALLBACK.urls[0] });
+  assert.equal(session._fallbackBad, true);
+  assert.equal(session._serverTurn.bad, false);
+  assert.deepEqual(session._iceServers(), [{ urls: FALLBACK.urls, username: SECRET_USER, credential: SECRET_CRED }]);
+  assert.equal(logs.filter((l) => l.msg.startsWith('[turn] The relay refused the configured TURN credentials')).length, 1);
+  stvPeer().fireCandidateError({ errorCode: 401, url: FALLBACK.urls[0] });
+  assert.equal(logs.filter((l) => l.msg.startsWith('[turn] ')).length, 1, 'warned once');
+  session.disconnect();
+  assert.equal(session._fallbackBad, false, 'reset when the session ends');
+});
+
+test('401 on the configured entry with no server entry in the list marks nothing', async () => {
+  const { session } = await connected({ perSocket: () => ({}) });
+  stvPeer().fireCandidateError({ errorCode: 401, url: FALLBACK.urls[0] });
+  assert.equal(session._fallbackBad, false);
+  session.disconnect();
+});
+
+test('401 from an earlier server entry the peer still gathers with blames neither entry', async () => {
+  const { session, sockets } = await connected({ perSocket: () => ({ turn: serverTurn({ credential: 'cred-a' }) }) });
+  sockets[0].server('turnCredentials', serverTurn({ credential: 'cred-b', url: 'relay-b.example.net' }));
+  stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+  assert.equal(session._serverTurn.bad, false);
+  assert.equal(session._fallbackBad, false);
+  session.disconnect();
+});
+
+/** Refuses a URL with two ports, as browsers do for `turnServerUrl: 'host:port'`. */
+class StrictUrls extends FakeRTCPeerConnection {
+  constructor(cfg) {
+    if (cfg.iceServers.some((e) => [].concat(e.urls).some((u) => /:\d+:\d+/.test(u)))) throw new TypeError('Invalid URL');
+    super(cfg);
+  }
+}
+
+test('a browser that refuses the configured entry: peers use the server entry alone, one warning', async () => {
+  const { session, logs } = await connected({ cfg: { turnServerUrl: `${HOST}:3478` }, rtc: StrictUrls });
+  assert.equal(session.state, 'connected');
+  for (const pc of [asrPeer(), stvPeer()]) assert.deepEqual(pc.config.iceServers, [{ urls: SERVER_URLS, username: SECRET_USER, credential: SECRET_CRED }]);
+  assert.equal(session._serverTurn.bad, false);
+  assert.equal(session._fallbackBad, true);
+  const warned = logs.filter((l) => l.msg.startsWith('[turn] '));
+  assert.equal(warned.length, 1);
+  assert.match(warned[0].msg, /refused the configured TURN entry/);
+  session.disconnect();
+});
+
+test('a browser that refuses both entries alone fails the connect, as before', async () => {
+  class Neither extends FakeRTCPeerConnection { constructor(cfg) { if (cfg.iceServers.length) throw new TypeError('Invalid TURN server'); super(cfg); } }
+  const { session } = await connected({ rtc: Neither, connect: false });
+  await assert.rejects(() => session.connect());
+});
+
+test('no turnServerUrl and a refused server entry: the warnings agree', async () => {
+  class Picky extends FakeRTCPeerConnection {
+    constructor(c) { if (c.iceServers.some((s) => s.credential === SECRET_CRED)) throw new TypeError('Invalid TURN server'); super(c); }
+  }
+  Picky.instances = FakeRTCPeerConnection.instances;
+  const { session, logs } = await connected({ rtc: Picky, cfg: { turnServerUrl: '' } });
+  assert.equal(session._serverTurn.bad, true);
+  const warned = logs.filter((l) => l.msg.startsWith('[turn] ')).map((l) => l.msg);
+  assert.ok(warned.length >= 1);
+  for (const m of warned) assert.ok(!/configured TURN entry only|server sent none/.test(m), m);
+  assert.ok(warned.some((m) => /no TURN server is left/.test(m)));
+  session.disconnect();
+});
+
+test('an unrelated constructor failure with no usable server entry gives no TURN warning', async () => {
+  const c = clock();
+  let boom = false;
+  class Boom extends FakeRTCPeerConnection { constructor(cfg) { if (boom) throw new TypeError('no WebRTC'); super(cfg); } }
+  Boom.instances = FakeRTCPeerConnection.instances;
+  const { session, logs } = await connected({ cfg: { now: c.now }, rtc: Boom, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  c.t += 700_000;
+  boom = true;
+  assert.throws(() => session._newPeer('stv'), /no WebRTC/);
+  assert.equal(logs.filter((l) => l.msg.startsWith('[turn] ')).length, 0);
+  assert.equal(session._serverTurn.bad, false);
+  session.disconnect();
+});
+
+// ── updates, teardown and listeners ──
+
+test('new credentials with no host keep the host of the earlier set', async () => {
+  for (const url of [undefined, '']) {
+    const { session, sockets } = await connected({ cfg: { turnServerUrl: '' } });
+    sockets[0].server('turnCredentials', { username: SECRET_USER, credential: 'srv-cred-rotated', ttl: 3600, ...(url != null && { url }) });
+    assert.deepEqual(session._serverTurn.entry.urls, SERVER_URLS);
+    assert.deepEqual(session._iceServers(), [{ urls: SERVER_URLS, username: SECRET_USER, credential: 'srv-cred-rotated' }]);
+    session.disconnect();
+  }
+});
+
+test('identical credentials sent again keep a refused entry set aside and the refresh used', async () => {
+  const c = clock();
+  const { session, sockets } = await connected({ cfg: { now: c.now }, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  c.t += 590_000;
+  assert.equal(session._takeTurnRefresh(), true);
+  sockets[0].server('turnCredentials', serverTurn({ ttl: 600 }));
+  assert.equal(session._takeTurnRefresh(), false, 'the refresh is not armed again');
+  stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+  sockets[0].server('turnCredentials', serverTurn({ ttl: 600 }));
+  assert.equal(session._serverTurn.bad, true);
+  session.disconnect();
+});
+
+test('a refused server entry is never renewed', async () => {
+  const c = clock();
+  const { session } = await connected({ cfg: { now: c.now }, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+  c.t += 590_000;
+  assert.equal(session._takeTurnRefresh(), false);
+  session.disconnect();
+});
+
+test('late credentials recover a peer that is already down', async () => {
+  const { session, sockets, events } = await connected({ perSocket: () => ({}) });
+  const pc = asrPeer();
+  pc.iceConnectionState = 'failed';
+  pc.connectionState = 'failed';
+  sockets[0].server('turnCredentials', serverTurn());
+  await until(() => events.some((e) => e.ev === 'mediaRecovering'));
+  session.disconnect();
+});
+
+test('applied in place, the peer keeps its policy and the query strings', async () => {
+  const { session, sockets } = await connected({ perSocket: () => ({}) });
+  sockets[0].server('turnCredentials', serverTurn());
+  const pc = stvPeer();
+  assert.deepEqual(pc.config.iceServers[0].urls, SERVER_URLS);
+  assert.equal(pc.config.iceTransportPolicy, 'relay');
+  session.disconnect();
+});
+
+test('a peer that refuses query strings in setConfiguration gets the stripped servers', async () => {
+  class NoQuerySet extends FakeRTCPeerConnection {
+    setConfiguration(c) { if (c.iceServers.some((e) => e.urls.some((u) => u.includes('?')))) throw new TypeError('Invalid TURN URL query string'); super.setConfiguration(c); }
+  }
+  NoQuerySet.instances = FakeRTCPeerConnection.instances;
+  const { session, sockets } = await connected({ perSocket: () => ({}), rtc: NoQuerySet });
+  sockets[0].server('turnCredentials', serverTurn());
+  const entry = serverEntry(stvPeer());
+  assert.ok(entry);
+  assert.ok(entry.urls.every((u) => !u.includes('?')));
+  session.disconnect();
+});
+
+for (const ev of ['iceServers', 'onTurnConfig', 'turn_servers', 'onIceConfiguration']) {
+  test(`credentials in a TURN-named event (${ev}) are read`, async () => {
+    const { session, sockets } = await connected({ perSocket: () => ({}) });
+    sockets[0].server(ev, serverTurn());
+    assert.ok(serverEntry(stvPeer()));
+    session.disconnect();
+  });
+}
+
+for (const ev of ['clientConfiguration', 'joinComplete', 'stvNewSession']) {
+  test(`a socket without onAny reads credentials from ${ev}`, async () => {
+    const patch = (s) => {
+      s.onAny = undefined;
+      const real = s.server.bind(s);
+      s.server = (e, p) => real(e, e === ev ? { ...(p || {}), turn: serverTurn() } : p);
+    };
+    const { session } = await connected({ perSocket: () => ({}), patch });
+    assert.ok(serverEntry(stvPeer()));
+    session.disconnect();
+  });
+}
+
+test('a socket the factory hands out again carries one catch-all listener', async () => {
+  const shared = new FakeSocket();
+  FakeRTCPeerConnection.reset();
+  const session = new KalturaAvatarSession({
+    token: CONV_KS, srsBaseUrl: 'https://srs.example', turnServerUrl: HOST,
+    videoEl: new FakeVideoEl({ autoCanPlay: true }), rtcConstructor: FakeRTCPeerConnection,
+    socketFactory: () => { shared.connected = true; scriptHappyPath(shared, { resumingOnRecreate: false, serverConnected: { turn: serverTurn() } }); return shared; },
+    fetch: fakeWhepFetch(Array.from({ length: 10 }, () => ({}))), getUserMedia: fakeGetUserMedia(), mediaStreamConstructor: FakeMediaStreamCtor, networkAware: false,
+    timeouts: { healthTick: 600000, coldBackoff: 10 },
+  });
+  for (let i = 0; i < 3; i++) {
+    session.setToken(CONV_KS);
+    await session.connect();
+    assert.equal(shared._any.length, 1);
+    session.disconnect();
+    assert.equal(shared._any.length, 0);
+  }
+});
+
+test('disconnect() after a prepare() from the disconnected state closes the prepared socket', async () => {
+  const { session, sockets } = await connected();
+  session.disconnect();
+  session.setToken(CONV_KS);
+  await session.prepare();
+  assert.ok(session._serverTurn);
+  session.disconnect();
+  assert.equal(session._serverTurn, null);
+  assert.equal(session._prep, null);
+  assert.equal(sockets[1].connected, false);
+  assert.equal(sockets[1]._any.length, 0);
+  assert.equal(session._token, null);
+});
+
+test('the prepared socket dropped for a renewal is closed', async () => {
+  const c = clock();
+  const { session, sockets } = await connected({ cfg: { now: c.now }, perSocket: (n) => ({ turn: serverTurn({ ttl: 600, credential: `cred-${n}` }) }), connect: false });
+  await session.prepare();
+  c.t += 590_000;
+  await session.connect();
+  assert.equal(sockets[0].connected, false);
+  assert.equal(sockets[0]._h.size, 0);
+  assert.equal(sockets[0]._any.length, 0);
+  session.disconnect();
+});
+
+test('a failed renewal in resume() rejects resume_failed with the end error as its cause', async () => {
+  const c = clock();
+  const { session, sockets, events } = await connected({
+    cfg: { now: c.now, timeouts: { healthTick: 600000, coldBackoff: 10, serverConnect: 50, overall: 2000 } },
+    perSocket: (n) => (n === 0 ? { turn: serverTurn({ ttl: 600 }) } : {}),
+    patch: (s, n) => { if (n > 0) { s.server = () => {}; s.connected = false; } },
+  });
+  session.pause();
+  sockets[0].server('pauseSessionExpired', {});
+  c.t += 590_000;
+  await assert.rejects(() => session.resume(), (e) => e.code === 'resume_failed' && e.cause?.code === 'reconnect_failed');
+  assert.deepEqual(events.filter((e) => e.ev === 'ended').map((e) => e.p.reason), ['reconnect_failed']);
+});
+
+test('caller turnCredentials are copied: changing the object later changes nothing', async () => {
+  const own = { username: 'own-user', credential: 'own-cred' };
+  const { session } = await connected({ cfg: { turnServerUrl: 'own.example', turnCredentials: own }, perSocket: () => ({ turn: serverTurn({ url: '' }) }), connect: false });
+  own.username = '';
+  own.credential = '';
+  await session.connect();
+  assert.deepEqual(stvPeer().config.iceServers, [turnServers('own.example', { username: 'own-user', credential: 'own-cred' })]);
+  assert.equal(safeJson(session).includes('own-cred'), false);
+  session.disconnect();
+});
+
+for (const [name, change] of [['the username', { username: `${SECRET_USER}-2` }], ['the host', { url: 'relay-b.example.net' }]]) {
+  test(`credentials that differ only in ${name} are a new set`, async () => {
+    const { session, sockets } = await connected();
+    stvPeer().fireCandidateError({ errorCode: 401, url: SERVER_URLS[0] });
+    assert.equal(session._serverTurn.bad, true);
+    sockets[0].server('turnCredentials', serverTurn(change));
+    assert.equal(session._serverTurn.bad, false);
+    session.disconnect();
+  });
+}
+
+test('credentials that leave the ICE servers unchanged are not applied again', async () => {
+  const own = { username: 'own-user', credential: 'own-cred' };
+  const { session, sockets } = await connected({ cfg: { turnServerUrl: 'own.example', turnCredentials: own }, perSocket: () => ({}) });
+  const before = [asrPeer(), stvPeer()].map((pc) => pc.configHistory?.length ?? 0);
+  sockets[0].server('turnCredentials', serverTurn());
+  assert.deepEqual([asrPeer(), stvPeer()].map((pc) => pc.configHistory?.length ?? 0), before);
+  session.disconnect();
+});
+
+test('server credentials stop being used the moment they expire', async () => {
+  const c = clock();
+  const { session } = await connected({ cfg: { now: c.now }, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  c.t += 599_999;
+  assert.equal(session._iceServers()[0].username, SECRET_USER);
+  c.t += 1;
+  assert.notEqual(session._iceServers()[0]?.username, SECRET_USER);
+  session.disconnect();
+});
+
+test('the refresh starts when less than 60 s are left, not at 60 s', async () => {
+  const c = clock();
+  const { session } = await connected({ cfg: { now: c.now }, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  c.t += 540_000;
+  assert.equal(session._takeTurnRefresh(), false);
+  c.t += 1;
+  assert.equal(session._takeTurnRefresh(), true);
+  session.disconnect();
+});
+
+test('resume() during a running rebuild does not use the refresh', async () => {
+  const c = clock();
+  const { session, sockets } = await connected({ cfg: { now: c.now, timeouts: { healthTick: 600000, coldBackoff: 10, overall: 200 } }, perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }) });
+  session.pause();
+  sockets[0].server('pauseSessionExpired', {});
+  c.t += 590_000;
+  session._coldReconnecting = true;
+  session.resume().catch(() => {});
+  assert.equal(session._serverTurn.refreshUsed, false);
+  session._coldReconnecting = false;
+  session.disconnect();
+});
+
+test('a media stall on a live path resets the recovery count', async () => {
+  const { session } = await connected();
+  session._recoverCount.asr = 2;
+  const pc = asrPeer();
+  pc.iceConnectionState = 'connected';
+  await session._recoverMedia('asr', pc);
+  assert.equal(session.state, 'connected');
+  assert.equal(session._recoverCount.asr, 0);
+  session.disconnect();
+});
+
+test('an old peer coming back up does not reset the recovery count', async () => {
+  const { session } = await connected();
+  session._recoverCount.stv = 2;
+  session._onIceStateChange('stv', { iceConnectionState: 'connected', connectionState: 'connected' });
+  assert.equal(session._recoverCount.stv, 2);
+  session.disconnect();
+});
+
+test('connect() starts with a fresh recovery count', async () => {
+  const { session } = await connected();
+  session._recoverCount = { asr: 2, stv: 2 };
+  session.disconnect();
+  session.setToken(CONV_KS);
+  await session.connect();
+  assert.deepEqual(session._recoverCount, { asr: 0, stv: 0 });
+  session.disconnect();
+});
+
+test('the per-peer ICE server maps are not enumerable', async () => {
+  const { session } = await connected();
+  for (const k of ['_peerServers', '_peerNextServers']) assert.ok(!Object.keys(session).includes(k), k);
   session.disconnect();
 });

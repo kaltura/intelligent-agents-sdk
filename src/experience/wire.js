@@ -160,7 +160,7 @@ const MAX_TTL_S = 30 * 86400;
 /** TURN URLs for one server-sent item: a full URL, `host:port`, or a bare host (a dotted name or IP, so stray words don't count). `[]` when unusable. @param {string} item */
 function expandTurnUrl(item) {
   // A scheme with no port is read as a bare host: it gets the explicit ports and transports.
-  const s = item.replace(/\/$/, '').replace(/^turns?:(?=(\[[^\]]+\]|[^:?/]+)$)/i, '');
+  const s = item.replace(/\/$/, '').replace(/^turns?:(?=(\[[^\]]+\]|[^:?/]+)$)/i, '').replace(/^turns?:/i, (m) => m.toLowerCase());
   if (/^turns?:/i.test(s)) {
     const port = /:(\d+)(?:\?|$)/.exec(s.replace(/^turns?:\[[^\]]*\]/i, ''))?.[1];
     return TURN_URL_RE.test(s) && (port == null || (Number(port) >= 1 && Number(port) <= 65535)) ? [s] : [];
@@ -174,6 +174,31 @@ function expandTurnUrl(item) {
 
 /** Lower-case host of a `turn:`/`turns:` URL, or `''`. @param {string} url */
 function turnHost(url) { return (/^turns?:(\[[^\]]+\]|[^:?/]+)/i.exec(url)?.[1] || '').toLowerCase(); }
+
+/**
+ * Keys that compare a `turn:`/`turns:` URL however a browser spells it: `scheme:host:port:transport`,
+ * with the scheme and host in lower case, an IPv6 host with or without brackets, port 3478
+ * (`turn:`) or 5349 (`turns:`) when none, and transport udp (`turn:`) or tcp (`turns:`) when none.
+ * A browser reports a TURN error with its own spelling of the URL (Chromium adds the port and the
+ * transport, Firefox drops the query string). Pass `reported` for such a URL: a `turn:` URL with
+ * no transport then gives both the udp and the tcp key, because it may stand for either.
+ * `[]` when `url` is not a TURN URL.
+ * @param {unknown} url @param {boolean} [reported] @returns {string[]}
+ */
+export function turnUrlKeys(url, reported = false) {
+  const m = typeof url === 'string' ? /^(turns?):([^?]*)(?:\?(.*))?$/i.exec(url.trim()) : null;
+  if (!m) return [];
+  const scheme = m[1].toLowerCase();
+  // `[v6]:port`, unbracketed `v6:port` (Chromium), `host:port`, or a host alone.
+  const hp = /^\[([^\]]+)\](?::(\d+))?$/.exec(m[2]) || /^(.+:.+):(\d+)$/.exec(m[2]) || /^([^:]+)(?::(\d+))?$/.exec(m[2]);
+  if (!hp) return [];
+  const port = Number(hp[2] || (scheme === 'turns' ? 5349 : 3478));
+  const transport = /(?:^|&)transport=(udp|tcp)(?:&|$)/i.exec(m[3] || '')?.[1].toLowerCase();
+  const base = `${scheme}:${hp[1].toLowerCase()}:${port}:`;
+  if (transport) return [base + transport];
+  if (scheme === 'turns') return [`${base}tcp`];
+  return reported ? [`${base}udp`, `${base}tcp`] : [`${base}udp`];
+}
 
 /**
  * Read the TURN credentials a server message carries, without trusting its shape. Accepts an
@@ -195,7 +220,8 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
   const username = o.username;
   const credential = o.credential ?? o.password;
   if (typeof username !== 'string' || !username || typeof credential !== 'string' || !credential) return none('no_credentials');
-  const given = o.urls ?? o.url ?? o.uri;
+  // The first field with content: an empty `urls` must not hide a usable `url`.
+  const given = [o.urls, o.url, o.uri].find((v) => (Array.isArray(v) ? v.length : typeof v === 'string' && v.trim()));
   const items = (Array.isArray(given) ? given : [given]).flatMap((u) => (typeof u === 'string' ? u.trim().split(/[\s,]+/) : [])).filter(Boolean);
   const urls = [...new Set(items.flatMap(expandTurnUrl))].slice(0, MAX_SERVER_TURN_URLS);
   if (items.length && !urls.length) return none('no_usable_url');
@@ -217,11 +243,13 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
  * a fallback, so a peer connects whichever one the relay accepts. Both are gathered in parallel.
  * A server entry with no host uses `turnServerUrl`, unless the caller passed its own credentials, even one field
  * (those belong to the caller's server, which must never get the session's credentials). Caller
- * credentials for a host the server entry doesn't name are used alone, as before.
- * @param {{server?: {urls:string[], username:string, credential:string}|null, turnServerUrl?: string, turnCredentials?: {username?:string, credential?:string}}} opts
+ * credentials for a host the server entry doesn't name are used alone, as before. With
+ * `fallbackRefused` (the relay refused the configured entry), the server entry is used alone,
+ * with all its URLs.
+ * @param {{server?: {urls:string[], username:string, credential:string}|null, turnServerUrl?: string, turnCredentials?: {username?:string, credential?:string}, fallbackRefused?: boolean}} [opts]
  * @returns {RTCIceServer[]}
  */
-export function iceServersFor({ server = null, turnServerUrl = '', turnCredentials }) {
+export function iceServersFor({ server = null, turnServerUrl = '', turnCredentials, fallbackRefused = false } = {}) {
   const fallback = turnServers(turnServerUrl, turnCredentials || {});
   const builtin = /** @type {{username:string, credential:string}} */ (turnServers('-'));
   // Compare the resolved pair, so a caller field filled in with a default still counts as the caller's.
@@ -231,6 +259,7 @@ export function iceServersFor({ server = null, turnServerUrl = '', turnCredentia
   if (!s) return fallback ? [fallback] : [];
   if (!fallback) return [s];
   if (ownCreds && !s.urls.some((u) => turnHost(u) === turnHost(fallback.urls[0]))) return [fallback];
+  if (fallbackRefused) return [s];
   const same = s.username === fallback.username && s.credential === fallback.credential
     && s.urls.length === fallback.urls.length && s.urls.every((u) => fallback.urls.includes(u));
   return same ? [s] : splitSharedUdp(s, fallback);
@@ -247,7 +276,8 @@ function udpAddress(url) {
  * per relay address, and the entry listed first takes every reply from it: when that entry's
  * credentials are refused, the other entry gets no UDP relay and the peer falls back to TCP.
  * The server entry gets port 443 first (it passes more firewalls), then they alternate.
- * TCP and TLS URLs use their own connections, so both entries keep them.
+ * TCP and TLS URLs use their own connections, so both entries keep them. Addresses compare by
+ * host name: a host spelled another way for the same relay (an IP, another DNS name) is not split.
  * @param {{urls:string[], username:string, credential:string}} s
  * @param {{urls:string[], username:string, credential:string}} fallback
  * @returns {RTCIceServer[]}

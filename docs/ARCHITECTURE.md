@@ -61,7 +61,7 @@ The SDK talks to six endpoints. Each has an option that overrides it.
 
 The scripted-video control API (`avatar-session/*`) is a separate API from the management API, reached through `agenticUrl`. Details: [Scripted-Video Sessions](api/scripted-video.md).
 
-`REGIONS[region]` and the explicit `*Url` options are described in [Regions and base URLs](api/authentication.md#regions-and-base-urls). The socket, video and TURN values always come from `appInit`.
+`REGIONS[region]` and the explicit `*Url` options are described in [Regions and base URLs](api/authentication.md#regions-and-base-urls). The socket and video values always come from `appInit`. The TURN host comes from `appInit`, and the session handshake can send its own TURN host and credentials ([audio-channels.md §5](wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server)).
 
 The SDK checks every WHEP URL with `whepUrlHasPrivateIp()`. A URL that points at a private address makes `connect()` throw `whep_private_ip`, because a browser can't reach it.
 

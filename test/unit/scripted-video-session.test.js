@@ -460,3 +460,27 @@ test('a browser that rejects TURN query strings gets the URLs without them', asy
   const [s] = await peerServers({ url: 'relay.example.net', username: 'u1', credential: 'c1' }, { rtcConstructor: WebKitLike });
   assert.deepEqual(s.urls, ['turn:relay.example.net:80', 'turn:relay.example.net:443', 'turns:relay.example.net:443']);
 });
+
+for (const turn of [{ url: 'relay.example.net:99999', username: 'u1', credential: 'c1' }, { urls: ['stun:relay.example.net'] }, { url: '' }, {}, 'relay.example.net']) {
+  test(`a turn with no usable TURN URL throws 'turn unusable' (${JSON.stringify(turn)})`, () => {
+    assert.throws(() => view({ turn }), (e) => e.code === 'bad_request' && e.title === 'turn unusable');
+  });
+}
+
+test('a missing turn still throws \'turn required\'', () => {
+  for (const turn of [null, undefined]) assert.throws(() => view({ turn }), (e) => e.code === 'bad_request' && e.title === 'turn required');
+});
+
+test('the TURN credentials stay out of JSON and Object.keys', () => {
+  const v = view({ turn: { url: 'relay.example.net', username: 'u1', credential: 'secret-c1' } });
+  assert.equal(v._turn.credential, 'secret-c1');
+  assert.ok(!Object.keys(v).includes('_turn'));
+  const seen = new WeakSet();
+  const json = JSON.stringify(v, (_k, x) => { if (x && typeof x === 'object') { if (seen.has(x)) return undefined; seen.add(x); } return x; });
+  assert.ok(!json.includes('secret-c1'));
+});
+
+test('a turn with only a password uses it as the credential', async () => {
+  const [s] = await peerServers({ url: 'relay.example.net', password: 'p1' });
+  assert.equal(s.credential, 'p1');
+});

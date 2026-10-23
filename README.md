@@ -975,7 +975,7 @@ These are importable from their entry points and useful when composing custom pi
 | `externalEmbedUrl(url)` / `EMBED_HOSTS` | Turn a YouTube or Vimeo URL into `{embedUrl, provider}`. `embedUrl` is `''` when the URL is not embeddable. `EMBED_HOSTS` lists the allowed iframe hosts. |
 | `validateToolArgs(args, schema?)` | Checks a tool call's `args` against a per-key `{type, required, enum}` schema. Returns `{ok:true}` or `{ok:false, errors}`. Never throws. |
 | `parseOAuthRequired(segment)` | Reads an `oauth_required` interruption segment. Returns `{authUrl, toolName, toolDisplayName}`, or `null` for any other segment. |
-| `turnServers` / `iceConfig` / `buildJoin` / `buildStvNewSession` / `whepUrl` / `whepUrlHasPrivateIp` / `buildTextEntered` / `isAudioMode` / `CAPACITY_BACKOFF` / `DEFAULT_CM_URL` | The wire helpers the session classes use. For custom transports and tests. |
+| `turnServers` / `iceConfig` / `normalizeServerTurn` / `iceServersFor` / `buildJoin` / `buildStvNewSession` / `whepUrl` / `whepUrlHasPrivateIp` / `buildTextEntered` / `isAudioMode` / `CAPACITY_BACKOFF` / `DEFAULT_CM_URL` | The wire helpers the session classes use. For custom transports and tests. |
 | `EXPERIENCES` / `MODEL_TYPES` / `modelTypeWire` | The `force_experience` values (`markdown`, `summarization`, `flashcards`, `avatar_only`), the `model_type` values, and the normalizer that maps a model selector to its wire value. |
 | `classifyAgentAction(segment)` | Maps a parsed segment to the action type the `onAgentAction` guardrail sees, or `null` for spoken and control segments. |
 | `SILENT_OPENING` / `SILENT_OPENING_LABEL` / `isSilentOpening(text)` | The silent opening phrase, the label a UI shows for it, and a check for it. |

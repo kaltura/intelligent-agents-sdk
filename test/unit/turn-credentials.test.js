@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeServerTurn, iceServersFor, iceConfig, turnServers, withoutTurnQuery } from '../../src/experience/wire.js';
+import { normalizeServerTurn, iceServersFor, iceConfig, turnServers, withoutTurnQuery, turnUrlKeys } from '../../src/experience/wire.js';
 
 /** Server-sent TURN credentials: read whatever shape arrives, and pick the ICE servers for a peer. */
 
@@ -36,6 +36,52 @@ for (const [name, extra, urls] of urlCases) {
     assert.ok(r.entry, r.reason);
     assert.deepEqual(r.entry.urls, urls);
     assert.equal(r.reason, urls.length ? 'ok' : 'no_host');
+  });
+}
+
+for (const [name, extra] of [['an empty `urls` list', { urls: [] }], ['an empty `urls` string', { urls: '' }], ['a blank `urls` string', { urls: '  ' }]]) {
+  test(`normalizeServerTurn: ${name} falls through to \`url\``, () => {
+    assert.deepEqual(norm({ ...creds, ...extra, url: 'relay.example' }).entry?.urls, STD('relay.example'));
+  });
+}
+
+test('normalizeServerTurn: an upper-case scheme is written in lower case', () => {
+  assert.deepEqual(norm({ ...creds, url: 'TURN:a.example:80' }).entry?.urls, ['turn:a.example:80']);
+});
+
+for (const url of ['turn:a.example:80?transport=tls', 'turn:a.example:80?foo=bar', 'turn:a.example:80?transport=udp&x=1', 'turn:bad_host.example:80', 'turn:a.example:80/path', 'turn::80', 'turn:', 'turn:a.example:0', 'turn:a.example:65536']) {
+  test(`normalizeServerTurn: \`${url}\` is dropped`, () => {
+    assert.equal(norm({ ...creds, urls: [url, 'turn:ok.example:80'] }).entry?.urls.join(), 'turn:ok.example:80');
+  });
+}
+
+test('normalizeServerTurn: host:port with port 0 is dropped', () => {
+  assert.equal(norm({ ...creds, url: 'relay.example:0' }).reason, 'no_usable_url');
+});
+
+test('normalizeServerTurn: an empty credential gives no entry', () => {
+  assert.equal(norm({ url: 'h.example', username: 'u', credential: '' }).reason, 'no_credentials');
+});
+
+test('expiry: a username prefix equal to the receipt time is not used', () => {
+  assert.equal(norm({ url: 'h.example', username: `${NOW / 1000}:s`, credential: 'c' }).expiresAt, null);
+});
+
+for (const port of [1, 65535]) {
+  test(`normalizeServerTurn: port ${port} is kept`, () => {
+    assert.deepEqual(norm({ ...creds, urls: [`turn:a.example:${port}`] }).entry?.urls, [`turn:a.example:${port}`]);
+  });
+}
+
+test('normalizeServerTurn: 8 URLs kept, the 9th cut', () => {
+  const urls = Array.from({ length: 9 }, (_, i) => `turn:h${i}.example:80`);
+  assert.deepEqual(norm({ ...creds, urls: urls.slice(0, 8) }).entry?.urls, urls.slice(0, 8));
+  assert.deepEqual(norm({ ...creds, urls }).entry?.urls, urls.slice(0, 8));
+});
+
+for (const [ttl, ttlSec] of [[59, null], [60, 60], [30 * 86400, 30 * 86400], [30 * 86400 + 1, null]]) {
+  test(`expiry: ttl ${ttl} s is ${ttlSec ? 'used' : 'ignored'}`, () => {
+    assert.equal(norm({ ...creds, url: 'h.example', ttl }).ttlSec, ttlSec);
   });
 }
 
@@ -209,11 +255,48 @@ test('iceServersFor: no turnServerUrl → the server entry alone (H4)', () => {
 
 test('iceServersFor: nothing configured and nothing sent → empty', () => {
   assert.deepEqual(iceServersFor({}), []);
+  assert.deepEqual(iceServersFor(), []);
 });
+
+test('iceServersFor: fallbackRefused → the server entry alone, with all its URLs', () => {
+  assert.deepEqual(iceServersFor({ server, turnServerUrl: 'relay.example', fallbackRefused: true }), [server]);
+  assert.deepEqual(iceServersFor({ turnServerUrl: 'relay.example', fallbackRefused: true }), [turnServers('relay.example')], 'no server entry: the configured one stays');
+});
+
+// ── turnUrlKeys: match an error URL as a browser reports it ──
+
+for (const [url, reported, keys] of [
+  ['turn:Relay.example', false, ['turn:relay.example:3478:udp']],
+  ['TURN:relay.example:80?transport=udp', false, ['turn:relay.example:80:udp']],
+  ['turn:a.example:80?transport=TCP', false, ['turn:a.example:80:tcp']],
+  ['turns:relay.example', false, ['turns:relay.example:5349:tcp']],
+  ['turns:relay.example', true, ['turns:relay.example:5349:tcp']],
+  ['turn:relay.example:3478', true, ['turn:relay.example:3478:udp', 'turn:relay.example:3478:tcp']],
+  ['turn:[2001:DB8::1]:3478?transport=udp', false, ['turn:2001:db8::1:3478:udp']],
+  ['turn:[2001:db8::1]', false, ['turn:2001:db8::1:3478:udp']],
+  ['turn:2001:db8::1:3478?transport=udp', true, ['turn:2001:db8::1:3478:udp']],
+  ['stun:a.example', false, []], ['turn:', false, []], ['', true, []], [null, true, []],
+]) {
+  test(`turnUrlKeys(${JSON.stringify(url)}${reported ? ', reported' : ''})`, () => {
+    assert.deepEqual(turnUrlKeys(url, reported), keys);
+  });
+}
 
 test('iceServersFor: a server entry equal to the configured one is listed once', () => {
   const same = turnServers('relay.example');
   assert.deepEqual(iceServersFor({ server: { ...same, urls: [...same.urls].reverse() }, turnServerUrl: 'relay.example' }).length, 1);
+});
+
+for (const [name, change] of [['username', { username: 'other' }], ['credential', { credential: 'other' }], ['URL list', { urls: STD('relay.example').slice(0, 2) }]]) {
+  test(`iceServersFor: a server entry like the configured one but for its ${name} is listed too`, () => {
+    const same = turnServers('relay.example');
+    assert.equal(iceServersFor({ server: { ...same, ...change }, turnServerUrl: 'relay.example' }).length, 2);
+  });
+}
+
+test('iceServersFor: host names compare without case', () => {
+  const own = { username: 'own', credential: 'own-c' };
+  assert.equal(iceServersFor({ server, turnServerUrl: 'RELAY.example', turnCredentials: own }).length, 2, 'own creds for the server host follow the server entry');
 });
 
 // ── iceConfig + withoutTurnQuery ──
@@ -239,4 +322,8 @@ test('withoutTurnQuery keeps the UDP split: no TCP URL turns into a shared UDP o
 test('withoutTurnQuery drops an entry left with no URL', () => {
   const tcpOnly = { ...creds, urls: ['turn:a.example:3478?transport=tcp'] };
   assert.deepEqual(withoutTurnQuery([tcpOnly, turnServers('h')]).map((s) => s.urls.length), [3]);
+});
+
+test('withoutTurnQuery drops a URL that only differed by its query', () => {
+  assert.deepEqual(withoutTurnQuery([{ ...creds, urls: ['turn:a.example:80?transport=udp', 'turn:a.example:80'] }])[0].urls, ['turn:a.example:80']);
 });

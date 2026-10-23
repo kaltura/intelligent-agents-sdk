@@ -48,7 +48,7 @@
 import { Emitter } from './emitter.js';
 import { TranscriptTracker } from './transcript.js';
 import {
-  normalizeServerTurn, iceServersFor, withoutTurnQuery, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp, whepResourceUrl,
+  normalizeServerTurn, iceServersFor, turnUrlKeys, withoutTurnQuery, iceConfig, createPeerConnection, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp, whepResourceUrl,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL, classifyAgentAction,
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
@@ -128,17 +128,23 @@ function withoutTurn(c) {
 }
 
 /**
- * URLs in an installed ICE list that only `entry` uses, in both forms a browser may report (with
- * and without the query string). Empty when the list's first entry is not `entry`.
- * @param {RTCIceServer[]} list @param {RTCIceServer} entry @returns {Set<string>}
+ * Which entry of a peer's ICE list a TURN error URL points at: `'server'` or `'configured'` when
+ * only that entry lists the URL, else `null` (both list it, the browser's spelling is ambiguous,
+ * or the list holds neither). `'configured'` counts only next to the server entry.
+ * @param {RTCIceServer[]} list @param {{username:string, credential:string}} server
+ * @param {{username:string, credential:string}|null} configured @param {unknown} url
+ * @returns {'server'|'configured'|null}
  */
-function serverOnlyUrls(list, entry) {
-  return new Set([list, withoutTurnQuery(list)].flatMap((l) => {
-    const first = l[0];
-    if (!first || first.username !== entry.username || first.credential !== entry.credential) return [];
-    const fb = new Set(l.slice(1).flatMap((x) => /** @type {string[]} */ ([]).concat(x.urls)));
-    return /** @type {string[]} */ ([]).concat(first.urls).filter((u) => !fb.has(u));
-  }));
+function turnErrorOwner(list, server, configured, url) {
+  const of = (/** @type {any} */ e, /** @type {any} */ c) => !!c && e.username === c.username && e.credential === c.credential;
+  const keys = (/** @type {RTCIceServer[]} */ l) => new Set(l.flatMap((e) => /** @type {string[]} */ ([]).concat(e.urls).flatMap((u) => turnUrlKeys(u))));
+  const srv = keys(list.filter((e) => of(e, server)));
+  const cfg = keys(list.filter((e) => of(e, configured) && !of(e, server)));
+  const other = keys(list.filter((e) => !of(e, server) && !of(e, configured)));
+  const hits = (/** @type {Set<string>} */ set) => turnUrlKeys(url, true).some((k) => set.has(k));
+  if (hits(other)) return null;
+  if (hits(srv)) return hits(cfg) ? null : 'server';
+  return hits(cfg) && srv.size ? 'configured' : null;
 }
 
 // Socket.IO disconnect reasons after which the SDK waits in 'reconnecting' for
@@ -292,15 +298,23 @@ export class KalturaAvatarSession extends Emitter {
     // the configured entry (cfg.turnServerUrl + cfg.turnCredentials, or the SDK default) follows.
     this._turnServerUrl = cfg.turnServerUrl || '';
     // Both hold credentials: non-enumerable, so they never land in a JSON.stringify of the session.
+    // Copied: a caller that later changes or clears its object must not change the peers' credentials.
     /** @type {{username?:string, credential?:string}|undefined} */
-    this._turnCredentials = cfg.turnCredentials;
+    this._turnCredentials = cfg.turnCredentials ? { username: cfg.turnCredentials.username, credential: cfg.turnCredentials.credential } : undefined;
     /** @type {{entry:{urls:string[],username:string,credential:string}, expiresAt:number|null, ttlSec:number|null, bad:boolean, refreshUsed:boolean}|null} */
     this._serverTurn = null;
-    /** @type {WeakMap<object, RTCIceServer[]>} ICE servers installed on each peer, for the 401 check. */
+    /** True once the relay refused the configured entry while the server entry worked. */
+    this._fallbackBad = false;
+    /** @type {WeakMap<object, RTCIceServer[]>} ICE servers each peer gathers with, for the 401 check. */
     this._peerServers = new WeakMap();
+    /** @type {WeakMap<object, RTCIceServer[]>} ICE servers set on a peer, used from its next ICE restart. */
+    this._peerNextServers = new WeakMap();
+    /** @type {WeakMap<object, (...args: any[]) => void>} The catch-all listener on each socket, to remove it with the others. */
+    this._anyListeners = new WeakMap();
     Object.defineProperty(this, '_turnCredentials', { enumerable: false });
     Object.defineProperty(this, '_serverTurn', { enumerable: false });
     Object.defineProperty(this, '_peerServers', { enumerable: false });
+    Object.defineProperty(this, '_peerNextServers', { enumerable: false });
     this._recoverCount = { asr: 0, stv: 0 };   // media recoveries per channel since its ICE was last up
     this._socketFactory = cfg.socketFactory;
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
@@ -793,7 +807,7 @@ export class KalturaAvatarSession extends Emitter {
     if (!prep) return;
     this._prep = null;
     clearTimeout(prep.idleTimer);
-    try { prep.socket.removeAllListeners?.(); prep.socket.disconnect?.(); } catch { /* already closed */ }
+    try { this._unwireSocket(prep.socket); prep.socket.disconnect?.(); } catch { /* already closed */ }
     for (const cancel of [...this._pendingAwaits]) cancel();
     this._pendingAwaits.clear();
     if (this._socket === prep.socket) this._socket = null;
@@ -832,46 +846,77 @@ export class KalturaAvatarSession extends Emitter {
     });
   }
 
+  /** The server's TURN entry while it is usable (not expired, not refused), else `null`. */
+  _usableServerTurn() {
+    const st = this._serverTurn;
+    return st && !st.bad && !(st.expiresAt != null && st.expiresAt <= this._now()) ? st.entry : null;
+  }
+
   /**
-   * The ICE servers for a new peer: the server's TURN entry while it is usable (not expired, not
-   * refused), then the configured entry. Warns once when there is none at all.
+   * The ICE servers for a new peer: the server's TURN entry while it is usable, then the configured
+   * entry unless the relay refused it. Warns once when there is none at all.
    * @returns {RTCIceServer[]}
    */
   _iceServers() {
-    const st = this._serverTurn;
-    const server = st && !st.bad && !(st.expiresAt != null && st.expiresAt <= this._now()) ? st.entry : null;
-    const list = iceServersFor({ server, turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials });
+    const list = iceServersFor({ server: this._usableServerTurn(), turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials, fallbackRefused: this._fallbackBad });
     if (!list.length) {
-      this._warnOnce('no-turn', 'No TURN server: no turnServerUrl was given and the server sent none. Avatar video needs a relay on most networks.', '[turn] ');
+      this._warnOnce('no-turn', 'No TURN server: no turnServerUrl was given and the server sent no usable TURN entry. Avatar video needs a relay on most networks.', '[turn] ');
     }
     return list;
   }
 
   /**
-   * A new peer for `channel`. Server data can't break it: if the browser refuses the list with the
-   * server's TURN entry, the server entry is set aside and the peer is built with the configured
-   * entry only. A server-only TURN URL that answers 401 also sets the entry aside for later peers.
+   * A new peer for `channel`. Server data can't break it: if the browser refuses the list, the
+   * entry it refuses is set aside (the server's or the configured one) and the peer is built with
+   * the other. A TURN URL only one entry uses that answers 401 sets that entry aside for later peers.
    * @param {'asr'|'stv'} channel
    */
   _newPeer(channel) {
     let servers = this._iceServers();
     const fallback = iceServersFor({ turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials });
     const st = this._serverTurn;
+    const server = this._usableServerTurn();
     let pc;
     try {
       pc = createPeerConnection(this._RTC, iceConfig(channel, servers, this._isFirefox));
     } catch (err) {
-      if (servers.length === fallback.length || !st) throw err;   // no server entry in the list: nothing to set aside
-      st.bad = true;
-      this._warnOnce('turn-server-entry', 'This browser refused the TURN entry the server sent. Using the configured TURN entry only.', '[turn] ');
-      servers = fallback;
-      pc = createPeerConnection(this._RTC, iceConfig(channel, servers, this._isFirefox));
+      const s0 = servers[0];
+      // No server entry in the list: nothing to set aside.
+      if (!st || !server || !s0 || s0.username !== server.username || s0.credential !== server.credential) throw err;
+      const tryBuild = (/** @type {RTCIceServer[]} */ list) => { try { return createPeerConnection(this._RTC, iceConfig(channel, list, this._isFirefox)); } catch { return null; } };
+      const serverOnly = iceServersFor({ server, turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials, fallbackRefused: true });
+      if (fallback.length && servers !== fallback && (pc = tryBuild(fallback))) {
+        st.bad = true;
+        servers = fallback;
+        this._warnOnce('turn-server-entry', 'This browser refused the TURN entry the server sent. Using the configured TURN entry only.', '[turn] ');
+      } else if (fallback.length && (pc = tryBuild(serverOnly))) {
+        this._fallbackBad = true;
+        servers = serverOnly;
+        this._warnOnce('turn-configured-entry', 'This browser refused the configured TURN entry (turnServerUrl). Using the TURN entry the server sent only.', '[turn] ');
+      } else if (fallback.length) {
+        throw err;
+      } else {
+        st.bad = true;
+        servers = [];
+        this._warnOnce('turn-server-entry', 'This browser refused the TURN entry the server sent, and no turnServerUrl is set: no TURN server is left.', '[turn] ');
+        pc = createPeerConnection(this._RTC, iceConfig(channel, servers, this._isFirefox));
+      }
     }
     this._peerServers.set(pc, servers);
-    // Read at error time, so credentials applied to this peer later are checked too.
     pc.addEventListener?.('icecandidateerror', (/** @type {any} */ e) => {
       const cur = this._serverTurn;
-      if (Number(e?.errorCode) === 401 && cur && serverOnlyUrls(this._peerServers.get(pc) || [], cur.entry).has(e?.url)) cur.bad = true;
+      if (Number(e?.errorCode) !== 401 || !cur || cur.bad) return;
+      const configured = iceServersFor({ turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials })[0] || null;
+      const owner = turnErrorOwner(this._peerServers.get(pc) || [], cur.entry, /** @type {any} */ (configured), e?.url);
+      if (owner === 'server') {
+        cur.bad = true;
+        this._warnOnce('turn-server-401', configured
+          ? 'The relay refused the TURN credentials the server sent. New connections use the configured TURN entry only.'
+          : 'The relay refused the TURN credentials the server sent, and no turnServerUrl is set: new connections have no TURN server.', '[turn] ');
+      } else if (owner === 'configured' && !this._fallbackBad) {
+        this._fallbackBad = true;
+        this._warnOnce('turn-configured-401', 'The relay refused the configured TURN credentials. New connections use the TURN entry the server sent only.', '[turn] ');
+      }
     });
     return pc;
   }
@@ -898,16 +943,22 @@ export class KalturaAvatarSession extends Emitter {
       }
       if (raw == null && turnEvent) raw = payload;
       if (raw == null) return;
-      const { entry, expiresAt, ttlSec } = normalizeServerTurn(raw, this._now());
-      if (!entry) return;
+      const { entry: got, expiresAt, ttlSec } = normalizeServerTurn(raw, this._now());
+      if (!got) return;
       const cur = this._serverTurn?.entry;
+      // New credentials with no host keep the host of the earlier set.
+      const entry = !got.urls.length && cur?.urls.length ? { ...got, urls: cur.urls } : got;
       if (cur && cur.username === entry.username && cur.credential === entry.credential && cur.urls.join() === entry.urls.join()) return;
       this._serverTurn = { entry, expiresAt, ttlSec, bad: false, refreshUsed: false };
       this._applyTurnToPeers();
     } catch { /* ignore: the configured TURN entry still applies */ }
   }
 
-  /** New server TURN credentials while peers exist: give them to each peer, then recover any peer that is down. */
+  /**
+   * New server TURN credentials while peers exist: give them to each peer, then recover any peer
+   * that is down. A peer gathers with the new servers from its next ICE restart only, so a 401
+   * until then counts against the servers it had.
+   */
   _applyTurnToPeers() {
     if (!this._pcAsr && !this._pcStv) return;
     const iceServers = this._iceServers();
@@ -917,7 +968,7 @@ export class KalturaAvatarSession extends Emitter {
         const cfg = pc.getConfiguration?.() || {};
         if (sameIceServers(cfg.iceServers, iceServers)) continue;
         try { pc.setConfiguration({ ...cfg, iceServers }); } catch { pc.setConfiguration({ ...cfg, iceServers: withoutTurnQuery(iceServers) }); }
-        this._peerServers.set(pc, iceServers);
+        this._peerNextServers.set(pc, iceServers);
       } catch { /* the peer keeps its servers: the recovery path still covers it */ }
     }
     if (this.state === 'connected') this._recheckMedia();
@@ -2154,7 +2205,9 @@ export class KalturaAvatarSession extends Emitter {
    * the pause window it is a plain resume (`conversationResumed`).
    * @returns {Promise<void>}
    * @throws {KalturaError} `invalid_state` when not connected. `resume_failed` when the
-   *   transport rebuild fails; the session ends (`error` + `ended`) before it rejects.
+   *   transport rebuild fails; the session ends (`error` + `ended`) before it rejects. When the
+   *   rebuild ran on a fresh socket for new relay credentials, the session ends with
+   *   `reconnect_failed` and that error is the `cause` of `resume_failed`.
    */
   async resume() {
     this._requireConnected('resume');
@@ -2174,8 +2227,11 @@ export class KalturaAvatarSession extends Emitter {
     // a fresh socket instead: the server sends new credentials with it.
     if (!this._coldReconnecting && this._takeTurnRefresh()) {
       this._sessionReleased = false;
-      await this._coldReconnect('turn credentials expiring');
-      if (this.state !== 'connected') throw new KalturaError({ type: 'about:blank', title: 'resume failed', code: 'resume_failed', detail: 'The session could not be rebuilt with new relay credentials.' });
+      /** @type {any} */ let failure = null;
+      const onError = (/** @type {any} */ e) => { failure = e; };
+      this.on('error', onError);
+      try { await this._coldReconnect('turn credentials expiring'); } finally { this.off('error', onError); }
+      if (this.state !== 'connected') throw new KalturaError({ type: 'about:blank', title: 'resume failed', code: 'resume_failed', detail: 'The session could not be rebuilt with new relay credentials.', ...(failure && { cause: failure }) });
       return;
     }
     // released → expect a fresh stvNewSession; rebuild transports on it.
@@ -2797,7 +2853,11 @@ export class KalturaAvatarSession extends Emitter {
    *   elsewhere preserving thread continuity). `reason` rides the `session.complete` audit event.
    */
   disconnect(opts = {}) {
-    if (this.state === 'disconnected') return;
+    if (this.state === 'disconnected') {
+      // A prepare() after the last session: close its socket and drop what it received.
+      if (this._prep) { this._dropPrepared(); this._serverTurn = null; this._fallbackBad = false; this._token = null; }
+      return;
+    }
     this._setState('disconnecting');
     // The WHEP resource is released by `_teardownTransports()` below, alongside the peer it
     // belongs to. Fire the completion signal before the token is dropped: `finalize()` reads
@@ -2967,11 +3027,21 @@ export class KalturaAvatarSession extends Emitter {
     };
   }
 
+  /** Remove every listener this session put on `socket`, the catch-all one too. @param {any} socket */
+  _unwireSocket(socket) {
+    const onAny = this._anyListeners.get(socket);
+    if (onAny) { socket.offAny?.(onAny); this._anyListeners.delete(socket); }
+    socket.removeAllListeners?.();
+  }
+
   /** @param {any} socket */
   _wireSocket(socket) {
     // TURN credentials can arrive on any event: look at every one, before the regular listeners.
-    if (typeof socket.onAny === 'function') socket.onAny((/** @type {string} */ event, /** @type {any[]} */ ...args) => this._harvestTurn(socket, event, args[0]));
-    else for (const ev of TURN_SETUP_EVENTS) socket.on(ev, (/** @type {any} */ p) => this._harvestTurn(socket, ev, p));
+    if (typeof socket.onAny === 'function') {
+      const onAny = (/** @type {string} */ event, /** @type {any[]} */ ...args) => this._harvestTurn(socket, event, args[0]);
+      this._anyListeners.set(socket, onAny);
+      socket.onAny(onAny);
+    } else for (const ev of TURN_SETUP_EVENTS) socket.on(ev, (/** @type {any} */ p) => this._harvestTurn(socket, ev, p));
     socket.on('connect', () => {
       this._mark('socketOpen');
       this.emit('connectivityChanged', { channel: 'socket', state: 'connected' });
@@ -3446,6 +3516,8 @@ export class KalturaAvatarSession extends Emitter {
       // Try an ICE restart on the existing peer (fast path) when the platform supports it.
       if (channel === 'asr' && typeof pc?.restartIce === 'function' && this._socket?.connected !== false) {
         pc.restartIce();
+        const next = this._peerNextServers.get(pc);
+        if (next) { this._peerServers.set(pc, next); this._peerNextServers.delete(pc); }
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
         this._socket.emit('asr-webrtc-offer', { offer, is_reconnect: true });
@@ -3748,7 +3820,7 @@ export class KalturaAvatarSession extends Emitter {
         // connection (see doc comment above; reusing a still-joined socket is the
         // exact bug this guards against).
         const old = this._socket;
-        try { old?.removeAllListeners?.(); } catch { /* */ }
+        try { if (old) this._unwireSocket(old); } catch { /* */ }
         socket = this._socketFactory(this._cmUrl, this._socketOptions());
         if (socket !== old) { try { old?.disconnect?.(); } catch { /* */ } }
         this._socket = socket;
@@ -3853,6 +3925,7 @@ export class KalturaAvatarSession extends Emitter {
     this._clearReconnectTimer();
     if (this._prep) { clearTimeout(this._prep.idleTimer); this._prep = null; }
     this._serverTurn = null;   // server TURN credentials end with the session, like the token
+    this._fallbackBad = false;
     // Shared by disconnect() and _endWith() — any ACK still pending when the session ends
     // can never be delivered (cleared on disconnect, not left to grow unbounded).
     this._pendingToolAcks.clear();
@@ -3899,7 +3972,7 @@ export class KalturaAvatarSession extends Emitter {
     this._stopStatsBeacon();
     this._releaseNoiseProcessor();
     try { this._micStream?.getTracks?.().forEach((t) => { t.onmute = t.onunmute = null; t.stop?.(); }); } catch { /* */ }
-    try { this._socket?.removeAllListeners?.(); this._socket?.disconnect?.(); } catch { /* */ }
+    try { if (this._socket) this._unwireSocket(this._socket); this._socket?.disconnect?.(); } catch { /* */ }
     if (this._capacityTimer) { clearTimeout(this._capacityTimer); this._capacityTimer = null; }
     this._pcAsr = this._pcStv = this._micStream = this._socket = this._asrAudioSender = this._onAsrIceCandidate = null;
     this._micPromise = null;   // a still-pending acquire lands in _attachMic's not-live guard and is stopped there

@@ -6,9 +6,10 @@
  *
  * WHEP-only. No socket.io, no ASR/mic uplink, no session-server
  * coupling, no tool calls, no captions. Construct it with just the
- * non-secret `{whepUrl, turn}` pair from `avatarSessions.initClient()` —
- * mint that server-side; this class never needs the session's Bearer token
- * or your admin KS.
+ * `{whepUrl, turn}` pair from `avatarSessions.initClient()`, minted
+ * server-side. `turn` carries TURN credentials for this session: keep it out
+ * of logs like other session secrets. This class never needs the session's
+ * Bearer token or your admin KS.
  *
  * Speech is driven entirely from YOUR SERVER via `Management#avatarSessions`
  * (`say`/`interrupt`/`keepAlive`/`end`) — this class only shows what the
@@ -62,7 +63,7 @@ export class KalturaScriptedVideoSession extends Emitter {
   /**
    * @param {object} cfg
    * @param {string} cfg.whepUrl  From `avatarSessions.initClient()`.
-   * @param {{url:string, username?:string, credential?:string, password?:string, ttl?:number}} cfg.turn  The `turn` object from `initClient()`: the TURN host and the short-lived credentials for this session. Read with {@link normalizeServerTurn}, so a host with a port, full `turn:` URLs or a list also work. Without credentials, the SDK default ones apply.
+   * @param {{url:string, username?:string, credential?:string, password?:string, ttl?:number}} cfg.turn  The `turn` object from `initClient()`: the TURN host and the credentials for this session. The server may issue short-lived ones. Read with {@link normalizeServerTurn}, so a host with a port, full `turn:` URLs or a list also work. Without credentials, the SDK default ones apply.
    * @param {HTMLVideoElement|null} [cfg.videoEl]  Element that renders the avatar: video plus audio, unless `cfg.audioEl` is set. Omit for headless/custom rendering (listen for 'track' or read {@link KalturaScriptedVideoSession#avatarStream}). The SDK sets `.srcObject` once and calls `play()` once per binding — size/frame it yourself with `object-fit: cover`. See README.md#avatar-audio-and-video-rendering.
    * @param {HTMLAudioElement|null} [cfg.audioEl]  Recommended: a dedicated element for the avatar's audio track (split shape). Keep it on a stable DOM node so a UI re-render that replaces the `<video>` does not silence the avatar. Swap at runtime with {@link KalturaScriptedVideoSession#setAudioEl}.
    * @param {typeof RTCPeerConnection} [cfg.rtcConstructor]
@@ -70,7 +71,7 @@ export class KalturaScriptedVideoSession extends Emitter {
    * @param {typeof MediaStream} [cfg.mediaStreamConstructor]
    * @param {(level: string, msg: string, data?: any) => void} [cfg.logger]  Receives non-fatal media diagnostics (e.g. a rejected `setSinkId`). Default: silent.
    * @param {boolean} [cfg.isFirefox]  Firefox needs `iceTransportPolicy:'all'` (see {@link iceConfig}).
-   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing; `whep_private_ip` if `whepUrl` names a private/loopback address a browser cannot reach (fail-fast, no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
+   * @throws {KalturaError} `bad_request` if `whepUrl`/`turn` is missing or `turn` has no usable TURN URL; `whep_private_ip` if `whepUrl` names a private/loopback address a browser cannot reach (fail-fast, no escape hatch, matches `KalturaAvatarSession`'s own WHEP check).
    */
   constructor(cfg) {
     super();
@@ -86,6 +87,9 @@ export class KalturaScriptedVideoSession extends Emitter {
     const bare = typeof t?.url === 'string' ? t.url.trim().replace(/^turns?:/i, '').replace(/\/$/, '') : '';
     const plainHost = bare.includes(':') ? '' : bare;
     const turn = entry?.urls.length ? entry : turnServers(plainHost, { username: t?.username, credential: t?.credential ?? t?.password });
+    if (!turn && t != null) {
+      throw new KalturaError({ type: 'about:blank', title: 'turn unusable', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() got a turn object with no usable TURN URL. Pass the {url,username,credential} object from avatarSessions.initClient() as is.' });
+    }
     if (!turn) {
       throw new KalturaError({ type: 'about:blank', title: 'turn required', code: 'bad_request', detail: 'new KalturaScriptedVideoSession() needs turn (the {url,username,credential} object from avatarSessions.initClient()).' });
     }
@@ -94,6 +98,7 @@ export class KalturaScriptedVideoSession extends Emitter {
     }
     this._whepUrl = cfg.whepUrl;
     this._turn = turn;
+    Object.defineProperty(this, '_turn', { enumerable: false });   // credentials: never in a JSON.stringify of the session
     this._RTC = cfg.rtcConstructor || globalThis.RTCPeerConnection;
     const f = cfg.fetch || globalThis.fetch;
     this._fetch = typeof f === 'function' ? f.bind(globalThis) : f;
