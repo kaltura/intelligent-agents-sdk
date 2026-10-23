@@ -1,0 +1,78 @@
+name: Playwright browser
+description: Install one Playwright browser and its system packages, with apt retries, cached packages and up to 3 tries.
+inputs:
+  engine:
+    description: chromium, firefox or webkit.
+    required: true
+  cache:
+    description: Cache the browser download between runs ('true' or 'false').
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too:
+    # a download with no data for 30 s fails and is retried, and a held dpkg lock is waited for.
+    # The zzz- name sorts after the runner image's own apt retry file, so these values win.
+    - shell: bash
+      run: |
+        printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' 'DPkg::Lock::Timeout "240";' \
+          'APT::Keep-Downloaded-Packages "true";' 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+          | sudo tee /etc/apt/apt.conf.d/zzz-ci-retries > /dev/null
+
+    - if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ inputs.engine }}-${{ hashFiles('package-lock.json') }}
+
+    # Mirrors are sometimes slow without stalling (a few KB/s), which no timeout catches. Caching the
+    # system packages skips the mirror on most runs. apt reuses a cached file only when its name, which
+    # holds the version, and its size match the index, so a newer package is downloaded again. Like the
+    # browser cache above, only this repository's own runs can write this cache.
+    - if: inputs.cache == 'true'
+      id: image
+      shell: bash
+      run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT" && echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - if: inputs.cache == 'true'
+      id: debs
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/apt-debs
+        key: apt-debs-${{ inputs.engine }}-${{ steps.image.outputs.os }}-${{ steps.image.outputs.version }}
+        restore-keys: apt-debs-${{ inputs.engine }}-${{ steps.image.outputs.os }}-
+
+    - if: inputs.cache == 'true'
+      shell: bash
+      run: |
+        if compgen -G "$HOME/.cache/apt-debs/*.deb" > /dev/null; then
+          sudo cp "$HOME"/.cache/apt-debs/*.deb /var/cache/apt/archives/
+        fi
+
+    - shell: bash
+      env:
+        ENGINE: ${{ inputs.engine }}
+      # No time cap per try: a slow mirror still finishes, and a cap would leave the root apt-get
+      # running with the dpkg lock. The calling step's timeout-minutes bounds all three tries.
+      run: |
+        for i in 1 2 3; do
+          if npx playwright install --with-deps "$ENGINE"; then exit 0; fi
+          if [ "$i" -lt 3 ]; then
+            echo "::warning title=Browser install retried::Try $i of 3 to install $ENGINE failed. Trying again."
+            sleep $((i * 15))
+          fi
+        done
+        echo "::error title=Browser install failed::$ENGINE failed to install 3 times."
+        exit 1
+
+    - if: inputs.cache == 'true' && steps.debs.outputs.cache-hit != 'true'
+      shell: bash
+      # Keep only the versions now installed, so debs from an older runner image are dropped.
+      run: |
+        rm -rf "$HOME/.cache/apt-debs"
+        mkdir -p "$HOME/.cache/apt-debs"
+        for f in /var/cache/apt/archives/*.deb; do
+          [ -e "$f" ] || continue
+          read -r pkg ver < <(dpkg-deb -W --showformat='${Package} ${Version}\n' "$f")
+          if [ "$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)" = "$ver" ]; then cp "$f" "$HOME/.cache/apt-debs/"; fi
+        done

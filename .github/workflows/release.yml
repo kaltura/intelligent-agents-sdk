@@ -129,16 +129,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      - name: 🟢 Node.js and dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
         with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
+          cache: ''
 
       - name: 🎭 Install Chromium
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 16
+        uses: ./.github/actions/browser
+        with:
+          engine: chromium
+          cache: 'false'
 
       - name: 🧹 Purge jsDelivr's cached @latest, @major and @major.minor for every src/ file
         # jsDelivr caches range refs per file, so after a new tag they serve the previous release until purged.

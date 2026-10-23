@@ -83,7 +83,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
 | `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server): a WHEP POST that answers 3.5 s late, is reset, answers 503, 404 or 409, a join that times out, and an answer whose media address is unreachable (`ice_failed`). Asserts the connect result, the retry count, `error.phase` and `retryable` |
-| `live-verify-reconnect.mjs` | Recovery after the connection is lost, with faults injected in the browser: the avatar video peer closed (re-subscribe within 3 s), both peers closed (session rebuild, two open peers), a re-subscribe answered 404 (new avatar session on the same socket), and the browser offline for 6 s (connected again within 3 s of the network returning) |
+| `live-verify-reconnect.mjs` | Recovery after the connection is lost, with faults injected in the browser: the avatar video peer closed (re-subscribe within 3 s, or on a slow runner 1 s more than this run's connect() took, at most 6 s), both peers closed (session rebuild, two open peers), a re-subscribe answered 404 (new avatar session on the same socket), and the browser offline for 6 s (connected again within 3 s of the network returning) |
 | `live-verify-unload.mjs` | Closing the page while connected, and while `connect()` runs, leaves no viewer attached to the avatar session on the server. The check is made from Node after the close |
 | `live-verify-prepare.mjs` | `session.prepare()`: joins ahead of `connect()` with state still `idle`, `connect()` reuses the socket (one `join`) and has no join phase left and its best run is faster than the plain best run by at least half of the plain run's socket and join time, and an unused prepared socket expires with `prepare_expired` |
 | `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
@@ -103,7 +103,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
 | `live-verify-authoring.mjs` | Conditions on skills, prompt blocks and tools (the grammar the server accepts, one scratch intellect per expression), prompt block types, the `var` tool (int type, later value wins, skill and tool conditions that read it), `{arg}` placeholders in an `api` tool url, body, headers and params, shared skills (list, attach, refused get/update/delete, unknown id), the doctor findings for a saved templated condition, the server's empty reply to one, and read-back of unset fields as `null`, and `tool_ids` read back as `{id, condition}` with a per-attachment condition. Uses `TARGET`, scratch intellects, tools and skills, all deleted at the end |
 | `live-verify-avatar-flag.mjs` | `sys__avatar_enabled` is true in a browser avatar session and false in a plain conversation, for a prompt block, a compound condition, a skill and a tool, and, with `--share`, that `sys__avatar_share_screen_enabled` flips when a simulated screen share runs. Uses `TARGET`, a throwaway agent and a headless browser, all removed at the end |
-| `live-verify-lifecycle-audit.mjs` | `lifecycle.audit`, `doctor` and `intellectConfig.audit` report the expected findings for planted rule defects and none for a clean set, and `lifecycle-audit.mjs` exits 0, 1 and 2 as documented. Scoped to one throwaway agent. Covers the no-messaging-host skip on named targets |
+| `live-verify-lifecycle-audit.mjs` | `lifecycle.audit`, `doctor` and `intellectConfig.audit` report the expected findings for planted rule defects and none for a clean set, and `lifecycle-audit.mjs` exits 0, 1 and 2 as documented. Scoped to one throwaway agent. First deletes its own leftovers from a run over an hour old. Covers the no-messaging-host skip on named targets |
 | `live-verify-intellect-config.mjs` | Every `intellectConfig` setter on one scratch intellect, deleted at the end |
 | `live-verify-knowledge-kms.mjs` | Linking a real Knowledge record to an intellect, and the linkage and status reads that depend on it |
 | `live-verify-feedback-flow.mjs` | A real conversation, feedback on a reply, then read-back through `feedback.list` and `messages.list`. Waits 5 minutes. Can run a second target, `alt` |
@@ -184,6 +184,19 @@ Every live run writes `<runId>.json` and `<runId>.md` to `--out` (default `live-
 
 CI uploads these as job artifacts. Timing numbers from them can inform a budget in a tracked script. Nothing else from an artifact belongs in a tracked file.
 
+### Retries in CI
+
+The live jobs share a production backend, so an outside blip can fail a step the SDK did nothing wrong in. Two scripts keep that from failing a PR:
+
+| Script | What it does |
+|---|---|
+| `live-verify-preflight.mjs` | Runs before the live steps. Waits up to 4 minutes for every backend service to answer below 500. If one stays down, the job fails with one "backend unavailable" error and the live steps are skipped. Read-only, no credentials. `--wait 0` probes once |
+| `live-step.mjs` | Runs each live step: `node scripts/live-step.mjs --log FILE -- CMD...`. Tees the output to `FILE`. On a failure it waits 20 s and for the backend, then runs the step once more. It retries only when a second try as long as the first still fits 14 minutes, so both tries fit the 15-minute step timeout. It never retries after a cancel. `LIVE_STEP_RETRIES=0` turns retries off |
+
+A real regression fails both tries. A step that passes only on its retry shows a "passed on retry" warning and a line in the job summary, and its log keeps both tries. Treat a step that keeps passing on retry as a flaky test to fix. A manual run of `live-verify.yml` with `retry` off shows every first-try failure.
+
+A retried script must be safe to run twice in a row: unique names per run, cleanup in `finally`, and no checks on counts or state the first try leaves behind. The logic and the backend probes live in `lib/live-step.mjs` and `lib/backend-health.mjs`.
+
 ## Gate runners
 
 Three entry points are easy to confuse. They do different things.
@@ -212,6 +225,6 @@ Ten live scripts have no CI job (named under the script table). Run them by hand
 
 **A new timing probe.** Record it in `live-verify-kickoff.html` (the page owns the measurement), read it in `live-verify-connect-timing.mjs`, and add it to the KPI budget list in that script's header. A probe with no budget is a number nobody reads.
 
-**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a job to `live-verify.yml`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact. If it asserts on what the agent says back, also pass `writeSilentWav()` from `live-verify-silent-mic-shared.mjs` to `--use-file-for-fake-audio-capture`.
+**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a step to `live-verify.yml` that runs it through `live-step.mjs`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact. If it asserts on what the agent says back, also pass `writeSilentWav()` from `live-verify-silent-mic-shared.mjs` to `--use-file-for-fake-audio-capture`.
 
 Whatever you add, assert only what a caller can observe: session events, socket frames, HTTP status codes, documented error codes, response shapes, WebRTC stats. Never assert on server internals, and never write an id, a token, or a partner id into a tracked file.

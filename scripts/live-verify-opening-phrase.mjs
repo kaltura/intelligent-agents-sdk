@@ -32,7 +32,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
+  bootstrap, Report, mdTable, management, ensureAgent, undoOnThrow, verifyDeleted, mintPageInit, startServer,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING, textsSent,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
@@ -78,10 +78,10 @@ report.note('agent', agent.reused ? 'reused --agent-json ids, opening phrase set
 
 // Client variables are off by default. Without this the session fails to start
 // as soon as the browser sends `requestVars`.
-await kaltura.intellects.setClientVariablesEnabled(agent.configId, true, admin.ks);
+await undoOnThrow(() => kaltura.intellects.setClientVariablesEnabled(agent.configId, true, admin.ks), () => agent.cleanup());
 
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
+const { server, origin } = await undoOnThrow(() => startServer(() => mintPageInit(kaltura, agent, target.genieUrl)), () => agent.cleanup());
+const browser = await undoOnThrow(() => launchBrowser(choice), () => { server.close(); return agent.cleanup(); });
 report.note('setup', SETUP);
 
 // ---------------------------------------------------------------------------

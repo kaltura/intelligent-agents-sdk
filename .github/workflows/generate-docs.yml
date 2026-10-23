@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
 
       - name: Regenerate site pages from the SDK repo's own docs
         env:

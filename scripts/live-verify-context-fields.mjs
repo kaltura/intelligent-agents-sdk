@@ -252,7 +252,7 @@ try {
   if (withoutCtx.pageErrors.length) record('without-context-page-errors', false, { pageErrors: withoutCtx.pageErrors });
 } catch (err) {
   failed = true;
-  createdSoFar = provisioned || null;
+  createdSoFar = err?.body?.createdSoFar || null;
   record('context-fields-runtime-check', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
   if (browser) { try { await browser.close(); } catch { /* best-effort teardown */ } }
