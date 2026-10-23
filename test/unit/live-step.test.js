@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import { runStep, stepLabel } from '../../scripts/lib/live-step.mjs';
 import { PROD_PROBES, probeBackend, formatProbes, waitForBackend } from '../../scripts/lib/backend-health.mjs';
 
@@ -81,15 +82,39 @@ test('runStep: retries 0 runs once and adds no annotation', async () => {
   assert.deepEqual(s.lines, []);
 });
 
-test('runStep: no retry when the failed attempt took too long', async () => {
+test('runStep: no retry when a retry as long as the failed attempt would not fit the budget', async () => {
   const dir = tmp();
   const child = flaky(dir, 5);
   let t = 0;
-  const s = step(dir, child, { now: () => (t += 400_000) });
+  // t0 = 400 s, the attempt runs 800 s → 1200 s: 400 s elapsed + 400 s again > 600 s budget.
+  const s = step(dir, child, { budgetMs: 600_000, now: () => (t += 400_000) });
   const r = await s.run();
   assert.equal(r.attempts, 1);
   assert.equal(child.runs(), 1);
-  assert.match(s.lines[0], /^::notice title=kickoff: no retry::/);
+  assert.match(s.lines[0], /^::notice title=kickoff: no retry::.*too late/);
+});
+
+test('runStep: the backend wait gets only the time the budget has left', async () => {
+  const dir = tmp();
+  const child = flaky(dir, 1);
+  let t = 0;
+  const waits = [];
+  // Each now() adds 100 s: t0 0, attempt 100 → 200 s (took 100 s), the wait reads 400 s: 1000 − 400 − 100 = 500 s.
+  const s = step(dir, child, { budgetMs: 1_000_000, now: () => { const v = t; t += 100_000; return v; }, waitForBackend: async (ms) => { waits.push(ms); return { up: true }; } });
+  const r = await s.run();
+  assert.equal(r.passedOnRetry, true);
+  assert.deepEqual(waits, [500_000]);
+});
+
+test('runStep: a cancel stops the child and skips the retry', async () => {
+  const dir = tmp();
+  const signals = new EventEmitter();
+  const s = step(dir, { cmd: process.execPath, args: ['-e', 'setTimeout(() => process.exit(3), 10000)'] }, { signals });
+  setTimeout(() => signals.emit('SIGTERM', 'SIGTERM'), 300);
+  const r = await s.run();
+  assert.deepEqual(r, { code: 1, attempts: 1, passedOnRetry: false });
+  assert.match(s.lines[0], /^::notice title=kickoff: no retry::.*cancelled/);
+  assert.equal(signals.listenerCount('SIGTERM'), 0);
 });
 
 test('runStep: no retry when the backend is still down', async () => {

@@ -139,7 +139,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    # Room for up to three browser install tries (16 min) and the check itself.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -190,8 +191,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-26.04
-    # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install.
-    timeout-minutes: 15
+    # The verify script enforces its own 90s budget per engine; this only caps a hung browser/install
+    # (up to three install tries, 16 min).
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

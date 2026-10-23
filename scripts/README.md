@@ -191,7 +191,7 @@ The live jobs share a production backend, so an outside blip can fail a step the
 | Script | What it does |
 |---|---|
 | `live-verify-preflight.mjs` | Runs before the live steps. Waits up to 4 minutes for every backend service to answer below 500. If one stays down, the job fails with one "backend unavailable" error and the live steps are skipped. Read-only, no credentials. `--wait 0` probes once |
-| `live-step.mjs` | Runs each live step: `node scripts/live-step.mjs --log FILE -- CMD...`. Tees the output to `FILE`. On a failure it waits 20 s and for the backend, then runs the step once more. It does not retry a try that took over 6 minutes, so both tries fit the step timeout. `LIVE_STEP_RETRIES=0` turns retries off |
+| `live-step.mjs` | Runs each live step: `node scripts/live-step.mjs --log FILE -- CMD...`. Tees the output to `FILE`. On a failure it waits 20 s and for the backend, then runs the step once more. It retries only when a second try as long as the first still fits 14 minutes, so both tries fit the 15-minute step timeout. It never retries after a cancel. `LIVE_STEP_RETRIES=0` turns retries off |
 
 A real regression fails both tries. A step that passes only on its retry shows a "passed on retry" warning and a line in the job summary, and its log keeps both tries. Treat a step that keeps passing on retry as a flaky test to fix. A manual run of `live-verify.yml` with `retry` off shows every first-try failure.
 

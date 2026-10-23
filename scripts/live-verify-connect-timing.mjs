@@ -309,6 +309,7 @@ try {
     const tag = COMPARE ? `run ${i} [${v.name}]` : `run ${i}`;
     /** @type {Record<string, any>} */
     const run = { n: i, arm: v.name, hints: arm };
+    const checksBefore = report.checks.length;
     try {
       const page = await openHarness(context, origin, {
         mode: MODE, kickoff: v.kickoff ?? undefined, echo: v.echo ? 1 : undefined, mic: MIC, hints: arm === 'on' ? 1 : undefined,
@@ -343,9 +344,12 @@ try {
       const resolved = find(evs, 'connect:resolved');
       const openingStop = find(evs, 'avatarStopTalking', { from: start.index });
       const openingFinished = find(evs, 'socket:in', { from: start.index, where: (d) => d.ev === 'stvFinishedTalking' });
-      // A reply can arrive as text without speech chunks: wait a moment for chunks, then
+      // A reply's text can arrive before its speech, or without it: wait for a chunk, then
       // measure first words only from a real chunk, so the KPI never mixes in text timing.
-      if (v.kickoff || v.spoken) await waitFor(page, (e) => find(e, 'speechChunk', { where: isReply }), 3_000, 'first speech chunk').then((r) => { evs = r.events; }).catch(() => {});
+      if (v.kickoff || v.spoken) {
+        evs = await waitFor(page, (e) => find(e, 'speechChunk', { where: isReply }), 15_000, 'first speech chunk')
+          .then((r) => r.events, () => page.evaluate(() => /** @type {any} */ (window).__events.slice()));
+      }
       const firstChunk = find(evs, 'speechChunk', { where: isReply });
       if ((v.kickoff || v.spoken) && !firstChunk) {
         run.noSpeechChunks = true;
@@ -508,8 +512,8 @@ try {
     } catch (err) {
       run.error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${tag}: completed`, false, { error: run.error, pageErrors: sink.pageErrors.slice(0, 5) });
-      await dumpEvents(outDir, runId, `run${i}`, sink.pages);
     } finally {
+      if (report.checks.slice(checksBefore).some((c) => !c.ok)) await dumpEvents(outDir, runId, `run${i}`, sink.pages);
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${tag}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));
       if (sink.pageErrors.length) report.note(`${tag}: page errors`, sink.pageErrors.slice(0, 5));
@@ -575,6 +579,7 @@ const kpiRows = (/** @type {Variant} */ v, /** @type {Record<string, any>[]} */ 
   const detail = { medianMs: s.median, minMs: s.min, maxMs: s.max, n: s.n, budgetMs: k.budgetMs };
   const prefix = COMPARE ? `KPI [${v.name}]` : 'KPI';
   if (measured && k.enforce) report.check(`${prefix}: median ${k.label} ≤ ${k.budgetMs} ms`, within === true, detail);
+  else if (k.key.startsWith('firstWords') && k.enforce && rows.length && rows.every((r) => r.noSpeechChunks)) report.check(`${prefix}: ${k.label} measured in at least one run`, false, { ...detail, reason: 'no run had speech chunks' });
   else report.note(`${prefix}: ${k.label} ${measured ? 'reported only, budget not enforced' : 'not measured in this run set'}`, detail);
   return { ...(COMPARE ? { arm: v.name } : {}), key: k.key, label: k.label, medianMs: s.median, minMs: s.min, maxMs: s.max, n: s.n, budgetMs: k.budgetMs, enforced: k.enforce && measured, ok: within, status };
 });
