@@ -41,6 +41,7 @@ jobs:
             # Edits to any workflow file are linted by the `actionlint` job.
             workflows:
               - '.github/workflows/**'
+              - '.github/actions/**'
               - '.github/actionlint.yaml'
             # The real-browser jobs only exercise the experience runtime.
             browser:
@@ -53,6 +54,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
+              - '.github/actions/**'
             code:
               - 'src/**'
               - 'test/**'
@@ -69,6 +71,7 @@ jobs:
               - '.eslintrc*'
               - 'eslint.config.*'
               - '.github/workflows/ci.yml'
+              - '.github/actions/**'
 
   actionlint:
     name: 🧷 Lint workflow files (actionlint)
@@ -99,14 +102,9 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
-        timeout-minutes: 5
-        run: npm ci
+      - name: 🟢 Node.js and devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🧪🩺 node --test + coverage + JUnit report (all suites, offline — fakes inject fetch/socket/RTC)
         run: npm run test:ci
@@ -150,24 +148,15 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        timeout-minutes: 5
-        run: npm ci
-
-      - name: 🎭 Cache the ${{ matrix.engine }} download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.engine }}-${{ hashFiles('package-lock.json') }}
+      - name: 🟢 Node.js and dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🎭 Install ${{ matrix.engine }}
-        timeout-minutes: 10
-        run: npx playwright install --with-deps ${{ matrix.engine }}
+        timeout-minutes: 16
+        uses: ./.github/actions/browser
+        with:
+          engine: ${{ matrix.engine }}
 
       - name: 🔊 Start a virtual audio device (this runner has no sound card; Firefox's cubeb backend needs one to render real-time AudioContext audio at all — Chromium/WebKit's audio stacks don't)
         if: matrix.engine == 'firefox'
@@ -211,24 +200,15 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        timeout-minutes: 5
-        run: npm ci
-
-      - name: 🎭 Cache the ${{ matrix.engine }} download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.engine }}-${{ hashFiles('package-lock.json') }}
+      - name: 🟢 Node.js and dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🎭 Install ${{ matrix.engine }}
-        timeout-minutes: 10
-        run: npx playwright install --with-deps ${{ matrix.engine }}
+        timeout-minutes: 16
+        uses: ./.github/actions/browser
+        with:
+          engine: ${{ matrix.engine }}
 
       - name: 🔊 Start a virtual audio device (this runner has no sound card. Firefox's cubeb backend needs a sink to play media elements at all; WebKitGTK's GStreamer pipeline otherwise falls through to OpenAL and ALSA, which fail to open a device on every play())
         if: matrix.engine == 'firefox' || matrix.engine == 'webkit'
@@ -301,14 +281,9 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
-        timeout-minutes: 5
-        run: npm ci
+      - name: 🟢 Node.js and devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 📜 Check every rule in SDK_CONSTITUTION.md (isolation, security, resiliency, performance, DX)
         id: verify
@@ -356,14 +331,9 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install devDependencies (eslint, madge, typescript)
-        timeout-minutes: 5
-        run: npm ci
+      - name: 🟢 Node.js and devDependencies (eslint, madge, typescript)
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🧹 Lint
         id: lint
@@ -430,14 +400,9 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install devDependencies (jsdom/axe-core for the a11y suite)
-        timeout-minutes: 5
-        run: npm ci
+      - name: 🟢 Node.js and devDependencies (jsdom/axe-core for the a11y suite)
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🔌 Validate the Claude Code plugin and marketplace manifests
         timeout-minutes: 5

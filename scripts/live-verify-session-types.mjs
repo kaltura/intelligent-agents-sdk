@@ -79,17 +79,28 @@ async function genie(path, body, ks) {
 /**
  * One raw OVP call. Returns `{ok:true, result}` or `{ok:false, code}`.
  * Each call gets its own clientTag so every check is a separate request.
+ * A network error, a timeout or a 5xx is retried up to 3 times, then thrown: it
+ * must never pass for a refused token.
  * @param {string} service @param {string} action @param {object} params @param {string} ks
  */
 async function ovp(service, action, params, ks) {
-  const res = await fetch(`${OVP}/service/${service}/action/${action}`, { // nosemgrep: scripts.harness.no-raw-fetch-bypass
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ks, format: 1, clientTag: `lv-st-${tag}-${Math.random().toString(36).slice(2)}`, ...params }),
-  });
-  const body = await res.json().catch(() => null);
-  if (body?.objectType === 'KalturaAPIException') return { ok: false, code: body.code };
-  return { ok: res.ok, result: body };
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(`${OVP}/service/${service}/action/${action}`, { // nosemgrep: scripts.harness.no-raw-fetch-bypass
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ks, format: 1, clientTag: `lv-st-${tag}-${Math.random().toString(36).slice(2)}`, ...params }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (res.status >= 500) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json().catch(() => null);
+      if (body?.objectType === 'KalturaAPIException') return { ok: false, code: body.code };
+      return { ok: res.ok, result: body };
+    } catch (err) {
+      if (attempt >= 3) throw err;
+      await sleep(2000 * attempt);
+    }
+  }
 }
 
 /** Ids a thread/delete response says it deleted. @param {any} r @returns {string[]} */
@@ -417,13 +428,18 @@ try {
       const before = await probe(r1.ks);
       await kaltura.sessions.revoke(r1);
       const enforced = target.name === 'prod';
-      // Poll for up to 90s for the revoked token to stop working. Most runs
-      // take about 10s, but one prod run took longer than 30s.
+      // Poll for up to 90s until both the revoked token and its sibling stop working.
+      // Most runs take about 10s, but one prod run took longer than 30s, and the
+      // sibling can stop a little after the revoked token.
       const start = Date.now();
       let after1 = await probe(r1.ks);
-      while (enforced && after1.ok && Date.now() - start < 90000) { await sleep(1000); after1 = await probe(r1.ks); }
+      let after2 = await probe(r2.ks);
+      while (enforced && (after1.ok || after2.ok) && Date.now() - start < 90000) {
+        await sleep(1000);
+        if (after1.ok) after1 = await probe(r1.ks);
+        if (after2.ok) after2 = await probe(r2.ks);
+      }
       const tookMs = Date.now() - start;
-      const after2 = await probe(r2.ks);
       report.check('revoke ends the token and its sessionGroupId sibling', before.ok && (!enforced || (!after1.ok && !after2.ok)),
         { enforced, before: before.ok ? 'ok' : before.code, revoked: after1.ok ? 'ok' : after1.code, sibling: after2.ok ? 'ok' : after2.code, tookMs });
     });

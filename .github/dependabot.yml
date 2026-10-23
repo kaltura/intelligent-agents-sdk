@@ -2,8 +2,11 @@ version: 2
 updates:
   # CI workflows pin GitHub Actions to commit SHA (with a trailing version
   # comment) — Dependabot resolves the new SHA and updates the comment.
+  # The composite actions in .github/actions pin their own actions too.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     # codeql-action/init and codeql-action/analyze must run at the same

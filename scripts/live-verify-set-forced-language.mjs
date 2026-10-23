@@ -275,7 +275,7 @@ try {
   if (pageErrors.length) record('page-console-errors', false, { pageErrors });
 } catch (err) {
   failed = true;
-  createdSoFar = provisioned || null;
+  createdSoFar = err?.body?.createdSoFar || null;
   record('set-forced-language-runtime-check', false, {
     message: err?.detail || err?.message || String(err), code: err?.code,
     pageErrors, consoleTail: consoleLog.slice(-40),

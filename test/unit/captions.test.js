@@ -155,6 +155,23 @@ test('heuristic path: ground truth (transcript final) corrects word boundaries w
   captions.destroy();
 });
 
+test('a reply with no speechChunk after a barge-in still renders from avatarStopTalking', () => {
+  const { session, events, captions } = mkCaptions({ maxCharsPerLine: 200, maxLines: 2 });
+  // The first reply is server-timed, then the user barges in.
+  session.emit('speechChunk', { text: 'I did not catch that. ', durationMs: 300, speechId: 's1' });
+  session.emit('interrupted', {});
+  session.emit('avatarStopTalking', { text: 'I did not catch that.' });
+  events.length = 0;
+  // The next reply arrives as transcript finals only, then the full text on stop.
+  session.emit('turnStart', { speechId: 's2', isNewTurn: true });
+  session.emit('transcript', { type: 'final', text: 'Cherry.', speechId: 's2' });
+  session.emit('transcript', { type: 'final', text: ' How can I help?', speechId: 's2' });
+  session.emit('turnEnd', { speechId: 's2' });
+  session.emit('avatarStopTalking', { text: 'Cherry. How can I help?' });
+  assert.ok(events.some((e) => !e.clear && e.text.includes('Cherry')), 'the reply is captioned from its full text');
+  captions.destroy();
+});
+
 test('destroy() detaches listeners — further session events produce no more captions', () => {
   const { session, captions, events } = mkCaptions({ maxCharsPerLine: 200, maxLines: 2 });
   captions.destroy();

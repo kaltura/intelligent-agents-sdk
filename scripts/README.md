@@ -184,6 +184,19 @@ Every live run writes `<runId>.json` and `<runId>.md` to `--out` (default `live-
 
 CI uploads these as job artifacts. Timing numbers from them can inform a budget in a tracked script. Nothing else from an artifact belongs in a tracked file.
 
+### Retries in CI
+
+The live jobs share a production backend, so an outside blip can fail a step the SDK did nothing wrong in. Two scripts keep that from failing a PR:
+
+| Script | What it does |
+|---|---|
+| `live-verify-preflight.mjs` | Runs before the live steps. Waits up to 4 minutes for every backend service to answer below 500. If one stays down, the job fails with one "backend unavailable" error and the live steps are skipped. Read-only, no credentials. `--wait 0` probes once |
+| `live-step.mjs` | Runs each live step: `node scripts/live-step.mjs --log FILE -- CMD...`. Tees the output to `FILE`. On a failure it waits 20 s and for the backend, then runs the step once more. It does not retry a try that took over 6 minutes, so both tries fit the step timeout. `LIVE_STEP_RETRIES=0` turns retries off |
+
+A real regression fails both tries. A step that passes only on its retry shows a "passed on retry" warning and a line in the job summary, and its log keeps both tries. Treat a step that keeps passing on retry as a flaky test to fix. A manual run of `live-verify.yml` with `retry` off shows every first-try failure.
+
+A retried script must be safe to run twice in a row: unique names per run, cleanup in `finally`, and no checks on counts or state the first try leaves behind. The logic and the backend probes live in `lib/live-step.mjs` and `lib/backend-health.mjs`.
+
 ## Gate runners
 
 Three entry points are easy to confuse. They do different things.
@@ -212,6 +225,6 @@ Ten live scripts have no CI job (named under the script table). Run them by hand
 
 **A new timing probe.** Record it in `live-verify-kickoff.html` (the page owns the measurement), read it in `live-verify-connect-timing.mjs`, and add it to the KPI budget list in that script's header. A probe with no budget is a number nobody reads.
 
-**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a job to `live-verify.yml`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact. If it asserts on what the agent says back, also pass `writeSilentWav()` from `live-verify-silent-mic-shared.mjs` to `--use-file-for-fake-audio-capture`.
+**A new live script.** Copy the closest existing one. Keep the header comment stating what it asserts, delete everything it creates, add an `npm run live-verify:<name>` script, and add a step to `live-verify.yml` that runs it through `live-step.mjs`. If it needs a browser, reuse `live-verify-kickoff-shared.mjs`: `bootstrap()` for CLI and env parsing, `ensureAgent()` for the throwaway agent, `startServer()`/`launchBrowser()`/`openHarness()` for the page, `Report` for the artifact. If it asserts on what the agent says back, also pass `writeSilentWav()` from `live-verify-silent-mic-shared.mjs` to `--use-file-for-fake-audio-capture`.
 
 Whatever you add, assert only what a caller can observe: session events, socket frames, HTTP status codes, documented error codes, response shapes, WebRTC stats. Never assert on server internals, and never write an id, a token, or a partner id into a tracked file.

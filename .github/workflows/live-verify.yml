@@ -107,8 +107,22 @@ name: Live verification
 # in the `changes` job. A step runs when its filter is true or on a manual or
 # nightly run; every step runs even if an earlier one failed, and the job
 # fails if any did. Open a run to see each step.
+#
+# Outside failures. Each live job first waits up to 4 minutes for the backend
+# (scripts/live-verify-preflight.mjs). If it stays down, the job fails with one
+# "backend unavailable" error and skips its live steps. Each live step runs
+# through scripts/live-step.mjs, which retries a failed step once after the
+# backend answers again. A real regression fails both tries. A step that passes
+# only on its retry shows a "passed on retry" warning and a line in the job
+# summary, and its log keeps both tries. A manual run with `retry` off shows
+# every first-try failure.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      retry:
+        description: Retry a failed live step once (off shows every first-try failure)
+        type: boolean
+        default: true
   pull_request:
     types: [opened, synchronize, reopened]
   merge_group:
@@ -176,6 +190,14 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
+            # Files every live step runs through: the retry wrapper, the backend
+            # check and the install actions.
+            shared: &shared
+              - 'scripts/live-step.mjs'
+              - 'scripts/lib/live-step.mjs'
+              - 'scripts/lib/backend-health.mjs'
+              - 'scripts/live-verify-preflight.mjs'
+              - '.github/actions/**'
             smoke:
               - 'scripts/live-verify.mjs'
               - 'src/management/agents.js'
@@ -194,6 +216,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             capabilities:
               - 'scripts/live-verify-capabilities.mjs'
               - 'src/management/conversations.js'
@@ -215,6 +238,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             conversation-surface:
               - 'scripts/live-verify-conversation-avatar-surface.mjs'
               - 'src/management/conversations.js'
@@ -232,6 +256,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             request-vars:
               - 'scripts/live-verify-request-vars.mjs'
               - 'src/management/intellect-config.js'
@@ -249,6 +274,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             context-fields:
               - 'scripts/live-verify-context-fields.mjs'
               - 'scripts/live-verify-context-fields.html'
@@ -272,6 +298,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             site-nav:
               - 'scripts/live-verify-site-nav.mjs'
               - 'src/management/site-nav.js'
@@ -289,6 +316,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             threads-messages-feedback:
               - 'scripts/live-verify-threads-messages-feedback.mjs'
               - 'src/management/conversations.js'
@@ -304,6 +332,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             session-types:
               - 'scripts/live-verify-session-types.mjs'
               - 'scripts/live-verify-kickoff-shared.mjs'
@@ -337,6 +366,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             authoring:
               - 'scripts/live-verify-authoring.mjs'
               - 'src/management/condition.js'
@@ -353,6 +383,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             skills:
               - 'scripts/live-verify-skills.mjs'
               - 'src/management/skills.js'
@@ -368,6 +399,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             catalog:
               - 'scripts/live-verify-catalog.mjs'
               - 'src/management/catalog.js'
@@ -383,6 +415,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             knowledge:
               - 'scripts/live-verify-knowledge.mjs'
               - 'src/management/conversations.js'
@@ -399,6 +432,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             avatars:
               - 'scripts/live-verify-avatars.mjs'
               - 'src/management/avatars.js'
@@ -414,6 +448,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             agents:
               - 'scripts/live-verify-agents.mjs'
               - 'src/management/agents.js'
@@ -429,6 +464,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             lifecycle-audit:
               - 'scripts/live-verify-lifecycle-audit.mjs'
               - 'scripts/lifecycle-audit.mjs'
@@ -446,6 +482,7 @@ jobs:
               - 'src/core/ids.js'
               - 'src/core/redact.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             browser:
               - 'scripts/live-verify-browser.mjs'
               - 'src/experience/**'
@@ -464,6 +501,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             kickoff:
               - 'scripts/live-verify-kickoff.mjs'
               - 'scripts/live-verify-kickoff.html'
@@ -488,6 +526,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             startup-faults:
               - 'scripts/live-verify-startup-faults.mjs'
               - 'scripts/live-verify-kickoff.html'
@@ -509,6 +548,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             reconnect:
               - 'scripts/live-verify-reconnect.mjs'
               - 'scripts/live-verify-kickoff.html'
@@ -530,6 +570,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             unload:
               - 'scripts/live-verify-unload.mjs'
               - 'scripts/live-verify-kickoff.html'
@@ -551,6 +592,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             prepare:
               - 'scripts/live-verify-prepare.mjs'
               - 'scripts/live-verify-kickoff.html'
@@ -572,6 +614,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             avatar-flag:
               - 'scripts/live-verify-avatar-flag.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -580,6 +623,8 @@ jobs:
               - 'src/management/intellect-config.js'
               - 'src/management/agents.js'
               - 'src/experience/screen-share.js'
+              - '.github/workflows/live-verify.yml'
+              - *shared
             opening-phrase:
               - 'scripts/live-verify-opening-phrase.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -600,6 +645,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             avatar-media:
               - 'scripts/live-verify-avatar-media.mjs'
               - 'scripts/live-verify-avatar-media.html'
@@ -620,6 +666,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             set-forced-language:
               - 'scripts/live-verify-set-forced-language.mjs'
               - 'scripts/live-verify-silent-mic-shared.mjs'
@@ -638,6 +685,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             session-complete:
               - 'scripts/live-verify-session-complete.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
@@ -657,6 +705,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
+              - *shared
             intellects-conversations:
               - 'scripts/live-verify-intellects-conversations.mjs'
               - 'src/management/intellects.js'
@@ -673,6 +722,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             tools:
               - 'scripts/live-verify-tools.mjs'
               - 'src/management/tools.js'
@@ -688,6 +738,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
             mcp:
               - 'scripts/live-verify-mcp.mjs'
               - 'examples/mcp-live-showcase/server.mjs'
@@ -704,6 +755,7 @@ jobs:
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
               - '.github/workflows/live-verify.yml'
+              - *shared
 
       # One flag per job, so the PR checks list shows API, Browser (one row per
       # engine) and the gate instead of one row per script. Each script is a step
@@ -741,18 +793,23 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: live-verify
+    env:
+      # One retry per live step (scripts/live-step.mjs). A manual run can turn it off.
+      LIVE_STEP_RETRIES: ${{ github.event.inputs.retry == 'false' && '0' || '1' }}
     steps:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
+      - name: 🟢 Node.js and dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
-      - name: 📦 Install dependencies
+      # Unauthenticated GETs only. When the backend is down, this fails with one clear
+      # "backend unavailable" error and every live step below is skipped.
+      - name: 🩺 Wait for the backend
         id: setup
-        run: npm ci
+        timeout-minutes: 6
+        run: node scripts/live-verify-preflight.mjs
 
       # Session creation → one converse turn → cleanup, against the real Kaltura API
       - name: Smoke
@@ -762,9 +819,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify.mjs 2>&1 | tee live-verify-output.log
+        run: node scripts/live-step.mjs --log live-verify-output.log -- node scripts/live-verify.mjs
 
       # Threads#push/setAnalysis/clearAnalysis, Feedback#add/list, Avatars#create/update (face+background, templateId+background), Catalog#createFace/createBackground, against the real Kaltura API
       - name: Conversation · Push, analysis, feedback, composition
@@ -774,9 +829,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:conversation-surface 2>&1 | tee live-verify-conversation-surface-output.log
+        run: node scripts/live-step.mjs --log live-verify-conversation-surface-output.log -- npm run live-verify:conversation-surface
 
       # Scratch thread via converse → get/rename/transcript, messages.list/share, feedback.add → delete → cleanup, against the real Kaltura API
       - name: Conversation · Threads, messages, share
@@ -786,9 +839,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:threads-messages-feedback 2>&1 | tee live-verify-threads-messages-feedback-output.log
+        run: node scripts/live-step.mjs --log live-verify-threads-messages-feedback-output.log -- npm run live-verify:threads-messages-feedback
 
       # Per-thread request_vars persistence/merge, tool-template interpolation, sys__* injection, large page_context, fresh-thread scope reset, against the real Kaltura API
       - name: Conversation · request_vars and sys__* variables
@@ -798,9 +849,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:request-vars 2>&1 | tee live-verify-request-vars-output.log
+        run: node scripts/live-step.mjs --log live-verify-request-vars-output.log -- npm run live-verify:request-vars
 
       # goToTool echo → idempotent update → SITE MAP intellect → one mapped go_to → zero unmapped go_to → cleanup, against the real Kaltura API
       - name: Conversation · go_to site navigation
@@ -810,9 +859,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:site-nav 2>&1 | tee live-verify-site-nav-output.log
+        run: node scripts/live-step.mjs --log live-verify-site-nav-output.log -- npm run live-verify:site-nav
 
       # User vs admin session reach per token kind, no-userId and widget shared identity, persona, per-user appInit, revoke → cleanup, against the real Kaltura API
       - name: Conversation · Session types and token reach
@@ -822,9 +869,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:session-types 2>&1 | tee live-verify-session-types-output.log
+        run: node scripts/live-step.mjs --log live-verify-session-types-output.log -- npm run live-verify:session-types
 
       # Knowledge#listRecords, Application#getCustomPrompts, Avatars#listTemplates, Lifecycle create→get/list→match→update→delete, against the real Kaltura API
       - name: Resources · Read paths and lifecycle
@@ -834,9 +879,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:capabilities 2>&1 | tee live-verify-capabilities-output.log
+        run: node scripts/live-step.mjs --log live-verify-capabilities-output.log -- npm run live-verify:capabilities
 
       # Scratch intellect + avatar → agents create/get/list/update(rename)/delete → cleanup, against the real Kaltura API
       - name: Resources · Agents
@@ -846,9 +889,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:agents 2>&1 | tee live-verify-agents-output.log
+        run: node scripts/live-step.mjs --log live-verify-agents-output.log -- npm run live-verify:agents
 
       # Scratch agent + insight settings + planted lifecycle rules → lifecycle.audit, doctor, intellectConfig.audit and the audit CLI report the expected findings → cleanup
       - name: Resources · Lifecycle audit
@@ -858,9 +899,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:lifecycle-audit 2>&1 | tee live-verify-lifecycle-audit-output.log
+        run: node scripts/live-step.mjs --log live-verify-lifecycle-audit-output.log -- npm run live-verify:lifecycle-audit
 
       # Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
       - name: Resources · Avatars
@@ -870,9 +909,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:avatars 2>&1 | tee live-verify-avatars-output.log
+        run: node scripts/live-step.mjs --log live-verify-avatars-output.log -- npm run live-verify:avatars
 
       # Catalog createVisual/get/list/update(rename)/delete → cleanup, against the real Kaltura API
       - name: Resources · Catalog
@@ -882,9 +919,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:catalog 2>&1 | tee live-verify-catalog-output.log
+        run: node scripts/live-step.mjs --log live-verify-catalog-output.log -- npm run live-verify:catalog
 
       # Scratch intellect → capabilities/prompts/snapshot-restore → conversations send/status → cleanup, against the real Kaltura API
       - name: Resources · Intellects
@@ -894,9 +929,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:intellects-conversations 2>&1 | tee live-verify-intellects-conversations-output.log
+        run: node scripts/live-step.mjs --log live-verify-intellects-conversations-output.log -- npm run live-verify:intellects-conversations
 
       # Knowledge addRecord/getRecord/list/updateRecord/addSource/removeSource/entryStatus/deleteRecord → cleanup, against the real Kaltura API
       - name: Resources · Knowledge
@@ -906,9 +939,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:knowledge 2>&1 | tee live-verify-knowledge-output.log
+        run: node scripts/live-step.mjs --log live-verify-knowledge-output.log -- npm run live-verify:knowledge
 
       # Skills add/get/list/update(rename)/delete → cleanup, against the real Kaltura API
       - name: Resources · Skills
@@ -918,9 +949,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:skills 2>&1 | tee live-verify-skills-output.log
+        run: node scripts/live-step.mjs --log live-verify-skills-output.log -- npm run live-verify:skills
 
       # Conditions, prompt types, var tool and {arg} placeholders, against the real Kaltura API
       - name: Resources · Authoring
@@ -930,9 +959,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:authoring 2>&1 | tee live-verify-authoring-output.log
+        run: node scripts/live-step.mjs --log live-verify-authoring-output.log -- npm run live-verify:authoring
 
       # Scratch tool add/get/delete + code/csv unavailable-by-default 403 gate, against the real Kaltura API
       - name: Resources · Tools
@@ -942,9 +969,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:tools 2>&1 | tee live-verify-tools-output.log
+        run: node scripts/live-step.mjs --log live-verify-tools-output.log -- npm run live-verify:tools
 
       - name: Resources · MCP servers · install cloudflared
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
@@ -1000,7 +1025,8 @@ jobs:
         run: |
           set -e -o pipefail
           node scripts/live-verify-mcp.mjs --target=nvp1 --phase=provision 2>&1 | tee live-verify-mcp-provision-output.log
-          node scripts/live-verify-mcp.mjs --target=nvp1 --phase=verify 2>&1 | tee live-verify-mcp-verify-output.log
+          # Only the verify phase is retried: it reads the state provision saved, so it can run again.
+          node scripts/live-step.mjs --log live-verify-mcp-verify-output.log -- node scripts/live-verify-mcp.mjs --target=nvp1 --phase=verify
 
       - name: Resources · MCP servers · clean up provisioned intellects
         if: ${{ always() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
@@ -1012,9 +1038,7 @@ jobs:
           NVP1_GENIE_URL: https://genie.nvp1.ovp.kaltura.com
           NVP1_KALTURA_API_ENDPOINT: https://www.kaltura.com/api_v3
           MCP_PUBLIC_URL: ${{ steps.tunnel.outputs.url }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-mcp.mjs --target=nvp1 --phase=cleanup 2>&1 | tee live-verify-mcp-cleanup-output.log
+        run: node scripts/live-step.mjs --log live-verify-mcp-cleanup-output.log -- node scripts/live-verify-mcp.mjs --target=nvp1 --phase=cleanup
 
       - name: 📤 Upload artifacts
         if: always()
@@ -1212,6 +1236,9 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 40
     environment: live-verify
+    env:
+      # One retry per live step (scripts/live-step.mjs). A manual run can turn it off.
+      LIVE_STEP_RETRIES: ${{ github.event.inputs.retry == 'false' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1244,17 +1271,20 @@ jobs:
       - name: 📥 Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: 🟢 Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-
-      - name: 📦 Install dependencies
-        run: npm ci
+      - name: 🟢 Node.js and dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/node-deps
 
       - name: 🎭 Install ${{ matrix.engine }}
+        timeout-minutes: 16
+        uses: ./.github/actions/browser
+        with:
+          engine: ${{ matrix.engine }}
+
+      - name: 🩺 Wait for the backend
         id: setup
-        run: npx playwright install --with-deps ${{ matrix.engine }}
+        timeout-minutes: 6
+        run: node scripts/live-verify-preflight.mjs
 
       # Provision a real avatar → render in headless ${{ matrix.engine }} → verify chroma-key + mic audio flow → cleanup
       - name: Media · Chroma-key and mic (${{ matrix.engine }})
@@ -1265,9 +1295,7 @@ jobs:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
           LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-browser.mjs 2>&1 | tee live-verify-browser-output.log
+        run: node scripts/live-step.mjs --log live-verify-browser-output.log -- node scripts/live-verify-browser.mjs
 
       # Provision a real avatar → headless ${{ matrix.engine }} → simple (one videoEl) and split (videoEl + audioEl) layouts → readiness, placement, audio+video flow, controls, teardown → cleanup
       - name: Media · Avatar layouts (${{ matrix.engine }})
@@ -1278,9 +1306,7 @@ jobs:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
           LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          npm run live-verify:avatar-media 2>&1 | tee live-verify-avatar-media-output.log
+        run: node scripts/live-step.mjs --log live-verify-avatar-media-output.log -- npm run live-verify:avatar-media
 
       # Real conversation KS, real headless ${{ matrix.engine }}, real pagehide/visibilitychange/BroadcastChannel, real /thread/session_completed → cleanup
       - name: Session · session_completed signal (${{ matrix.engine }})
@@ -1291,9 +1317,7 @@ jobs:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
           LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
-        run: |
-          set -o pipefail
-          npm run live-verify:session-complete 2>&1 | tee live-verify-session-complete-output.log
+        run: node scripts/live-step.mjs --log live-verify-session-complete-output.log -- npm run live-verify:session-complete
 
       # Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
       - name: Session · Opening phrase and Jinja2 variables
@@ -1303,9 +1327,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-opening-phrase.mjs --env prod 2>&1 | tee live-verify-opening-phrase-output.log
+        run: node scripts/live-step.mjs --log live-verify-opening-phrase-output.log -- node scripts/live-verify-opening-phrase.mjs --env prod
 
       # Provision an agent → gate a prompt block, a compound condition and a skill on sys__avatar_enabled → same question in an avatar session and a plain conversation → cleanup
       - name: Session · Avatar flag in conditions
@@ -1317,12 +1339,11 @@ jobs:
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
           RUN_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' }}
         run: |
-          set -o pipefail
           # The screen-share scenarios (A5, A6) wait on a background vision call that sometimes misses,
           # so they run only on manual and nightly runs, never on PRs or the merge queue.
           SHARE=""
           if [ "$RUN_ALL" = true ]; then SHARE="--share"; fi
-          node scripts/live-verify-avatar-flag.mjs --env prod $SHARE 2>&1 | tee live-verify-avatar-flag-output.log
+          node scripts/live-step.mjs --log live-verify-avatar-flag-output.log -- node scripts/live-verify-avatar-flag.mjs --env prod $SHARE
 
       # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
       - name: Session · Startup KPIs (connect timing)
@@ -1332,9 +1353,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9 2>&1 | tee live-verify-connect-timing-output.log
+        run: node scripts/live-step.mjs --log live-verify-connect-timing-output.log -- node scripts/live-verify-connect-timing.mjs --env prod --compare jinja --runs 9
 
       # Inject WHEP and socket faults in the browser (a late, reset, 503 or 404 answer) → connect() still resolves or fails with the documented code → cleanup
       - name: Session · Startup faults (${{ matrix.engine }})
@@ -1344,9 +1363,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-startup-faults.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-startup-faults-output.log
+        run: node scripts/live-step.mjs --log live-verify-startup-faults-output.log -- node scripts/live-verify-startup-faults.mjs --env prod --browser ${{ matrix.engine }}
 
       # Close the avatar video peer, close both peers, answer a re-subscribe with 404, go offline 6 s → each recovers and video decodes again → cleanup
       - name: Session · Reconnect (${{ matrix.engine }})
@@ -1356,9 +1373,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-reconnect.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-reconnect-output.log
+        run: node scripts/live-step.mjs --log live-verify-reconnect-output.log -- node scripts/live-verify-reconnect.mjs --env prod --browser ${{ matrix.engine }}
 
       # Close the page while connected and while connect() runs → the server shows no viewer on the avatar session → cleanup
       - name: Session · Unload (${{ matrix.engine }})
@@ -1368,9 +1383,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-unload.mjs --env prod --browser ${{ matrix.engine }} 2>&1 | tee live-verify-unload-output.log
+        run: node scripts/live-step.mjs --log live-verify-unload-output.log -- node scripts/live-verify-unload.mjs --env prod --browser ${{ matrix.engine }}
 
       # prepare() joins ahead of connect() → connect() reuses the socket and is faster → an unused prepared socket expires with a warning → cleanup
       - name: Session · prepare()
@@ -1380,9 +1393,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-prepare.mjs --env prod 2>&1 | tee live-verify-prepare-output.log
+        run: node scripts/live-step.mjs --log live-verify-prepare-output.log -- node scripts/live-verify-prepare.mjs --env prod
 
       # Provision a silent-opening agent → run the kickoff scenario matrix → cleanup
       - name: Session · Kickoff scenarios
@@ -1392,9 +1403,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          node scripts/live-verify-kickoff.mjs --env prod 2>&1 | tee live-verify-kickoff-output.log
+        run: node scripts/live-step.mjs --log live-verify-kickoff-output.log -- node scripts/live-verify-kickoff.mjs --env prod
 
       # setForcedLanguage persists force_language + agent asr.language, no base_directive marker → real headless Chromium conversation replies in the forced language → cleanup
       - name: Session · setForcedLanguage
@@ -1404,9 +1413,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:set-forced-language 2>&1 | tee live-verify-set-forced-language-output.log
+        run: node scripts/live-step.mjs --log live-verify-set-forced-language-output.log -- npm run live-verify:set-forced-language
 
       # Real conversation, contextId/contextType wire-payload keys + sys__context_id/sys__context_type prompt rendering, with and without context, against the real Kaltura API
       - name: Session · Context id and type fields
@@ -1416,9 +1423,7 @@ jobs:
         env:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
-        run: |
-          set -o pipefail
-          npm run live-verify:context-fields 2>&1 | tee live-verify-context-fields-output.log
+        run: node scripts/live-step.mjs --log live-verify-context-fields-output.log -- npm run live-verify:context-fields
 
       - name: 📤 Upload artifacts
         if: always()

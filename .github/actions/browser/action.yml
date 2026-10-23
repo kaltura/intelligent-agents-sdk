@@ -1,0 +1,37 @@
+name: Playwright browser
+description: Install one Playwright browser and its system packages, with apt retries and up to 3 tries.
+inputs:
+  engine:
+    description: chromium, firefox or webkit.
+    required: true
+  cache:
+    description: Cache the browser download between runs ('true' or 'false').
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too.
+    - shell: bash
+      run: |
+        printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+          | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+
+    - if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ inputs.engine }}-${{ hashFiles('package-lock.json') }}
+
+    - shell: bash
+      env:
+        ENGINE: ${{ inputs.engine }}
+      run: |
+        for i in 1 2 3; do
+          if timeout 300 npx playwright install --with-deps "$ENGINE"; then exit 0; fi
+          if [ "$i" -lt 3 ]; then
+            echo "::warning title=Browser install retried::Try $i of 3 to install $ENGINE failed. Trying again."
+            sleep $((i * 15))
+          fi
+        done
+        echo "::error title=Browser install failed::$ENGINE failed to install 3 times."
+        exit 1

@@ -108,14 +108,15 @@
  *   --no-budgets             report the KPIs without failing on them
  *   --out DIR --keep --agent-json PATH
  *
- * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md.
+ * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md, plus
+ * <runId>-run<N>-events.json (the page's event log, redacted) for every run that fails.
  * No ids, tokens or secrets are written to them.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   bootstrap, Report, mdTable, stats, management, ensureAgent, verifyDeleted, mintPageInit, startServer, resourceHints, SOCKET_IO_CDN, repoRoot,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, sleep, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, agentReply, dumpEvents, sleep, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -334,7 +335,7 @@ try {
       const isReply = (/** @type {any} */ d) => (v.kickoff ? !isOpeningSpeechId(d?.speechId) : typeof d?.text === 'string' && d.text.trim() !== '');
       let evs;
       if (v.kickoff || v.spoken) {
-        ({ events: evs } = await waitFor(page, (e) => find(e, 'speechChunk', { where: isReply }), 30_000, 'first spoken words'));
+        ({ events: evs } = await waitFor(page, (e) => agentReply(e, isReply), 30_000, 'first spoken words'));
       } else {
         ({ events: evs } = await waitFor(page, (e) => find(e, 'avatarStopTalking'), 30_000, 'silent opening end'));
       }
@@ -342,7 +343,14 @@ try {
       const resolved = find(evs, 'connect:resolved');
       const openingStop = find(evs, 'avatarStopTalking', { from: start.index });
       const openingFinished = find(evs, 'socket:in', { from: start.index, where: (d) => d.ev === 'stvFinishedTalking' });
+      // A reply can arrive as text without speech chunks: wait a moment for chunks, then
+      // measure first words only from a real chunk, so the KPI never mixes in text timing.
+      if (v.kickoff || v.spoken) await waitFor(page, (e) => find(e, 'speechChunk', { where: isReply }), 3_000, 'first speech chunk').then((r) => { evs = r.events; }).catch(() => {});
       const firstChunk = find(evs, 'speechChunk', { where: isReply });
+      if ((v.kickoff || v.spoken) && !firstChunk) {
+        run.noSpeechChunks = true;
+        report.note(`${tag}: reply arrived as text without speech chunks`, 'first-words timing not measured for this run');
+      }
       // The talk event that starts the speech we measure: the reply's for a kickoff, the opening's otherwise.
       const talkStart = v.kickoff
         ? find(evs, 'avatarStartTalking', { from: openingStop ? openingStop.index + 1 : start.index })
@@ -433,7 +441,8 @@ try {
       if (v.kickoff) {
         report.check(`${tag}: kickoff sent ≤ 50 ms after opening stvFinishedTalking`, run.kickoffAfterReleaseMs !== null && run.kickoffAfterReleaseMs >= 0 && run.kickoffAfterReleaseMs <= 50, { kickoffAfterReleaseMs: run.kickoffAfterReleaseMs });
         report.check(`${tag}: exactly one text sent (the kickoff)`, run.textsSent === 1, { textsSent: run.textsSent });
-        report.check(`${tag}: first speechChunk is the reply, not the opening`, !!firstChunk && !isOpeningSpeechId(firstChunk.detail?.speechId), { speechId: firstChunk?.detail?.speechId });
+        const reply = firstChunk ?? agentReply(evs, isReply);
+        report.check(`${tag}: the first reply is the agent's answer, not the opening`, !!reply && !isOpeningSpeechId(reply.detail?.speechId), { speechId: reply?.detail?.speechId, via: reply?.type });
       } else {
         report.check(`${tag}: no text sent without a kickoff`, run.textsSent === 0, { textsSent: run.textsSent });
       }
@@ -452,7 +461,11 @@ try {
         if (ctxRunning) report.check(`${tag}: sound heard after avatarStartTalking`, run.talkToSoundMs !== null, { talkToSoundMs: run.talkToSoundMs, spans: run.soundSpans });
         else report.note(`${tag}: analyser not running, audibility not measured`, { analyser: run.analyser, firstAudioPacketMs: run.firstAudioPacketMs });
       }
-      const spokenText = (/** @type {(id:any)=>boolean} */ pick) => all(evs, 'speechChunk', (d) => pick(d?.speechId) && typeof d?.text === 'string').map((e) => e.detail.text).join('').replace(/\s+/g, ' ').trim();
+      const spokenText = (/** @type {(id:any)=>boolean} */ pick) => {
+        const of = (/** @type {string} */ type, /** @type {(d:any)=>boolean} */ more = () => true) => all(evs, type, (d) => pick(d?.speechId) && typeof d?.text === 'string' && more(d)).map((e) => e.detail.text);
+        const chunks = of('speechChunk');
+        return (chunks.length ? chunks : of('transcript', (d) => d.type === 'final')).join('').replace(/\s+/g, ' ').trim();
+      };
       if (v.expectInOpening) {
         const text = spokenText(isOpeningSpeechId);
         report.check(`${tag}: the scripted opening rendered the client variable`, text.includes(v.expectInOpening), { text });
@@ -495,6 +508,7 @@ try {
     } catch (err) {
       run.error = String(/** @type {any} */ (err)?.message || err);
       report.check(`${tag}: completed`, false, { error: run.error, pageErrors: sink.pageErrors.slice(0, 5) });
+      await dumpEvents(outDir, runId, `run${i}`, sink.pages);
     } finally {
       const problems = netProblems(sink.network);
       if (problems.length) report.note(`${tag}: HTTP requests that failed or returned 4xx/5xx`, problems.slice(0, 10));

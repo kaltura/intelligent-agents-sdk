@@ -193,10 +193,12 @@ async function runVerify() {
     check('2-shared-secret-auth', field(r2.text, 'AUTHTAIL') === sharedToken.slice(-6), { text: snippet(r2.text), expectedTail: sharedToken.slice(-6) });
 
     // 11: stateful tool — counter increments correctly across two sequential
-    // calls in the same thread.
+    // calls in the same thread. The server keeps the count, so a re-run of this
+    // phase starts above 1: check the step, not the start value.
     const r11a = await kaltura.converseOnce(intellectA, 'Please increment the counter.', { threadId: r1.threadId });
     const r11b = await kaltura.converseOnce(intellectA, 'Please increment the counter again.', { threadId: r1.threadId });
-    check('11-stateful-tool-counter', field(r11a.text, 'COUNT') === '1' && field(r11b.text, 'COUNT') === '2', {
+    const count11a = Number(field(r11a.text, 'COUNT'));
+    check('11-stateful-tool-counter', Number.isInteger(count11a) && count11a >= 1 && Number(field(r11b.text, 'COUNT')) === count11a + 1, {
       first: snippet(r11a.text), second: snippet(r11b.text),
     });
 
@@ -239,14 +241,16 @@ async function runVerify() {
     // Each attendeeId below is used exactly once across the whole run — the
     // backend's per-user tool/header cache can replay a stale header if the
     // same userId is reused for a second call within its TTL, so scenario 4
-    // must not reuse scenario 3's attendee ids.
+    // must not reuse scenario 3's attendee ids, and a re-run of this phase
+    // must not reuse the last run's (hence the per-run `tag`).
+    const tag = `${runTag}-${Date.now().toString(36)}`;
     await Promise.all([
-      attendeeCheck('3-per-attendee-auth-text-A', 'txtA', `attendeeA-${runTag}-txt`),
-      attendeeCheck('3-per-attendee-auth-text-B', 'txtB', `attendeeB-${runTag}-txt`),
+      attendeeCheck('3-per-attendee-auth-text-A', 'txtA', `attendeeA-${tag}-txt`),
+      attendeeCheck('3-per-attendee-auth-text-B', 'txtB', `attendeeB-${tag}-txt`),
     ]);
     await Promise.all([
-      attendeeCheck('4-per-attendee-auth-avatar-A', 'avA', `attendeeA-${runTag}-av`, 'avatar_only'),
-      attendeeCheck('4-per-attendee-auth-avatar-B', 'avB', `attendeeB-${runTag}-av`, 'avatar_only'),
+      attendeeCheck('4-per-attendee-auth-avatar-A', 'avA', `attendeeA-${tag}-av`, 'avatar_only'),
+      attendeeCheck('4-per-attendee-auth-avatar-B', 'avB', `attendeeB-${tag}-av`, 'avatar_only'),
     ]);
 
     // 9: full automated OAuth consent + token exchange + authenticated call — text + avatar.
@@ -260,15 +264,16 @@ async function runVerify() {
         // The free trycloudflare.com quick tunnel intermittently drops a direct
         // connection under bursty concurrent load (this call lands after ~10
         // other requests already hit the same tunnel in the preceding seconds).
-        // Retry a couple of times before treating it as a real failure.
+        // The drop can last several seconds, so back off 3 s, 6 s, 9 s, 12 s
+        // before treating it as a real failure.
         let consentRes;
         for (let attempt = 1; ; attempt++) {
           try {
-            consentRes = await fetch(authUrl, { redirect: 'follow' }); // nosemgrep: scripts.harness.no-raw-fetch-bypass
+            consentRes = await fetch(authUrl, { redirect: 'follow', signal: AbortSignal.timeout(15_000) }); // nosemgrep: scripts.harness.no-raw-fetch-bypass
             break;
           } catch (err) {
-            if (attempt >= 3) throw err;
-            await new Promise((r) => setTimeout(r, 500 * attempt));
+            if (attempt >= 5) throw err;
+            await new Promise((r) => setTimeout(r, 3000 * attempt));
           }
         }
         record(`${step}-consent-fetched`, true, { authUrlHost: new URL(authUrl).host, status: consentRes.status });
@@ -313,6 +318,11 @@ async function runCleanup() {
       await kaltura.intellects.delete(id, admin, { confirmPermanent: true });
       record('intellect-delete', true, { id });
     } catch (err) {
+      // Already gone (a re-run after a partial cleanup) is the end state cleanup wants.
+      if (err?.status === 404 || /(^|_)not_found$/.test(String(err?.code ?? ''))) {
+        record('intellect-delete', true, { id, note: 'already deleted' });
+        continue;
+      }
       failed = true;
       record('intellect-delete', false, { id, message: err?.detail || err?.message || String(err) });
     }
