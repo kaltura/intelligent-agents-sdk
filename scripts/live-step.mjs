@@ -29,4 +29,5 @@ const { code } = await runStep({
   waitForBackend: (maxMs) => waitForBackend({ deadlineMs: Math.min(180_000, maxMs), log: (l) => console.log(l) }),
   summaryPath: process.env.GITHUB_STEP_SUMMARY || undefined,
 });
-process.exitCode = code;
+// exit() rather than exitCode: after a cancel, a backend wait may still hold a timer.
+process.exit(code);

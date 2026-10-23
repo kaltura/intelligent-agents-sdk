@@ -75,8 +75,8 @@ function expectCodes(step, findings, want) {
   }
 }
 
-/** A run tag older than an hour, so its run is over. Tags are base-36 `Date.now()`. @param {string|undefined} t */
-const stale = (t) => /^[0-9a-z]{6,10}$/.test(t ?? '') && parseInt(/** @type {string} */ (t), 36) < Date.now() - 3_600_000;
+/** A run tag older than an hour, so its run is over. Tags are base-36 `Date.now()`, 8 characters. @param {string} t */
+const stale = (t) => { const ms = parseInt(t, 36); return ms >= 36 ** 7 && ms < Date.now() - 3_600_000; };
 
 /**
  * Delete what an earlier run of this script left behind when its cleanup failed: rules named `lva_<tag>_*`
@@ -84,13 +84,18 @@ const stale = (t) => /^[0-9a-z]{6,10}$/.test(t ?? '') && parseInt(/** @type {str
  */
 async function sweepStale() {
   const swept = [];
-  for (const r of await kaltura.lifecycle.list(admin.ks).all()) {
-    const m = /^lva_([0-9a-z]+)_/.exec(r.systemName ?? '');
-    if (m && stale(m[1])) await kaltura.lifecycle.delete(r.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`rule ${r.id}`), () => {});
-  }
-  for (const s of await kaltura.insightSettings.list(admin.ks).all()) {
-    const m = /^LVA [a-z]+ ([0-9a-z]+)$/.exec(s.title ?? '');
-    if (m && stale(m[1])) await kaltura.insightSettings.delete(s.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`insight setting ${s.id}`), () => {});
+  try {
+    for (const r of await kaltura.lifecycle.list(admin.ks).all()) {
+      const m = /^lva_([0-9a-z]{8})_/.exec(r.systemName ?? '');
+      if (m && stale(m[1])) await kaltura.lifecycle.delete(r.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`rule ${r.id}`), () => {});
+    }
+    for (const s of await kaltura.insightSettings.list(admin.ks).all()) {
+      const m = /^LVA (?:topic|custom|other|orphan|disabled|gone) ([0-9a-z]{8})$/.exec(s.title ?? '');
+      if (m && stale(m[1])) await kaltura.insightSettings.delete(s.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`insight setting ${s.id}`), () => {});
+    }
+  } catch (err) {
+    // The sweep is housekeeping: a failed list must not fail the run.
+    report.note('0-sweep of earlier leftovers did not finish', String(/** @type {Error} */ (err)?.message ?? err));
   }
   if (swept.length) report.note('0-swept leftovers of an earlier run', swept);
 }

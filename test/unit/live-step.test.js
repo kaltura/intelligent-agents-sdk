@@ -85,9 +85,10 @@ test('runStep: retries 0 runs once and adds no annotation', async () => {
 test('runStep: no retry when a retry as long as the failed attempt would not fit the budget', async () => {
   const dir = tmp();
   const child = flaky(dir, 5);
-  let t = 0;
-  // t0 = 400 s, the attempt runs 800 s → 1200 s: 400 s elapsed + 400 s again > 600 s budget.
-  const s = step(dir, child, { budgetMs: 600_000, now: () => (t += 400_000) });
+  // t0 0, the attempt runs 0 → 200 s, the check reads 300 s: 300 s elapsed fits 450 s,
+  // but 300 s + another 200 s attempt does not.
+  const clock = [0, 0, 200_000, 300_000];
+  const s = step(dir, child, { budgetMs: 450_000, now: () => clock.shift() ?? 300_000 });
   const r = await s.run();
   assert.equal(r.attempts, 1);
   assert.equal(child.runs(), 1);
@@ -115,6 +116,57 @@ test('runStep: a cancel stops the child and skips the retry', async () => {
   assert.deepEqual(r, { code: 1, attempts: 1, passedOnRetry: false });
   assert.match(s.lines[0], /^::notice title=kickoff: no retry::.*cancelled/);
   assert.equal(signals.listenerCount('SIGTERM'), 0);
+});
+
+test('runStep: a cancel during the pause skips the backend wait and the retry', async () => {
+  const dir = tmp();
+  const child = flaky(dir, 5);
+  const signals = new EventEmitter();
+  let waited = 0;
+  const s = step(dir, child, {
+    signals,
+    sleep: () => { signals.emit('SIGTERM', 'SIGTERM'); return new Promise(() => {}); },
+    waitForBackend: async () => { waited++; return { up: false }; },
+  });
+  const r = await s.run();
+  assert.deepEqual(r, { code: 3, attempts: 1, passedOnRetry: false });
+  assert.equal(child.runs(), 1);
+  assert.equal(waited, 0);
+  assert.match(s.lines.at(-1), /^::notice title=kickoff: no retry::.*cancelled/);
+});
+
+test('runStep: a cancel during the backend wait stops it and skips the retry', async () => {
+  const dir = tmp();
+  const child = flaky(dir, 5);
+  const signals = new EventEmitter();
+  const s = step(dir, child, {
+    signals,
+    waitForBackend: () => { signals.emit('SIGTERM', 'SIGTERM'); return new Promise(() => {}); },
+  });
+  const r = await s.run();
+  assert.equal(r.attempts, 1);
+  assert.equal(child.runs(), 1);
+  assert.match(s.lines.at(-1), /^::notice title=kickoff: no retry::.*cancelled/);
+  assert.equal(s.lines.some((l) => /backend unavailable/.test(l)), false);
+});
+
+test('runStep: a cancel during the retry is not reported as failing twice', async () => {
+  const dir = tmp();
+  const signals = new EventEmitter();
+  const counter = join(dir, 'n');
+  writeFileSync(counter, '0');
+  // Run 1 fails at once, run 2 waits to be cancelled.
+  const src = `const fs=require('fs');const n=+fs.readFileSync(${JSON.stringify(counter)},'utf8')+1;fs.writeFileSync(${JSON.stringify(counter)},String(n));`
+    + 'if(n===1)process.exit(3);setTimeout(()=>process.exit(3),10000);';
+  const s = step(dir, { cmd: process.execPath, args: ['-e', src] }, {
+    signals,
+    waitForBackend: async () => { setTimeout(() => signals.emit('SIGTERM', 'SIGTERM'), 300); return { up: true }; },
+  });
+  const r = await s.run();
+  assert.equal(r.attempts, 2);
+  assert.notEqual(r.code, 0);
+  assert.match(s.lines.at(-1), /^::notice title=kickoff: cancelled::/);
+  assert.equal(s.lines.some((l) => /failed twice/.test(l)), false);
 });
 
 test('runStep: no retry when the backend is still down', async () => {

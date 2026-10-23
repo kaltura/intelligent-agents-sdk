@@ -581,6 +581,9 @@ const kpiRows = (/** @type {Variant} */ v, /** @type {Record<string, any>[]} */ 
   if (measured && k.enforce) report.check(`${prefix}: median ${k.label} ≤ ${k.budgetMs} ms`, within === true, detail);
   else if (k.key.startsWith('firstWords') && k.enforce && rows.length && rows.every((r) => r.noSpeechChunks)) report.check(`${prefix}: ${k.label} measured in at least one run`, false, { ...detail, reason: 'no run had speech chunks' });
   else report.note(`${prefix}: ${k.label} ${measured ? 'reported only, budget not enforced' : 'not measured in this run set'}`, detail);
+  // One reply without speech is an outside blip. More is a pattern the median would hide.
+  const noChunks = rows.filter((r) => r.noSpeechChunks).length;
+  if (k.key.startsWith('firstWords') && k.enforce && measured && noChunks > 1) report.check(`${prefix}: at most one reply without speech chunks`, false, { runs: rows.length, withoutChunks: noChunks });
   return { ...(COMPARE ? { arm: v.name } : {}), key: k.key, label: k.label, medianMs: s.median, minMs: s.min, maxMs: s.max, n: s.n, budgetMs: k.budgetMs, enforced: k.enforce && measured, ok: within, status };
 });
 const COMPARE_METRICS = ['connectMs', 'videoFirstFrameMs', 'trackAudioMs', 'openingAfterConnectMs', 'kickoffAfterReleaseMs', 'firstWordsAfterConnectMs', 'soundAfterConnectMs'];

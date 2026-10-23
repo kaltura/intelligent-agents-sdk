@@ -37,10 +37,11 @@ const RECOVER_404_BUDGET_MS = 3500;   // the same plus a new avatar session; CI 
  * The recovery budget on this machine. A slow CI Firefox runner takes up to 2.5 times longer for
  * everything, a plain connect() too, and a retry lands on the same runner. A re-subscribe does less
  * than a connect, so it gets at least the time this run's connect() took, plus `extraMs` for the
- * watchdog tick (and the new avatar session in C3). On a normal runner the fixed budget still applies.
+ * watchdog tick (and the new avatar session in C3). On a normal runner the fixed budget still applies,
+ * and the budget never grows past twice that, so a hung connect() cannot hide a slow recovery.
  * @param {number} floorMs @param {number} extraMs @param {number} connectMs
  */
-const budgetFor = (floorMs, extraMs, connectMs) => Math.max(floorMs, extraMs + connectMs);
+const budgetFor = (floorMs, extraMs, connectMs) => Math.min(2 * floorMs, Math.max(floorMs, extraMs + connectMs));
 const REBUILD_BUDGET_MS = 8000;   // a closed mic peer cannot restart ICE, so the session rebuilds
 const OFFLINE_MS = 6000;
 const BACK_BUDGET_MS = 3000;

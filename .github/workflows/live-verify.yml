@@ -191,11 +191,13 @@ jobs:
         with:
           filters: |
             # Files every live step runs through: the retry wrapper, the backend
-            # check and the install actions.
+            # check, the target and redaction helpers, and the install actions.
             shared: &shared
               - 'scripts/live-step.mjs'
               - 'scripts/lib/live-step.mjs'
               - 'scripts/lib/backend-health.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'scripts/lib/redact.mjs'
               - 'scripts/live-verify-preflight.mjs'
               - '.github/actions/**'
             smoke:
@@ -468,7 +470,7 @@ jobs:
             lifecycle-audit:
               - 'scripts/live-verify-lifecycle-audit.mjs'
               - 'scripts/lifecycle-audit.mjs'
-              - 'scripts/lib/target.mjs'
+              - 'scripts/live-verify-kickoff-shared.mjs'
               - 'src/management/lifecycle.js'
               - 'src/management/lifecycle-rules.js'
               - 'src/management/lifecycle-audit.js'
@@ -511,6 +513,8 @@ jobs:
               - 'scripts/live-verify-hooks-shared.mjs'
               - 'src/experience/session.js'
               - 'src/experience/agent-session.js'
+              - 'src/experience/whep.js'
+              - 'src/experience/avatar-media.js'
               - 'src/core/opening.js'
               - 'src/management/client.js'
               - 'src/core/http.js'
@@ -532,7 +536,6 @@ jobs:
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
-              - 'scripts/lib/target.mjs'
               - 'src/experience/**'
               - 'src/management/client.js'
               - 'src/core/http.js'
@@ -554,7 +557,6 @@ jobs:
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
-              - 'scripts/lib/target.mjs'
               - 'src/experience/**'
               - 'src/management/client.js'
               - 'src/core/http.js'
@@ -576,7 +578,6 @@ jobs:
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
-              - 'scripts/lib/target.mjs'
               - 'src/experience/**'
               - 'src/management/client.js'
               - 'src/core/http.js'
@@ -598,7 +599,6 @@ jobs:
               - 'scripts/live-verify-kickoff.html'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'scripts/live-verify-hooks-shared.mjs'
-              - 'scripts/lib/target.mjs'
               - 'src/experience/**'
               - 'src/management/client.js'
               - 'src/core/http.js'
@@ -1014,7 +1014,8 @@ jobs:
       - name: Resources · MCP servers
         id: live_verify_mcp
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['mcp'] == 'true') }}
-        timeout-minutes: 15
+        # 15 for the verify phase and its retry, plus room for provision, which runs first.
+        timeout-minutes: 20
         env:
           NVP1_AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           NVP1_AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}

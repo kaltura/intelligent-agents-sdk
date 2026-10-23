@@ -67,7 +67,13 @@ export async function runStep(o) {
   const log = createWriteStream(logPath, { flags: 'w' });
   const summary = (/** @type {string} */ line) => { if (o.summaryPath) appendFileSync(o.summaryPath, `\n${line}\n`); };
   let cancelled = false;
-  const onCancel = () => { cancelled = true; };
+  /** @type {() => void} */
+  let markCancelled = () => {};
+  const cancel = new Promise((/** @type {(v?: undefined) => void} */ r) => { markCancelled = r; });
+  const onCancel = () => { cancelled = true; markCancelled(); };
+  // The pause and the backend wait end early on a cancel.
+  const orCancel = (/** @type {Promise<any>} */ p) => Promise.race([p, cancel]);
+  const noticeCancelled = (/** @type {string} */ failure) => out(`::notice title=${label}: no retry::The step failed (${failure}) after the job was cancelled.`);
   signals.on('SIGINT', onCancel);
   signals.on('SIGTERM', onCancel);
   const t0 = now();
@@ -86,7 +92,7 @@ export async function runStep(o) {
       if (attempt === 1) firstFailure = failure;
       if (attempt > retries) break;
       if (cancelled) {
-        out(`::notice title=${label}: no retry::The step failed (${failure}) after the job was cancelled.`);
+        noticeCancelled(failure);
         break;
       }
       // Leave room for a retry that takes as long as the attempt that failed.
@@ -96,13 +102,17 @@ export async function runStep(o) {
         break;
       }
       out(`::warning title=${label}: retrying::The step failed (${failure}). Retrying once in ${Math.round(pauseMs / 1000)} s.`);
-      await sleep(pauseMs);
-      if (o.waitForBackend && !(await o.waitForBackend(Math.max(0, left()))).up) {
+      await orCancel(sleep(pauseMs));
+      const health = cancelled || !o.waitForBackend ? null : await orCancel(o.waitForBackend(Math.max(0, left())));
+      if (cancelled) {
+        noticeCancelled(failure);
+        break;
+      }
+      if (health && !health.up) {
         out(`::error title=${label}: backend unavailable::The backend did not answer, so the step was not retried.`);
         summary(`> [!WARNING]\n> **${label}** failed and was not retried: the backend did not answer.`);
         break;
       }
-      if (cancelled) break;
     }
   } finally {
     signals.off('SIGINT', onCancel);
@@ -113,6 +123,8 @@ export async function runStep(o) {
   if (passedOnRetry) {
     out(`::warning title=${label}: passed on retry::The first attempt failed (${firstFailure}). Its log is at the top of ${logPath} in the artifacts.`);
     summary(`> [!WARNING]\n> **${label}** passed on retry. The first attempt failed (${firstFailure}). Its log is at the top of \`${logPath}\` in the artifacts.`);
+  } else if (code !== 0 && attempt > 1 && cancelled) {
+    out(`::notice title=${label}: cancelled::The retry was stopped by a cancel (first attempt: ${firstFailure}).`);
   } else if (code !== 0 && attempt > 1) {
     out(`::error title=${label}: failed twice::Both attempts failed (first: ${firstFailure}). This is not a one-off blip.`);
   }
