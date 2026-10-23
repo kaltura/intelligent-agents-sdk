@@ -12,11 +12,12 @@ runs:
   steps:
     # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too:
     # a download with no data for 30 s fails and is retried, and a held dpkg lock is waited for.
+    # The zzz- name sorts after the runner image's own apt retry file, so these values win.
     - shell: bash
       run: |
         printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' 'DPkg::Lock::Timeout "240";' \
           'APT::Keep-Downloaded-Packages "true";' 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
-          | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+          | sudo tee /etc/apt/apt.conf.d/zzz-ci-retries > /dev/null
 
     - if: inputs.cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -25,8 +26,9 @@ runs:
         key: playwright-${{ runner.os }}-${{ inputs.engine }}-${{ hashFiles('package-lock.json') }}
 
     # Mirrors are sometimes slow without stalling (a few KB/s), which no timeout catches. Caching the
-    # system packages skips the mirror on most runs. apt checks each cached file against its index,
-    # so a package the runner image has moved past is downloaded again.
+    # system packages skips the mirror on most runs. apt reuses a cached file only when its name, which
+    # holds the version, and its size match the index, so a newer package is downloaded again. Like the
+    # browser cache above, only this repository's own runs can write this cache.
     - if: inputs.cache == 'true'
       id: image
       shell: bash
@@ -65,8 +67,12 @@ runs:
 
     - if: inputs.cache == 'true' && steps.debs.outputs.cache-hit != 'true'
       shell: bash
+      # Keep only the versions now installed, so debs from an older runner image are dropped.
       run: |
+        rm -rf "$HOME/.cache/apt-debs"
         mkdir -p "$HOME/.cache/apt-debs"
-        if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
-          cp /var/cache/apt/archives/*.deb "$HOME/.cache/apt-debs/"
-        fi
+        for f in /var/cache/apt/archives/*.deb; do
+          [ -e "$f" ] || continue
+          read -r pkg ver < <(dpkg-deb -W --showformat='${Package} ${Version}\n' "$f")
+          if [ "$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)" = "$ver" ]; then cp "$f" "$HOME/.cache/apt-debs/"; fi
+        done
