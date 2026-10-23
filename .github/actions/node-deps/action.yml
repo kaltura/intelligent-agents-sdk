@@ -1,0 +1,33 @@
+name: Node and npm dependencies
+description: Set up Node.js and run npm ci, with short network timeouts and up to 3 tries.
+inputs:
+  node-version:
+    description: Node.js version.
+    default: '24'
+  cache:
+    description: Cache the npm download folder between runs. Set to '' to turn it off.
+    default: npm
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.cache }}
+
+    # npm waits 5 minutes on a stalled request by default, and the audit request has hung that long.
+    # Skip the audit, give up on a stalled request after 60 s, and try the whole install up to 3 times.
+    - shell: bash
+      env:
+        npm_config_fetch_timeout: '60000'
+        npm_config_fetch_retries: '4'
+      run: |
+        for i in 1 2 3; do
+          if timeout 180 npm ci --no-audit --no-fund --prefer-offline; then exit 0; fi
+          if [ "$i" -lt 3 ]; then
+            echo "::warning title=npm ci retried::Try $i of 3 failed. Trying again."
+            sleep $((i * 10))
+          fi
+        done
+        echo "::error title=npm ci failed::npm ci failed 3 times."
+        exit 1

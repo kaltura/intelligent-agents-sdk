@@ -33,7 +33,7 @@
  * A model-dependent check retries up to 3 times on fresh sessions. Artifacts: see live-verify-opening-phrase.mjs.
  */
 import {
-  bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,
+  bootstrap, Report, mdTable, management, ensureAgent, undoOnThrow, verifyDeleted, mintPageInit, startServer,
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, isOpeningSpeechId, sleep,
 } from './live-verify-kickoff-shared.mjs';
 import { tools } from '../src/management/tools.js';
@@ -63,8 +63,8 @@ const agent = await ensureAgent(kaltura, admin.ks, {
 if (agent.reused) await kaltura.intellectConfig.setOpeningPhrase(agent.configId, 'Hello there.', admin.ks);
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent');
 
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
+const { server, origin } = await undoOnThrow(() => startServer(() => mintPageInit(kaltura, agent, target.genieUrl)), () => agent.cleanup());
+const browser = await undoOnThrow(() => launchBrowser(choice), () => { server.close(); return agent.cleanup(); });
 report.note('setup', SETUP);
 
 const made = { skills: [], tools: [] };

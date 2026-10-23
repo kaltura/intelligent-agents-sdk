@@ -609,6 +609,51 @@ export function find(evs, type, opts = {}) {
   return null;
 }
 
+/**
+ * Await `step()`. If it throws, await `undo()` (its own error is ignored) and rethrow.
+ * Use it for the setup after `ensureAgent()`, so a server or browser launch failure
+ * still deletes the throwaway agent.
+ * @template T @param {() => Promise<T>} step @param {() => unknown} undo @returns {Promise<T>}
+ */
+export async function undoOnThrow(step, undo) {
+  try {
+    return await step();
+  } catch (err) {
+    await Promise.resolve().then(undo).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * First sign of an agent reply at or after `from`: a `speechChunk` or an agent `transcript`
+ * final that passes `where`, whichever comes first. The server can send a reply's text
+ * without speech chunks (seen after a barge-in), so waiting on chunks alone fails a
+ * working reply. The returned event's `type` says which one it was.
+ * @param {HarnessEvent[]} evs @param {(d:any)=>boolean} where @param {number} [from]
+ */
+export function agentReply(evs, where, from = 0) {
+  const chunk = find(evs, 'speechChunk', { from, where });
+  const final = find(evs, 'transcript', { from, where: (d) => d?.type === 'final' && where(d) });
+  if (!chunk || !final) return chunk ?? final;
+  return final.index < chunk.index ? final : chunk;
+}
+
+/**
+ * Write every open page's event log to `<outDir>/<runId>-<id>-events.json`, redacted.
+ * @param {string} outDir @param {string} runId @param {string} id @param {import('playwright').Page[]} pages
+ */
+export async function dumpEvents(outDir, runId, id, pages) {
+  const logs = [];
+  for (const page of pages) {
+    if (page.isClosed()) continue;
+    try { logs.push(await page.evaluate(() => /** @type {any} */ (window).__events.slice())); } catch { /* page gone */ }
+  }
+  if (!logs.length) return;
+  const file = resolve(outDir, `${runId}-${id}-events.json`);
+  writeFileSync(file, redact(JSON.stringify(logs, null, 1)));
+  console.log(`[events] ${id}: ${file}`);
+}
+
 /** All events of `type` (optionally filtered). @param {HarnessEvent[]} evs @param {string} type @param {(d:any)=>boolean} [where] */
 export function all(evs, type, where) {
   return evs.filter((e) => e.type === type && (!where || where(e.detail)));

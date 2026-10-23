@@ -36,11 +36,9 @@
  * scenario, or for all of them with --dump-events. Tokens and URL query strings
  * are redacted; no ids or secrets are written.
  */
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
-  bootstrap, Report, mdTable, management, ensureAgent, mintPageInit, startServer,
-  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING, SILENT_OPENING_LABEL,
+  bootstrap, Report, mdTable, management, ensureAgent, undoOnThrow, mintPageInit, startServer,
+  browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, agentReply, dumpEvents, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING, SILENT_OPENING_LABEL,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 
@@ -60,8 +58,8 @@ const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify
 const agent = await ensureAgent(kaltura, admin.ks, { agentJson: typeof args['agent-json'] === 'string' ? args['agent-json'] : undefined, keep: !!args.keep });
 report.note('agent', agent.reused ? 'reused --agent-json ids' : 'provisioned throwaway agent with SILENT_OPENING');
 
-const { server, origin } = await startServer(() => mintPageInit(kaltura, agent, target.genieUrl));
-const browser = await launchBrowser(choice);
+const { server, origin } = await undoOnThrow(() => startServer(() => mintPageInit(kaltura, agent, target.genieUrl)), () => agent.cleanup());
+const browser = await undoOnThrow(() => launchBrowser(choice), () => { server.close(); return agent.cleanup(); });
 report.note('setup', SETUP);
 
 // ---------------------------------------------------------------------------
@@ -73,8 +71,8 @@ report.note('setup', SETUP);
 const ev = (/** @type {import('playwright').Page} */ page, /** @type {string} */ fn, /** @type {any} */ arg) =>
   callHook(page, fn, arg);
 
-/** First reply chunk (any speechChunk on a non-opening speech id) at or after `from`. */
-const replyChunk = (/** @type {Ev[]} */ evs, from = 0) => find(evs, 'speechChunk', { from, where: (d) => !isOpeningSpeechId(d?.speechId) });
+/** First agent reply (speechChunk or transcript final) on a non-opening speech id at or after `from`. */
+const firstReply = (/** @type {Ev[]} */ evs, from = 0) => agentReply(evs, (d) => !isOpeningSpeechId(d?.speechId), from);
 /** Outgoing kickoff frames. */
 const kickoffFrames = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) => d.ev === 'onTextEntered' && typeof d.text === 'string' && d.text.includes(KICKOFF));
 /** User-echo transcripts carrying the kickoff text. */
@@ -93,7 +91,7 @@ async function connectAndReply(/** @type {import('playwright').Page} */ page, /*
   const connect = await ev(page, 'testConnect');
   report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
   if (!connect.ok) throw new Error(`connect failed: ${connect.code} ${connect.message}`);
-  const { events: evs } = await waitFor(page, (e) => replyChunk(e), REPLY_TIMEOUT, 'first reply speechChunk');
+  const { events: evs } = await waitFor(page, (e) => firstReply(e), REPLY_TIMEOUT, 'first reply');
   return evs;
 }
 
@@ -108,10 +106,10 @@ async function speakAndReply(/** @type {import('playwright').Page} */ page, /** 
   const before = await ev(page, 'testState');
   const beforeEvs = await page.evaluate(() => /** @type {any} */ (window).__events.length);
   const sent = await ev(page, 'testSpeak', text);
-  const { events: evs } = await waitFor(page, (e) => replyChunk(e, beforeEvs), REPLY_TIMEOUT, `reply to ${label}`);
+  const { events: evs } = await waitFor(page, (e) => firstReply(e, beforeEvs), REPLY_TIMEOUT, `reply to ${label}`);
   const call = find(evs, 'speak:call', { from: beforeEvs });
-  const chunk = replyChunk(evs, beforeEvs);
-  report.check(`${id}: speak() ${label} → reply`, sent === true && !!chunk, { sent, stateBefore: before.state, replyMs: chunk && call ? chunk.tRel - call.tRel : null });
+  const chunk = firstReply(evs, beforeEvs);
+  report.check(`${id}: speak() ${label} → reply`, sent === true && !!chunk, { sent, stateBefore: before.state, replyMs: chunk && call ? chunk.tRel - call.tRel : null, via: chunk?.type });
   return evs;
 }
 
@@ -125,23 +123,6 @@ function commonChecks(/** @type {string} */ id, /** @type {Ev[]} */ evs, /** @ty
 /** Sum of inbound audio energy across peers for one stats sample. */
 const energy = (/** @type {any} */ sample) => (sample?.detail?.inbound || []).reduce((s, r) => s + (r.totalAudioEnergy || 0), 0);
 const hasInbound = (/** @type {any} */ sample) => (sample?.detail?.inbound || []).length > 0;
-
-/**
- * Write every page's recorded event log to `<outDir>/<runId>-<id>-events.json`,
- * redacted. Runs for every failed scenario, and for all of them with --dump-events.
- * @param {string} id @param {import('playwright').Page[]} pages
- */
-async function dumpEvents(id, pages) {
-  const logs = [];
-  for (const page of pages) {
-    if (page.isClosed()) continue;
-    try { logs.push(await page.evaluate(() => /** @type {any} */ (window).__events.slice())); } catch { /* page gone */ }
-  }
-  if (!logs.length) return;
-  const file = resolve(outDir, `${runId}-${id}-events.json`);
-  writeFileSync(file, redact(JSON.stringify(logs, null, 1)));
-  console.log(`[events] ${id}: ${file}`);
-}
 
 // ---------------------------------------------------------------------------
 // scenarios
@@ -160,8 +141,8 @@ const SCENARIOS = {
       report.check(`${id}: connect() resolved`, connect.ok, connect.ok ? undefined : connect);
       if (!connect.ok) return;
       await page.evaluate(() => /** @type {any} */ (window).sampleStats('connect-resolved'));
-      let { events: evs } = await waitFor(page, (e) => replyChunk(e), REPLY_TIMEOUT, 'first reply speechChunk');
-      const firstChunk = replyChunk(evs);
+      let { events: evs } = await waitFor(page, (e) => firstReply(e), REPLY_TIMEOUT, 'first reply');
+      const firstChunk = firstReply(evs);
       await replyEnd(page, firstChunk.index);
       // The harness records a stats sample only after an async getStats(), so it lands a
       // few ms after the avatarStopTalking event itself. Wait for the sample, not the event.
@@ -215,7 +196,7 @@ const SCENARIOS = {
         const label = echo ? 'echo:true' : 'default';
         const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF, echo: echo ? 1 : undefined }, sink);
         const first = await connectAndReply(page, `${id} ${label}`);
-        await replyEnd(page, replyChunk(first).index);
+        await replyEnd(page, firstReply(first).index);
         // the user echo (agentTurnToTalk) arrives before the reply; give a short grace anyway
         await sleep(500);
         const evs = await page.evaluate(() => /** @type {any} */ (window).__events.slice());
@@ -240,7 +221,7 @@ const SCENARIOS = {
       report.check(`${id}: no kickoff before acknowledgeDisclosure()`, kickoffFrames(evs).length === 0 && !find(evs, 'avatarStartTalking'), { frames: kickoffFrames(evs).length, kickoff: await ev(page, 'testKickoff') });
       const ackAt = evs.length;
       await ev(page, 'testAck');
-      ({ events: evs } = await waitFor(page, (e) => replyChunk(e, ackAt), REPLY_TIMEOUT, 'reply after ack'));
+      ({ events: evs } = await waitFor(page, (e) => firstReply(e, ackAt), REPLY_TIMEOUT, 'reply after ack'));
       const ack = find(evs, 'ack:call');
       const frame = kickoffFrames(evs)[0];
       report.check(`${id}: kickoff sent after ack`, !!frame && !!ack && frame.tRel >= ack.tRel, { afterAckMs: frame && ack ? frame.tRel - ack.tRel : null });
@@ -255,7 +236,7 @@ const SCENARIOS = {
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
       let evs = await connectAndReply(page, id);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const pauseAt = evs.length;
       await ev(page, 'testPause');
       await sleep(1500);
@@ -279,7 +260,7 @@ const SCENARIOS = {
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
       let evs = await connectAndReply(page, id);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const dropAt = evs.length;
       await context.setOffline(true);
       await page.evaluate(() => /** @type {any} */ (window).__sockets.at(-1).io.engine.close());
@@ -309,14 +290,14 @@ const SCENARIOS = {
       if (!connect.ok) return;
       // fire speak() without awaiting: it must be held behind the opening, together with the kickoff
       await page.evaluate((t) => { /** @type {any} */ (window).__speakP = /** @type {any} */ (window).testSpeak(t); }, TYPED);
-      let { events: evs } = await waitFor(page, (e) => replyChunk(e), REPLY_TIMEOUT, 'first reply speechChunk');
+      let { events: evs } = await waitFor(page, (e) => firstReply(e), REPLY_TIMEOUT, 'first reply');
       const imm = find(evs, 'speak:immediate');
       report.check(`${id}: speak() during the opening was held`, imm?.detail?.pending === true, imm?.detail);
       const frames = textsSent(evs);
       report.check(`${id}: one onTextEntered carrying kickoff + typed text`, frames.length === 1 && frames[0].detail.text.includes(KICKOFF) && frames[0].detail.text.includes(TYPED), { frames: frames.length, text: frames[0]?.detail?.text });
       const sent = await page.evaluate(() => /** @type {any} */ (window).__speakP);
       report.check(`${id}: speak() resolved true`, sent === true, { sent });
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       report.check(`${id}: silent opening never surfaces as text`, leaks(evs).length === 0, { leaked: leaks(evs).length });
       await ev(page, 'testDisconnect').catch(() => {});
     },
@@ -327,7 +308,7 @@ const SCENARIOS = {
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'agent-avatar', kickoff: KICKOFF }, sink);
       let evs = await connectAndReply(page, id);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const k1 = await ev(page, 'testKickoff');
       report.check(`${id}: first avatar transport reports kickoff sent`, k1?.sent === true, k1);
       await ev(page, 'testSwitch', 'chat');
@@ -371,7 +352,7 @@ const SCENARIOS = {
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF, mic: 'denied' }, sink);
       let evs = await connectAndReply(page, id);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const warn = find(evs, 'warning', { where: (d) => d?.code === 'mic_permission_denied' });
       report.check(`${id}: one warning mic_permission_denied`, !!warn && all(evs, 'warning', (d) => d?.code === 'mic_permission_denied').length === 1, warn?.detail);
       report.check(`${id}: exactly one getUserMedia call`, (await page.evaluate(() => /** @type {any} */ (window).__gumCalls)) === 1);
@@ -387,7 +368,7 @@ const SCENARIOS = {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF, mic: 'deferred' }, sink);
       let evs = await connectAndReply(page, id);
       report.check(`${id}: no getUserMedia before startMic()`, (await page.evaluate(() => /** @type {any} */ (window).__gumCalls)) === 0);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const at = evs.length;
       await ev(page, 'testStartMic');
       ({ events: evs } = await waitFor(page, (e) => find(e, 'micStarted', { from: at }), 10_000, 'micStarted'));
@@ -405,7 +386,7 @@ const SCENARIOS = {
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
       let evs = await connectAndReply(page, id);
-      evs = await replyEnd(page, replyChunk(evs).index);
+      evs = await replyEnd(page, firstReply(evs).index);
       const media = find(evs, 'mediaReady');
       if (media?.detail?.mode === 'audio') {
         report.check(`${id}: audio mode → reply arrived with one peer connection`, (await page.evaluate(() => /** @type {any} */ (window).__pcs.length)) === 1, { pcs: await page.evaluate(() => /** @type {any} */ (window).__pcs.length) });
@@ -424,14 +405,14 @@ const SCENARIOS = {
       try {
         const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
         let evs = await connectAndReply(page, id);
-        evs = await replyEnd(page, replyChunk(evs).index);
+        evs = await replyEnd(page, firstReply(evs).index);
         const start = find(evs, 'connect:start');
         const openingChunk = find(evs, 'speechChunk', { from: start.index, where: (d) => isOpeningSpeechId(d?.speechId) && typeof d?.text === 'string' && d.text.trim() !== '' });
         const openingFinished = find(evs, 'socket:in', { from: start.index, where: (d) => d.ev === 'stvFinishedTalking' });
         const frame = kickoffFrames(evs)[0];
         report.check(`${id}: opening spoken (speechChunk on the opening id with text)`, !!openingChunk, { text: openingChunk?.detail?.text });
         report.check(`${id}: kickoff sent after the opening finished`, !!frame && !!openingFinished && frame.tRel >= openingFinished.tRel, { afterMs: frame && openingFinished ? frame.tRel - openingFinished.tRel : null });
-        report.check(`${id}: reply on a non-opening speech id`, !!replyChunk(evs, frame ? frame.index : 0));
+        report.check(`${id}: reply on a non-opening speech id`, !!firstReply(evs, frame ? frame.index : 0));
         report.check(`${id}: kickoff on the wire exactly once`, kickoffFrames(evs).length === 1, { frames: kickoffFrames(evs).length });
         await ev(page, 'testDisconnect').catch(() => {});
       } finally {
@@ -444,7 +425,9 @@ const SCENARIOS = {
     name: 'text barge-in mid-reply',
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
-      let evs = await connectAndReply(page, id);
+      await connectAndReply(page, id);
+      // The reply's text can arrive before its speech, so wait until it is playing.
+      let { events: evs } = await waitFor(page, (e) => find(e, 'speechChunk', { where: (d) => !isOpeningSpeechId(d?.speechId) }), REPLY_TIMEOUT, 'reply speechChunk');
       const at = evs.length;
       // speak while the reply is still playing
       await page.evaluate((t) => { /** @type {any} */ (window).__speakP = /** @type {any} */ (window).testSpeak(t); }, 'Stop. Just say OK.');
@@ -455,7 +438,7 @@ const SCENARIOS = {
       report.check(`${id}: interrupted within 1500 ms of speak()`, latency <= 1500, { latencyMs: latency });
       const sent = await page.evaluate(() => /** @type {any} */ (window).__speakP);
       report.check(`${id}: barge-in speak() resolved true`, sent === true, { sent });
-      ({ events: evs } = await waitFor(page, (e) => replyChunk(e, intr.index), REPLY_TIMEOUT, 'reply after barge-in'));
+      ({ events: evs } = await waitFor(page, (e) => firstReply(e, intr.index), REPLY_TIMEOUT, 'reply after barge-in'));
       report.check(`${id}: reply after the barge-in`, true);
       commonChecks(id, evs, { expectEchoes: 0 });
       await ev(page, 'testDisconnect').catch(() => {});
@@ -493,7 +476,7 @@ try {
       if (sink.pageErrors.length) report.note(`${id}: page errors`, sink.pageErrors.slice(0, 5));
       const own = report.checks.slice(before);
       const ok = own.every((c) => c.ok);
-      if (!ok || args['dump-events']) await dumpEvents(id, sink.pages);
+      if (!ok || args['dump-events']) await dumpEvents(outDir, runId, id, sink.pages);
       report.data.scenarios.push({ id, name: sc.name, ok, checks: own.length, ms: Date.now() - t0, error, whep });
       await context.close();
     }
