@@ -124,9 +124,12 @@ try {
   const got = await kaltura.lifecycle.get(ruleId, admin);
   record('lifecycle.get', true, { id: got.id, status: got.status });
 
-  const list = await kaltura.lifecycle.list(admin, { pageSize: 30 });
-  const foundInList = list.some((r) => r.id === ruleId);
-  record('lifecycle.list', foundInList, { count: list.length, foundInList });
+  // Find the rule by its unique systemName, then walk every page, so other rules on the partner cannot push it out of view.
+  const bySystemName = await kaltura.lifecycle.list(admin, { filter: { systemNameEqual: runId } });
+  const everyRule = await kaltura.lifecycle.list(admin).all();
+  const foundInList = everyRule.some((r) => r.id === ruleId);
+  const filterExact = bySystemName.length === 1 && bySystemName[0].id === ruleId;
+  record('lifecycle.list', foundInList && filterExact, { count: everyRule.length, foundInList, filterCount: bySystemName.length, filterExact });
 
   // `origin` is required (0 = standard).
   const matched = await kaltura.lifecycle.match(

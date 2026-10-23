@@ -10,7 +10,8 @@
  * scoped to the throwaway agent, or can never match (the one partner-wide rule
  * filters on a user id that does not exist), so no real conversation is touched.
  *
- *   1  setup               agent stack, 4 insight settings
+ *   0  sweep               delete this script's own leftovers from an earlier run (older than an hour)
+ *   1  setup               agent stack, 6 insight settings
  *   2  clean set           producer rule + email rule: no findings on either
  *   3  planted defects     one rule per code: unscoped_rule, email_on_session_ended, email_unfiltered,
  *                          changed_keys_unproduced, insight_setting_disabled, insight_setting_missing,
@@ -74,9 +75,31 @@ function expectCodes(step, findings, want) {
   }
 }
 
+/** A run tag older than an hour, so its run is over. Tags are base-36 `Date.now()`. @param {string|undefined} t */
+const stale = (t) => /^[0-9a-z]{6,10}$/.test(t ?? '') && parseInt(/** @type {string} */ (t), 36) < Date.now() - 3_600_000;
+
+/**
+ * Delete what an earlier run of this script left behind when its cleanup failed: rules named `lva_<tag>_*`
+ * and insight settings titled `LVA <word> <tag>`, with a tag older than an hour. Nothing else is touched.
+ */
+async function sweepStale() {
+  const swept = [];
+  for (const r of await kaltura.lifecycle.list(admin.ks).all()) {
+    const m = /^lva_([0-9a-z]+)_/.exec(r.systemName ?? '');
+    if (m && stale(m[1])) await kaltura.lifecycle.delete(r.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`rule ${r.id}`), () => {});
+  }
+  for (const s of await kaltura.insightSettings.list(admin.ks).all()) {
+    const m = /^LVA [a-z]+ ([0-9a-z]+)$/.exec(s.title ?? '');
+    if (m && stale(m[1])) await kaltura.insightSettings.delete(s.id, admin.ks, { confirmPermanent: true }).then(() => swept.push(`insight setting ${s.id}`), () => {});
+  }
+  if (swept.length) report.note('0-swept leftovers of an earlier run', swept);
+}
+
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   report.check('admin-token', Boolean(admin.ks));
+
+  await sweepStale();
 
   // 1: setup
   stack = await ensureAgent(kaltura, admin.ks, { brief: 'A scratch agent for a lifecycle audit check. Never talk to it.' });
@@ -87,6 +110,8 @@ try {
     created.settings.push(s.id);
     return s;
   };
+  // TOPIC and CUSTOM stay fixed: the conversationInsightExample preset reads exactly these keys.
+  // Duplicate keys are allowed, and the audit only looks at settings this agent's rules name.
   const sTopic = await mkSetting('TOPIC', `LVA topic ${tag}`);
   const sCustom = await mkSetting('CUSTOM', `LVA custom ${tag}`);
   const sOther = await mkSetting(KEY('O'), `LVA other ${tag}`);
