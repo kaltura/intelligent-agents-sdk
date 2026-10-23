@@ -10,9 +10,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too.
-    # When a try times out, the apt-get it started as root keeps running. The lock timeout makes
-    # the next try wait for it to finish instead of failing at once on the dpkg lock.
+    # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too:
+    # a download with no data for 30 s fails and is retried, and a held dpkg lock is waited for.
     - shell: bash
       run: |
         printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' 'DPkg::Lock::Timeout "240";' \
@@ -27,9 +26,11 @@ runs:
     - shell: bash
       env:
         ENGINE: ${{ inputs.engine }}
+      # No time cap per try: a slow mirror still finishes, and a cap would leave the root apt-get
+      # running with the dpkg lock. The calling step's timeout-minutes bounds all three tries.
       run: |
         for i in 1 2 3; do
-          if timeout 300 npx playwright install --with-deps "$ENGINE"; then exit 0; fi
+          if npx playwright install --with-deps "$ENGINE"; then exit 0; fi
           if [ "$i" -lt 3 ]; then
             echo "::warning title=Browser install retried::Try $i of 3 to install $ENGINE failed. Trying again."
             sleep $((i * 15))
