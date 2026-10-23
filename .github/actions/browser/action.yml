@@ -11,9 +11,11 @@ runs:
   using: composite
   steps:
     # Ubuntu mirrors sometimes stall. These settings apply to every later apt-get in the job too.
+    # When a try times out, the apt-get it started as root keeps running. The lock timeout makes
+    # the next try wait for it to finish instead of failing at once on the dpkg lock.
     - shell: bash
       run: |
-        printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+        printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' 'DPkg::Lock::Timeout "240";' \
           | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
 
     - if: inputs.cache == 'true'
