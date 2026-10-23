@@ -425,7 +425,9 @@ const SCENARIOS = {
     name: 'text barge-in mid-reply',
     async run({ context, sink, id }) {
       const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
-      let evs = await connectAndReply(page, id);
+      await connectAndReply(page, id);
+      // The reply's text can arrive before its speech, so wait until it is playing.
+      let { events: evs } = await waitFor(page, (e) => find(e, 'speechChunk', { where: (d) => !isOpeningSpeechId(d?.speechId) }), REPLY_TIMEOUT, 'reply speechChunk');
       const at = evs.length;
       // speak while the reply is still playing
       await page.evaluate((t) => { /** @type {any} */ (window).__speakP = /** @type {any} */ (window).testSpeak(t); }, 'Stop. Just say OK.');
