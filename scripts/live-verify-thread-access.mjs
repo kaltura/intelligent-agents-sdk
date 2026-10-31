@@ -15,6 +15,8 @@
  *
  * Run: TARGET=nvq2:1 node scripts/live-verify-thread-access.mjs
  * Creates one scratch intellect and one thread, deletes both at the end.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

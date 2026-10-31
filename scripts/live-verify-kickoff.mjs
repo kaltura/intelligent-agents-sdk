@@ -35,6 +35,8 @@
  * plus <runId>-<id>-events.json (the page's full event log) for every failed
  * scenario, or for all of them with --dump-events. Tokens and URL query strings
  * are redacted; no ids or secrets are written.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, undoOnThrow, mintPageInit, startServer,

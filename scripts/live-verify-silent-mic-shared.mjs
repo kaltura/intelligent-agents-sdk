@@ -12,6 +12,8 @@
  *
  * Shared by scripts/live-verify-set-forced-language.mjs and
  * scripts/live-verify-context-fields.mjs.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync } from 'node:fs';
 

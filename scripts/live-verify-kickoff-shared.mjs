@@ -11,6 +11,8 @@
  *
  * Nothing here is imported by the SDK. Credentials come from the environment
  * or a .env file; none are written to the artifacts.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';

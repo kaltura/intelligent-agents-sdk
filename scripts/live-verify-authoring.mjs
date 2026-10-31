@@ -40,6 +40,8 @@
  *
  * Throwaway resources only (intellects, tools, one skill), removed in `finally`.
  * Model-dependent checks retry once. Credentials: see scripts/lib/target.mjs.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

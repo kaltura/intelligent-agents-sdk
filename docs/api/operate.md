@@ -170,7 +170,7 @@ Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]`
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. `threads.delete` logs one warning naming the ids the response left out. It checks only that response, so it never re-reads the threads.
+**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. An empty list, or an id that is not a non-empty string, throws `validation_error` before any request. `threads.delete` logs one warning naming the ids the response left out. It checks only that response, so it never re-reads the threads.
 
 **Deleted threads.** A deleted thread is missing from the default `threads.list`. `filter: { statusEquals: 1 }` returns deleted threads. `threads.get` of a deleted thread answers 404.
 

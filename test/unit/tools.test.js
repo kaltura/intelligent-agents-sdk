@@ -193,6 +193,29 @@ test('api treats headers:null as absent', () => {
   assert.equal(api(apiCfg({ request: { url: URL, headers: null } })).request.headers, undefined);
 });
 
+test('api rejects a non-string params value and names the key', () => {
+  for (const [v, shown] of [[1, 'number'], [true, 'boolean'], [null, 'null'], [['a'], 'array'], [{ a: 1 }, 'object']]) {
+    assert.throws(
+      () => api(apiCfg({ request: { url: URL, params: { page: v } } })),
+      (e) => e.code === 'bad_request' && e.detail.includes('request.params') && e.detail.includes('"page"') && e.detail.includes(shown),
+      shown,
+    );
+  }
+  assert.throws(() => api(apiCfg({ request: { url: URL, params: { ok: 'x', n: 2 } } })), (e) => e.code === 'bad_request' && e.detail.includes('"n"'));
+});
+
+test('api accepts string params, empty params, and params:null', () => {
+  assert.deepEqual(api(apiCfg({ request: { url: URL, params: { page: '1', q: '' } } })).request.params, { page: '1', q: '' });
+  assert.deepEqual(api(apiCfg({ request: { url: URL, params: {} } })).request.params, {});
+  assert.equal(api(apiCfg({ request: { url: URL, params: null } })).request.params, null, 'a stored null still round-trips');
+  assert.equal(api(apiCfg({ request: { url: URL } })).request.params, undefined);
+});
+
+test('api still rejects params that is an array or a string', () => {
+  assert.throws(() => api(apiCfg({ request: { url: URL, params: ['a'] } })), (e) => e.code === 'bad_request');
+  assert.throws(() => api(apiCfg({ request: { url: URL, params: 'a=1' } })), (e) => e.code === 'bad_request');
+});
+
 test('api builder rejects bad dot-path in responseMapping with bad_jsonpath', () => {
   let err;
   try { api(apiCfg({ responseMapping: { v: '$.data.value' } })); } catch (e) { err = e; } // leading $ not allowed

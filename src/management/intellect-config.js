@@ -138,7 +138,8 @@ export const THINKING_LEVELS = Object.freeze(['none', 'minimal', 'low', 'medium'
  */
 export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_js']);
 
-const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'include_thoughts', 'temperature']);
+const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'include_thoughts', 'temperature', 'provider']);
+const MODEL_PROVIDERS = Object.freeze(['vertex', 'bedrock']);
 const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
@@ -421,12 +422,13 @@ export class IntellectConfig {
    * client-side: `model_id` a non-empty string (known ids: {@link MODEL_IDS}),
    * `thinking_level` in {@link THINKING_LEVELS} (not every model uses it),
    * `include_thoughts` a boolean, `max_output_tokens` a positive integer,
-   * `temperature` a number in [0, 1]. Unknown keys are rejected.
+   * `temperature` a number in [0, 1], `provider` `'vertex'` or `'bedrock'` (the
+   * cloud that serves the model). Unknown keys are rejected.
    * With the `avatar_show_content` capability on, unset `thinking_level`
    * defaults to `low` and unset `max_output_tokens` to 4096.
    * WRITE, idempotent.
    * @param {number} configId
-   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'none'|'minimal'|'low'|'medium'|'high', include_thoughts?:boolean, temperature?:number}|null} config
+   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'none'|'minimal'|'low'|'medium'|'high', include_thoughts?:boolean, temperature?:number, provider?:'vertex'|'bedrock'}|null} config
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -435,7 +437,7 @@ export class IntellectConfig {
     requireInt(configId, 'intellectConfig.setModelConfiguration configId');
     if (config !== null) {
       if (!config || typeof config !== 'object' || Array.isArray(config)) {
-        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature? } object or null.');
+        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature?, provider? } object or null.');
       }
       for (const k of Object.keys(config)) {
         if (!MODEL_CONFIGURATION_KEYS.includes(k)) {
@@ -453,6 +455,9 @@ export class IntellectConfig {
       }
       if (config.include_thoughts !== undefined && typeof config.include_thoughts !== 'boolean') {
         throw bad(`intellectConfig.setModelConfiguration: include_thoughts must be true or false, got ${JSON.stringify(config.include_thoughts)}.`);
+      }
+      if (config.provider !== undefined && !MODEL_PROVIDERS.includes(config.provider)) {
+        throw bad(`intellectConfig.setModelConfiguration: provider must be one of ${MODEL_PROVIDERS.join('/')}, got ${JSON.stringify(config.provider)}.`);
       }
       if (config.temperature !== undefined && (typeof config.temperature !== 'number' || Number.isNaN(config.temperature) || config.temperature < 0 || config.temperature > 1)) {
         throw bad(`intellectConfig.setModelConfiguration: temperature must be a number between 0 and 1, got ${JSON.stringify(config.temperature)}.`);

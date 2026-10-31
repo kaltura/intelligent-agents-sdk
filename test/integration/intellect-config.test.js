@@ -590,7 +590,30 @@ test('intellectConfig.setModelConfiguration rejects bad values BEFORE any networ
   await bad({ temperature: NaN }, /temperature/);
   await bad({ temperature: '0.5' }, /temperature/);
   await bad({ top_p: 0.9 }, /unknown key/i);
+  await bad({ provider: 'bogus' }, /provider must be one of vertex\/bedrock/);
+  await bad({ provider: 'Vertex' }, /provider must be one of vertex\/bedrock/);
+  await bad({ provider: '' }, /provider must be one of vertex\/bedrock/);
+  await bad({ provider: null }, /provider must be one of vertex\/bedrock/);
+  await bad({ provider: 1 }, /provider must be one of vertex\/bedrock/);
+  await bad({ provider: ['vertex'] }, /provider must be one of vertex\/bedrock/);
+  await bad({ model_id: 'gemini-2.5-flash', provider: 'bogus' }, /provider/);
+  await bad({ providers: 'vertex' }, /unknown key "providers"/i);
   assert.equal(f.calls.length, 0);
+});
+
+test('intellectConfig.setModelConfiguration accepts provider vertex or bedrock and sends it with the other keys', async () => {
+  for (const provider of ['vertex', 'bedrock']) {
+    const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+    const config = { model_id: 'gemini-2.5-flash', provider, temperature: 0.3 };
+    const r = await cfg.setModelConfiguration(1481, config, ADMIN);
+    assert.equal(r.applied, true);
+    const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+    assert.deepEqual(sent.model_configuration, config);
+    assert.equal(r.result.model_configuration.provider, provider, 'the update response echoes provider');
+  }
+  const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+  await cfg.setModelConfiguration(1481, { provider: 'bedrock' }, ADMIN);
+  assert.deepEqual(f.calls.find((c) => c.url.includes('/v1/intellect/update')).body.model_configuration, { provider: 'bedrock' }, 'provider alone is a valid config');
 });
 
 test('intellectConfig.setOpeningPhrase writes the Jinja2 phrase; null clears; "" is rejected with a hint', async () => {

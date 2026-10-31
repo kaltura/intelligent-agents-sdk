@@ -490,11 +490,16 @@ export class Threads {
    * response left out. It reads only this response, and only an HTTP 200 with an
    * `objects` array of `{id}`. Any other status or shape is returned as-is with no
    * warning. The warning never throws and never changes the result.
+   * An empty list, or an id that is not a non-empty string, throws `validation_error`
+   * before any request.
    * @param {string[]} threadIds @param {string} ks @param {{confirmPermanent:boolean}} confirm
    */
   async delete(threadIds, ks, confirm) {
     this._.assertUserOrAdmin(ks, 'threads.delete');
     const ids = Array.isArray(threadIds) ? threadIds : [threadIds];
+    if (!ids.length) failValidation('no thread ids', 'threads.delete needs at least one thread id.');
+    const i = ids.findIndex((id) => typeof id !== 'string' || !id);
+    if (i >= 0) failValidation('invalid thread id', `threads.delete takes thread ids as non-empty strings (item ${i} is ${shown(ids[i])}).`);
     requireConfirm(confirm, 'threads.delete', ids.join(','));
     const res = await this._.genie('v1/thread/delete', { thread_ids: ids }, ks);
     warnUndeleted(this._.warn, ids, res);
@@ -916,6 +921,8 @@ export class Knowledge {
    * it for RAG. WRITE — NOT idempotent. Mirrors the Kaltura Knowledge-tab flow
    * exactly: baseentry.add (document) → uploadtoken.add → upload bytes →
    * document.addContent → categoryEntry.add(categoryId). Returns `{entryId, categoryId}`.
+   * Throws `upload_file_type_restricted` (with a hint) when the account restricts
+   * the file type: the server answers HTTP 200 and the SDK raises it as an error.
    * @param {object} opts
    * @param {Blob|File} opts.file
    * @param {string} opts.name
@@ -955,7 +962,8 @@ export class Knowledge {
    * sync for browsability), then attaches the SAME markdown as its own
    * `KalturaMarkdownAsset` via a second, independent upload token. That
    * asset is what makes the content searchable. Returns
-   * `{entryId, categoryId, markdownAssetId}`.
+   * `{entryId, categoryId, markdownAssetId}`. Throws `upload_file_type_restricted`
+   * the same way {@link uploadDocument} does.
    * @param {object} opts
    * @param {string} opts.markdown
    * @param {string} opts.name

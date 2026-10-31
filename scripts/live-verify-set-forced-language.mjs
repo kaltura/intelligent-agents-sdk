@@ -14,6 +14,8 @@
  * with fake-media flags, full teardown in `finally`, post-delete
  * re-verification, artifacts written to live-verify-artifacts/. Only
  * provisions and tears down its own scratch agent.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize, join } from 'node:path';
