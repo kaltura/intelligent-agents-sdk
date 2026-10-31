@@ -83,7 +83,9 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
-The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
+The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error`, and `error.detail` names the failing call.
+
+The Kaltura API (the media calls such as categories, entries and uploads) also answers HTTP 200 with an exception body. A single call throws `api_exception` (`error.status` is 200). Both kinds put the server's error code in `error.title`. Branch on `error.title`, not on the HTTP status.
 
 **Stop a running turn:**
 
@@ -141,7 +143,7 @@ In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalys
 
 `...` = `https://genie.nvp1.ovp.kaltura.com`
 
-**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`, `origin`, `agent_id`.
+**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`, `origin`, `agent_id`. A thread started with an agent token carries that agent's id in `agent_id`. Only a thread started from an intellect alone shows `default`.
 
 **Origin.** Every thread has a numeric `origin`. The list returns only `origin: 0` unless the filter names an origin.
 
@@ -169,6 +171,8 @@ Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]`
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 
 **Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. `threads.delete` logs one warning naming the ids the response left out. It checks only that response, so it never re-reads the threads.
+
+**Deleted threads.** A deleted thread is missing from the default `threads.list`. `filter: { statusEquals: 1 }` returns deleted threads. `threads.get` of a deleted thread answers 404.
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Three more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [management-operations.md § Threads](management-operations.md#threads) for their request shapes.
 
@@ -226,6 +230,8 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 ```
 
 Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
+
+**Rate limit.** Each key can make 250 search calls per minute. The next call returns 429 and throws `rate_limited`, with the `x-ratelimit-*` response headers on `error.headers`.
 
 `opts` passes through five optional tuning params:
 

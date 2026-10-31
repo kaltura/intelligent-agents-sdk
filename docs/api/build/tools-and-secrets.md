@@ -99,6 +99,8 @@ What the builder rejects:
 | No `../` | Use the final path |
 | Redirects are not followed | Point the url at the final location |
 
+**Private addresses.** `mgmt.tools.add` refuses a url that points to a private or loopback address, such as `localhost` or `127.0.0.1`. The server answers 400 and the SDK throws `bad_request`. Use a public host.
+
 **Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true`, see [Converse](../operate.md#converse)) as untrusted input, never as an authorization claim.
 
 ### `csv` tool

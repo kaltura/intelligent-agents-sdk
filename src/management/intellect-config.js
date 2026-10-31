@@ -504,7 +504,8 @@ export class IntellectConfig {
    * `analysis` maps output keys to descriptions; `template` is a template over the
    * `analysis` keys; `content_type` is one of {@link SUMMARY_CONTENT_TYPES}.
    * Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when
-   * `analysis` is unset). The summary reaches the client as a `summary` message
+   * `analysis` is unset). A template the server rejects returns 400
+   * `bad_request`. The summary reaches the client as a `summary` message
    * and is skipped when the thread has no human messages. WRITE, idempotent.
    * @param {number} configId
    * @param {{prompt?:string, analysis?:Record<string,string>, template?:string, content_type?:'text'|'html'|'html_with_js'}|null} config

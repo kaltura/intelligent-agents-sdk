@@ -12,7 +12,7 @@ The server sends `clientConfiguration` once per connect. The SDK keeps it and ex
 | `isScreenShareEnabled` | `false` | Read as `capabilities.screenShare`. `startScreenShare()` and `sendScreenShot()` throw `capability_disabled` when it is `false`. It becomes `true` when the agent's `screenShare` setting is on. |
 | `isCameraAnalysisEnabled` | `false` | Read as `capabilities.cameraAnalysis`. |
 
-The payload also carries `languageCode`, `showTranscription`, `audioMode`, `phoneMode`, `pauseConversationEnabled`, `shouldAggregateCurrentTurn`, `initialHtml`, `youtubeUrl`, `visualPhotos`, `visualVideos`, `agentPersonaName`, `userName`, `configuration` and `nluFeatures`. The SDK passes them through on `session.clientConfig` and does not act on them. `asr` is an object naming the speech-recognition provider and language. `forwardLoopMode` and `imaginativeAiMode` are always present. `smartTurnConfig` and `stvRecord` appear only when set on the agent. `pauseConversationEnabled` can be `false` while `pause()` works, so do not gate a pause button on it.
+The payload also carries `languageCode`, `showTranscription`, `audioMode`, `pauseConversationEnabled`, `shouldAggregateCurrentTurn`, `initialHtml`, `youtubeUrl`, `visualPhotos`, `visualVideos`, `agentPersonaName`, `userName`, `configuration` and `nluFeatures`. The SDK passes them through on `session.clientConfig` and does not act on them. `asr` is an object naming the speech-recognition provider and language. `forwardLoopMode` and `imaginativeAiMode` are always present. `smartTurnConfig` and `stvRecord` appear only when set on the agent. `pauseConversationEnabled` can be `false` while `pause()` works, so do not gate a pause button on it.
 
 ## Structured experiences (`force_experience` + `unisphere-tool`)
 

@@ -625,7 +625,7 @@ export class Feedback {
    * Rate a message. WRITE — idempotent for a (message_id,is_positive) pair.
    * @param {object} opts {message_id, is_positive, comment?}
    * @param {string} ks  Conversation token of the user who sent the message.
-   *   A token for any other user, admin included, can get `forbidden`.
+   *   A token for any other user, admin included, gets 403 `forbidden`.
    */
   async add(opts, ks) {
     this._.assertAny(ks, 'feedback.add');
@@ -1246,6 +1246,8 @@ export class Knowledge {
    * `{pageIndex,pageSize}` pager. This is the real Knowledge-service `list`
    * action — see {@link Knowledge#listCategoryEntries} for the unrelated
    * "media entries inside one category" listing.
+   *
+   * `filter.nameLike` is a case-insensitive partial match.
    *
    * The "browse" step before every other Knowledge method's "act on a known
    * id" step — e.g. an Agent Factory picker letting a user attach an
