@@ -14,6 +14,8 @@
  * independent re-verification that it is truly gone (a real not-found, not
  * just a 200 from delete). Credentials: AGENTIC_PARTNER_ID /
  * AGENTIC_ADMIN_SECRET, from the environment or a .env file in the repo root.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

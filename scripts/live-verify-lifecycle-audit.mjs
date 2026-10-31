@@ -27,6 +27,8 @@
  * `too_many_insight_settings` cannot be planted: the backend refuses more than 20 ids when a rule is saved.
  * Templates: a target with no messaging host must skip them with `skipped: ['templates']`.
  * Target: TARGET=prod (default) or <name>[:<account>], see scripts/lib/target.mjs.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';

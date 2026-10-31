@@ -24,6 +24,8 @@
  * set. The token is never printed.
  *
  * Variables come from the environment or a .env file in the repo root.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { join } from 'node:path';
 import { loadEnvFile, repoRoot } from './lib/target.mjs';

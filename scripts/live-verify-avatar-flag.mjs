@@ -31,6 +31,8 @@
  *          --agent-json PATH --dump-events
  *
  * A model-dependent check retries up to 3 times on fresh sessions. Artifacts: see live-verify-opening-phrase.mjs.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, undoOnThrow, verifyDeleted, mintPageInit, startServer,

@@ -120,6 +120,22 @@ test('no live script reads credentials from process.env directly', () => {
   }
 });
 
+test('every live script header says QA runs are for employees and certified partners only', () => {
+  const files = readdirSync(scriptsDir).filter((f) => /^live-verify.*\.mjs$/.test(f));
+  for (const f of files) {
+    const src = readFileSync(resolve(scriptsDir, f), 'utf8');
+    const header = src.match(/^(?:#!.*\n)?\s*\/\*[\s\S]*?\*\//)?.[0] ?? '';
+    assert.match(header, /employees and certified partners only/i, `${f} header needs the QA access note`);
+  }
+});
+
+test('live-verify-mcp targets production unless told otherwise', () => {
+  const src = readFileSync(resolve(scriptsDir, 'live-verify-mcp.mjs'), 'utf8');
+  assert.match(src, /argValue\('--target', process\.env\.LIVE_VERIFY_TARGET \|\| 'prod'\)/);
+  assert.match(src, /--target \(default prod\)/);
+  assert.doesNotMatch(src, /default nvq2/);
+});
+
 test('the allowlist names real files', () => {
   const files = new Set(readdirSync(scriptsDir));
   for (const f of NO_TARGET.keys()) assert.ok(files.has(f), `${f} no longer exists`);

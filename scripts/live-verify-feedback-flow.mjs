@@ -21,6 +21,8 @@
  * `ALT_GENIE_URL`/`ALT_KALTURA_API_ENDPOINT` to run it too.
  *
  * Run one target only: `node scripts/live-verify-feedback-flow.mjs primary`.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

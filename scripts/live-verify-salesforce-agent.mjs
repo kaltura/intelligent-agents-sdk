@@ -27,6 +27,8 @@
  * agent and tool are deleted. The Salesforce token is stored as an agent secret
  * (write-only) and is never printed. Replies are model output, so a flaky
  * phrase check is possible: the detail printed with each step shows the reply.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { Management, salesforceLeadUpsert } from '../src/management/index.js';
 import { orgUrlProblem } from './lib/salesforce-lead-check.mjs';
