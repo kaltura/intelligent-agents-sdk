@@ -53,7 +53,7 @@ The SDK wraps every error into a `KalturaError` with a stable `err.code`. Branch
 | 403 | `forbidden` | Wrong KS type: admin KS for management, `geniegpcid` for conversations. Also: a user session without `userId` on thread get, list or delete. A user session asking for another user's thread, or a thread opened with another agent, gets 404 instead. See [SECURITY.md § Session type](SECURITY.md#session-type) |
 | 405 | `method_not_allowed` | Use `GET` for `/assistant/status`; everything else is `POST` |
 | 413 | `payload_too_large` | The request, or one value in it, is over the server's size limit. `err.detail` gives the limit. Send less, for example smaller request variables. |
-| 429 / 502 / 503 / 504 | `rate_limited` / `server_error` | GET and HEAD are retried for you. Most SDK calls are POST. A read (`get`, `list`, `search`) or a token mint is also retried after a timeout or a dropped connection. A create, update or delete is retried only when the connection never opened. It is not retried after one of these answers, a timeout or a dropped connection, because it may already have run. Before you send a create again, check with list or get. |
+| 429 / 502 / 503 / 504 | `rate_limited` / `server_error` | GET and HEAD are retried for you. Most SDK calls are POST. A read (`get`, `list`, `search`) or a token mint is also retried after a timeout or a dropped connection. A create, update or delete is retried only when the connection never opened. It is not retried after one of these answers, a timeout or a dropped connection, because it may already have run. Before you send a create again, check with list or get. On a rate limit, `err.detail` names the limit and window the server reports, and `err.retryAfter` is the wait in whole seconds, read from the `Retry-After` header (seconds or an HTTP date). `err.retryAfter` is `undefined` when the header is missing or unreadable. |
 | 6001 | `capacity_unavailable` | No free avatar slot. Retry later or call `waitForCapacity()`. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | 6002 | `tier_exceeded` | The account plan limit is reached. Not retryable. See [Capacity & the queue](docs/architecture-reference/scale-and-sticky-sessions.md#capacity--the-queue-throwtonoagent--throwtoexceededtier) |
 | none | `ice_failed` | The avatar media path never connected. `err.ice` says why. Retryable. See [ICE diagnostics](docs/architecture-reference/resilience-and-failure-handling.md#ice-diagnostics) |
@@ -69,6 +69,8 @@ A missing agent, intellect, lifecycle rule or insight setting gets its own `err.
 | The agent has no intellect | `intellect_not_found` | Create the intellect first |
 | The lifecycle rule does not exist | `lifecycle_rule_not_found` | Check the id with `lifecycle.list` |
 | The insight setting does not exist | `insight_setting_not_found` | Check the id with `insightSettings.list` |
+| The account restricts the file type of an upload (`knowledge.uploadDocument`, `knowledge.uploadMarkdown`). The server answers HTTP 200 and `err.title` holds its code | `upload_file_type_restricted` | Upload a different file type, or ask your Kaltura contact about the account's file type restriction. Not retryable |
+| A voice import finds no audio samples for the provider voice (`catalog.importVoiceFromElevenLabs`, `catalog.importVoiceFromCartesia`) | `voice_has_no_samples` | Upload an audio file with `catalog.createVoice`. Not retryable |
 
 ### Response headers (debugging and log search)
 

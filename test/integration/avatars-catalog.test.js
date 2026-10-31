@@ -201,3 +201,16 @@ test('an unknown provider voiceId raises the typed voice_not_found error from th
     (e) => e.code === 'voice_not_found_elevenlabs' && e.status === 200,
   );
 });
+
+test('importing a voice that has no samples raises voice_has_no_samples with a createVoice hint', async () => {
+  const msg = 'The voice with id EXAVITQu4vr4xnSDxMaL does not have any samples on ElevenLabs, cannot be cloned';
+  const f = fakeFetch([
+    { match: '/catalog-item/createVoiceFromElevenLabs', respond: () => ({ status: 200, body: { code: 'VOICE_DOES_NOT_HAVE_SAMPLES', message: msg, objectType: 'KalturaAPIException' } }) },
+    { match: '/catalog-item/createVoiceFromCartesia', respond: () => ({ status: 200, body: { code: 'VOICE_DOES_NOT_HAVE_SAMPLES', message: 'no samples', objectType: 'KalturaAPIException' } }) },
+  ]);
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  const typed = (e) => e.code === 'voice_has_no_samples' && e.status === 200 && e.retryable === false
+    && e.detail.startsWith(msg) && /Upload an audio file with catalog\.createVoice/.test(e.detail);
+  await assert.rejects(() => k.catalog.importVoiceFromElevenLabs('EXAVITQu4vr4xnSDxMaL', ADMIN), typed);
+  await assert.rejects(() => k.catalog.importVoiceFromCartesia('EXAVITQu4vr4xnSDxMaL', ADMIN), (e) => e.code === 'voice_has_no_samples');
+});

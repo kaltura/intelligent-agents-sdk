@@ -69,7 +69,7 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromElevenLabs 
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromCartesia     {"voiceId":"<provider-voice-id>"}
 ```
 
-An unknown provider id creates **nothing**. A `voiceId` with characters other than letters, digits, `_` or `-` throws `bad_request` before any request. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+An unknown provider id creates **nothing**. A `voiceId` with characters other than letters, digits, `_` or `-` throws `bad_request` before any request. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. A voice with no audio samples throws `voice_has_no_samples`: upload an audio file with `catalog.createVoice` instead. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
 
 ---
 

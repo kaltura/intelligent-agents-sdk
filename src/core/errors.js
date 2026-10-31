@@ -44,6 +44,7 @@ import { redact, redactString } from './redact.js';
  * @property {unknown} [body]         The (redacted) upstream response body.
  * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `ice`, `connect`, `reconnect`).
  * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
+ * @property {number} [retryAfter]    Whole seconds to wait before retrying, from the response's `Retry-After` header (a number of seconds or an HTTP-date). Absent when the header is missing or unreadable.
  * @property {ConnectTimings} [timings]  The connect phases reached before a failed `connect()` (set by the live session, not by the constructor).
  * @property {object} [ice]          Sanitized ICE snapshot (candidate counts by type, STUN/TURN error codes, a cause and a hint) on an `ice_failed` error. No addresses or credentials.
  * @property {unknown} [cause]        The error this one wraps, when the SDK replaced it with a clearer one.
@@ -65,6 +66,7 @@ export class KalturaError extends Error {
     /** @type {unknown} */ this.body = redact(problem.body);
     /** @type {string|undefined} */ this.phase = problem.phase;
     /** @type {boolean|undefined} */ this.retryable = problem.retryable;
+    /** @type {number|undefined} */ this.retryAfter = problem.retryAfter;
     /** @type {object|undefined} */ this.ice = problem.ice;
     if (problem.cause !== undefined) Object.defineProperty(this, 'cause', { value: problem.cause, enumerable: false, writable: true, configurable: true });
   }
@@ -77,6 +79,7 @@ export class KalturaError extends Error {
       requestId: this.requestId, headers: this.headers, body: this.body,
       ...(this.phase !== undefined && { phase: this.phase }),
       ...(this.retryable !== undefined && { retryable: this.retryable }),
+      ...(this.retryAfter !== undefined && { retryAfter: this.retryAfter }),
       ...(this.ice !== undefined && { ice: this.ice }),
     };
   }
@@ -97,6 +100,8 @@ const CODE_BY_PATTERN = [
   [/INSIGHT_SETTING_NOT_FOUND/i, 'insight_setting_not_found'],
   [/VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS/i, 'voice_not_found_elevenlabs'],
   [/VOICE_DOES_NOT_EXIST_ON_CARTESIA/i, 'voice_not_found_cartesia'],
+  [/VOICE_DOES_NOT_HAVE_SAMPLES/i, 'voice_has_no_samples'],
+  [/UPLOAD_TOKEN_FILE_TYPE_RESTRICTED_FOR_UPLOAD/i, 'upload_file_type_restricted'],
   [/Invalid filter type/i, 'invalid_filter'],
   [/union_tag_not_found/i, 'missing_discriminator'],
 ];
@@ -106,7 +111,12 @@ const CODE_BY_PATTERN = [
  */
 const HINT_BY_CODE = {
   payment_required: 'The server refused the request as Payment Required, which points to a plan or entitlement limit. Check the plan with your Kaltura contact. A temporary load limit is not reported this way: a live conversation gets the retryable capacity_unavailable instead.',
+  voice_has_no_samples: 'The provider holds no audio samples for this voice, so it cannot be cloned. Upload an audio file with catalog.createVoice instead.',
+  upload_file_type_restricted: 'The account restricts this file type for upload. Upload a different file type, or ask your Kaltura contact about the account\'s file type restriction.',
 };
+
+/** Codes where the same call always gets the same answer. */
+const NOT_RETRYABLE = new Set(['payment_required', 'voice_has_no_samples', 'upload_file_type_restricted']);
 
 /** @param {number} status */
 function codeForStatus(status) {
@@ -131,8 +141,29 @@ function trimTrailingDots(s) {
   return s.slice(0, end);
 }
 
+const HTTP_DATE_RE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
 /**
- * Build a KalturaError from an HTTP response that failed.
+ * Whole seconds to wait, from a `Retry-After` header: a count of seconds or an HTTP-date.
+ * Anything else (empty, negative, fractional, free text) is `undefined`.
+ * @param {Record<string,string>|undefined} headers
+ */
+function parseRetryAfter(headers) {
+  if (!headers || typeof headers !== 'object') return undefined;
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === 'retry-after');
+  const raw = key === undefined ? undefined : headers[key];
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const when = HTTP_DATE_RE.test(v) ? Date.parse(v) : NaN;
+  return Number.isNaN(when) ? undefined : Math.max(0, Math.ceil((when - Date.now()) / 1000));
+}
+
+/**
+ * Build a KalturaError from an HTTP response that failed. Every client that
+ * turns a failed response into an error (`Http`, the management converse
+ * stream, the chat session) calls this, so the error shape is defined here once.
+ * A `Retry-After` response header becomes `err.retryAfter` in seconds.
  * @param {{status:number, path:string, body:unknown, requestId?:string, headers?:Record<string,string>}} ctx
  */
 export function errorFromResponse({ status, path, body, requestId, headers }) {
@@ -141,14 +172,18 @@ export function errorFromResponse({ status, path, body, requestId, headers }) {
   for (const [re, c] of CODE_BY_PATTERN) if (upstreamMsg && re.test(upstreamMsg)) { code = c; break; }
   const base = upstreamMsg || `HTTP ${status} from ${path}`;
   const hint = HINT_BY_CODE[code];
+  const retryAfter = parseRetryAfter(headers);
+  let detail = hint ? `${trimTrailingDots(base)}. ${hint}` : base;
+  if (retryAfter !== undefined) detail = `${trimTrailingDots(detail)}. Retry after ${retryAfter} ${retryAfter === 1 ? 'second' : 'seconds'}.`;
   return new KalturaError({
     type: BASE + code,
     title: code.replace(/_/g, ' '),
     status,
-    detail: hint ? `${trimTrailingDots(base)}. ${hint}` : base,
+    detail,
     instance: path,
     code,
-    retryable: code === 'payment_required' ? false : undefined,
+    retryable: NOT_RETRYABLE.has(code) ? false : undefined,
+    retryAfter,
     requestId,
     headers,
     body,
@@ -204,13 +239,16 @@ export function errorFromOkBody(body, path) {
   }
   let sdkCode = 'api_exception';
   for (const [re, c] of CODE_BY_PATTERN) if (re.test(`${code || ''} ${detail || ''}`)) { sdkCode = c; break; }
+  const hint = HINT_BY_CODE[sdkCode];
+  const text = detail || `HTTP 200 from ${path} carried an error body`;
   return new KalturaError({
     type: BASE + sdkCode,
     title: code || 'api exception',
     status: 200,
-    detail: detail || `HTTP 200 from ${path} carried an error body`,
+    detail: hint ? `${trimTrailingDots(text)}. ${hint}` : text,
     instance: path,
     code: sdkCode,
+    retryable: NOT_RETRYABLE.has(sdkCode) ? false : undefined,
     body: wireStatus === undefined ? body : { ...b, wireStatus },
   });
 }
@@ -263,6 +301,18 @@ function extractMessage(body) {
     if (Array.isArray(b.detail)) {
       const msgs = b.detail.map((d) => (d && typeof d === 'object' && d.msg) ? String(d.msg) : (typeof d === 'string' ? d : '')).filter(Boolean);
       if (msgs.length) return redactString(msgs.join('; ')).slice(0, 500);
+    }
+    // An object detail such as {error, limit, window} (a rate limit answer): show the text and the limit.
+    const d = b.detail;
+    if (d && typeof d === 'object' && !Array.isArray(d)) {
+      const o = /** @type {Record<string, unknown>} */ (d);
+      const text = [o.error, o.message].find((v) => typeof v === 'string' && v);
+      if (typeof text === 'string') {
+        const limit = typeof o.limit === 'number' && Number.isFinite(o.limit) ? `limit ${o.limit}` : '';
+        const win = typeof o.window === 'string' && o.window ? o.window : '';
+        const scope = limit && win ? `${limit} per ${win}` : limit || (win && `window ${win}`);
+        return redactString(scope ? `${text} (${scope})` : text).slice(0, 500);
+      }
     }
     if (typeof b.error === 'string') return b.error;
   }
