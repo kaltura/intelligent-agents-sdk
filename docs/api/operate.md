@@ -85,7 +85,7 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 
 The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
 
-The Kaltura API (the media calls such as categories, entries and uploads) also answers HTTP 200 with an exception body. The SDK throws `ovp_error` and puts the server's error code in `error.title` and its message in `error.detail`. Branch on `error.title`, not on the HTTP status.
+The Kaltura API (the media calls such as categories, entries and uploads) also answers HTTP 200 with an exception body. A single call throws `api_exception` (`error.status` is 200). A call inside a multirequest throws `ovp_error`. Both put the server's error code in `error.title` and its message in `error.detail`. Branch on `error.title`, not on the HTTP status.
 
 **Stop a running turn:**
 
