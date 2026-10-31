@@ -25,14 +25,27 @@ new RTCPeerConnection({
 
 **TURN servers**
 
-| Session option | Meaning |
+| Source | Meaning |
 |---|---|
-| `turnServerUrl` | TURN host from `appInit`. The SDK expands it into the four URLs above. |
-| `turnCredentials` | Optional `{ username, credential }` for `turnServerUrl`. `appInit` returns none, so the SDK's default TURN credentials apply unless you pass your own. |
+| Server `turn` | Short-lived TURN credentials for this session, sent with `onServerConnected` ([§4b](events-catalog.md#4b-server--client-on-handshakesession-phase)). Listed first, so they win when both entries work. |
+| `turnServerUrl` | TURN host from `appInit`. The SDK expands it into the four URLs above and lists it after the server entry. |
+| `turnCredentials` | Optional `{ username, credential }` for `turnServerUrl`. `appInit` returns none, so the SDK's default TURN credentials apply unless you pass your own. Own credentials for a host the server entry doesn't name are used alone, and the server entry is not sent there. The SDK reads this object once, when the session is created. Changing it later has no effect. |
 
 - The STV downlink uses `iceTransportPolicy: "relay"`, except on Firefox (`isFirefox` option), where it is `"all"`.
-- Keep explicit ports and transports on every TURN URL. A bare `turn:host` yields no relay candidate and the uplink sends no packets silently.
+- Keep explicit ports and transports on every TURN URL. A bare `turn:host` yields no relay candidate and the uplink sends no packets silently. The SDK expands a TURN host or a `turn:`/`turns:` URL with no port into the four URLs above.
 - WebKit rejects `?transport=` query strings. The SDK retries once without them, which drops the plain-TCP port 80 URL on that engine only.
+
+**Server TURN credentials.** No app code is needed. The SDK reads them, checks them and keeps them out of logs, events and errors.
+
+- Both entries are gathered in parallel, so a session connects on whichever one the relay accepts, with no added wait.
+- When both entries name the same UDP relay address, each address goes to one entry only (the SDK compares host names, so a server host spelled differently for the same relay, such as an IP or another alias, is not split): the server entry keeps UDP 443, the configured entry keeps UDP 80. Browsers share one socket per UDP relay address, so a refused entry would block the other one's UDP relay and push media to TCP. TCP and TLS URLs stay in both entries.
+- Credentials that arrive while the peers already exist are applied to them in place. They take effect at the next ICE restart. A 401 counts against an entry only for the ICE servers the peer is gathering with.
+- When a peer is about to need a new relay allocation (`resume()` after a long pause, a media recovery, `connect()` after `prepare()`) and the credentials expire within a minute, the SDK first opens a fresh socket to get new ones.
+- A server `turn` with an empty or missing `url` uses the `turnServerUrl` host, unless you pass `turnCredentials`. Then the SDK ignores the server entry. A later `turn` with no `url` keeps the host from the earlier one.
+- If the browser refuses the server entry, or the relay rejects it (401) on a URL only that entry uses, later peers use the configured entry alone. The logger gets one `[turn]` warning. When no configured entry is left, the warning says so.
+- If the relay rejects the configured entry on a URL only it uses, while the server entry is in the list, later peers use the server entry alone, with all its URLs. Firefox reports the error URL without its transport, so it cannot tell UDP from TCP on a shared port. The SDK acts only on an unambiguous URL.
+- If the browser refuses the configured entry (for example a malformed `turnServerUrl`) but accepts the server entry, peers use the server entry alone. The logger gets one `[turn]` warning.
+- With no `turnServerUrl` and no server entry, the logger gets one `[turn]` warning: most networks need a relay for the avatar video.
 
 **Signaling sequence:**
 

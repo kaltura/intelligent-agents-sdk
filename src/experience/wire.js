@@ -141,13 +141,157 @@ export function turnServers(turnServerUrl, creds = {}) {
 
 /**
  * RTCConfiguration per channel. ASR → `all`; STV → `relay` (`all` on Firefox).
- * @param {'asr'|'stv'} channel @param {ReturnType<typeof turnServers>} turn @param {boolean} [isFirefox]
+ * @param {'asr'|'stv'} channel
+ * @param {RTCIceServer|RTCIceServer[]|null} turn One TURN entry (from {@link turnServers}) or a list of them.
+ * @param {boolean} [isFirefox]
  * @returns {RTCConfiguration}
  */
 export function iceConfig(channel, turn, isFirefox = false) {
   /** @type {RTCIceTransportPolicy} */
   const policy = channel === 'stv' ? (isFirefox ? 'all' : 'relay') : 'all';
-  return { iceServers: turn ? [turn] : [], iceTransportPolicy: policy, bundlePolicy: 'max-bundle' };
+  return { iceServers: Array.isArray(turn) ? turn : turn ? [turn] : [], iceTransportPolicy: policy, bundlePolicy: 'max-bundle' };
+}
+
+const MAX_SERVER_TURN_URLS = 8;
+const TURN_URL_RE = /^turns?:(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::\d{1,5})?(?:\?transport=(?:udp|tcp))?$/i;
+const HOST_PORT_RE = /^(\[[0-9a-f:.]+\]|[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::(\d{1,5}))?$/i;
+const MAX_TTL_S = 30 * 86400;
+
+/** TURN URLs for one server-sent item: a full URL, `host:port`, or a bare host (a dotted name or IP, so stray words don't count). `[]` when unusable. @param {string} item */
+function expandTurnUrl(item) {
+  // A scheme with no port is read as a bare host: it gets the explicit ports and transports.
+  const s = item.replace(/\/$/, '').replace(/^turns?:(?=(\[[^\]]+\]|[^:?/]+)$)/i, '').replace(/^turns?:/i, (m) => m.toLowerCase());
+  if (/^turns?:/i.test(s)) {
+    const port = /:(\d+)(?:\?|$)/.exec(s.replace(/^turns?:\[[^\]]*\]/i, ''))?.[1];
+    return TURN_URL_RE.test(s) && (port == null || (Number(port) >= 1 && Number(port) <= 65535)) ? [s] : [];
+  }
+  const m = HOST_PORT_RE.exec(s);
+  if (!m) return [];
+  if (!m[2]) return /** @type {{urls:string[]}} */ (turnServers(m[1])).urls;
+  const port = Number(m[2]);
+  return port >= 1 && port <= 65535 ? [`turn:${m[1]}:${port}?transport=udp`, `turn:${m[1]}:${port}?transport=tcp`] : [];
+}
+
+/** Lower-case host of a `turn:`/`turns:` URL, or `''`. @param {string} url */
+function turnHost(url) { return (/^turns?:(\[[^\]]+\]|[^:?/]+)/i.exec(url)?.[1] || '').toLowerCase(); }
+
+/**
+ * Keys that compare a `turn:`/`turns:` URL however a browser spells it: `scheme:host:port:transport`,
+ * with the scheme and host in lower case, an IPv6 host with or without brackets, port 3478
+ * (`turn:`) or 5349 (`turns:`) when none, and transport udp (`turn:`) or tcp (`turns:`) when none.
+ * A browser reports a TURN error with its own spelling of the URL (Chromium adds the port and the
+ * transport, Firefox drops the query string). Pass `reported` for such a URL: a `turn:` URL with
+ * no transport then gives both the udp and the tcp key, because it may stand for either.
+ * `[]` when `url` is not a TURN URL.
+ * @param {unknown} url @param {boolean} [reported] @returns {string[]}
+ */
+export function turnUrlKeys(url, reported = false) {
+  const m = typeof url === 'string' ? /^(turns?):([^?]*)(?:\?(.*))?$/i.exec(url.trim()) : null;
+  if (!m) return [];
+  const scheme = m[1].toLowerCase();
+  // `[v6]:port`, unbracketed `v6:port` (Chromium), `host:port`, or a host alone.
+  const hp = /^\[([^\]]+)\](?::(\d+))?$/.exec(m[2]) || /^(.+:.+):(\d+)$/.exec(m[2]) || /^([^:]+)(?::(\d+))?$/.exec(m[2]);
+  if (!hp) return [];
+  const port = Number(hp[2] || (scheme === 'turns' ? 5349 : 3478));
+  const transport = /(?:^|&)transport=(udp|tcp)(?:&|$)/i.exec(m[3] || '')?.[1].toLowerCase();
+  const base = `${scheme}:${hp[1].toLowerCase()}:${port}:`;
+  if (transport) return [base + transport];
+  if (scheme === 'turns') return [`${base}tcp`];
+  return reported ? [`${base}udp`, `${base}tcp`] : [`${base}udp`];
+}
+
+/**
+ * Read the TURN credentials a server message carries, without trusting its shape. Accepts an
+ * object or a JSON string; `url`, `urls` or `uri` (a bare host, `host:port`, full `turn:`/`turns:`
+ * URLs, a list, or a comma- or space-separated string); `credential` or `password`. Bad URLs are
+ * dropped one by one and at most 8 are kept. An entry with no URL keeps `urls: []`: the caller
+ * picks the host. Expiry comes from `ttl` (seconds, 60 s to 30 days) counted from `receivedAt`,
+ * else from a `<unix seconds>:` username prefix within the next 30 days, else it is unknown (`null`).
+ * @param {unknown} raw
+ * @param {number} [receivedAt] ms timestamp of arrival on this client's clock.
+ * @returns {{entry: {urls:string[], username:string, credential:string}|null, expiresAt: number|null, ttlSec: number|null, reason: 'ok'|'no_host'|'not_object'|'no_credentials'|'no_usable_url'}}
+ */
+export function normalizeServerTurn(raw, receivedAt = Date.now()) {
+  const none = (/** @type {'not_object'|'no_credentials'|'no_usable_url'} */ reason) => ({ entry: null, expiresAt: null, ttlSec: null, reason });
+  let t = raw;
+  if (typeof t === 'string') { try { t = JSON.parse(t); } catch { return none('not_object'); } }
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return none('not_object');
+  const o = /** @type {Record<string, unknown>} */ (t);
+  const username = o.username;
+  const credential = o.credential ?? o.password;
+  if (typeof username !== 'string' || !username || typeof credential !== 'string' || !credential) return none('no_credentials');
+  // The first field with content: an empty `urls` must not hide a usable `url`.
+  const given = [o.urls, o.url, o.uri].find((v) => (Array.isArray(v) ? v.length : typeof v === 'string' && v.trim()));
+  const items = (Array.isArray(given) ? given : [given]).flatMap((u) => (typeof u === 'string' ? u.trim().split(/[\s,]+/) : [])).filter(Boolean);
+  const urls = [...new Set(items.flatMap(expandTurnUrl))].slice(0, MAX_SERVER_TURN_URLS);
+  if (items.length && !urls.length) return none('no_usable_url');
+  let ttlSec = Number(o.ttl);
+  let expiresAt = null;
+  if (Number.isFinite(ttlSec) && ttlSec >= 60 && ttlSec <= MAX_TTL_S) expiresAt = receivedAt + ttlSec * 1000;
+  else {
+    ttlSec = NaN;
+    const m = /^(\d{9,11}):/.exec(username);
+    const at = m ? Number(m[1]) * 1000 : NaN;
+    if (at > receivedAt && at <= receivedAt + MAX_TTL_S * 1000) { expiresAt = at; ttlSec = (at - receivedAt) / 1000; }
+  }
+  return { entry: { urls, username, credential }, expiresAt, ttlSec: Number.isFinite(ttlSec) ? ttlSec : null, reason: urls.length ? 'ok' : 'no_host' };
+}
+
+/**
+ * The ICE server list for one peer. The server's per-session entry comes first, so it wins ties,
+ * and the configured entry (`turnServerUrl` with `turnCredentials` or the SDK default) follows as
+ * a fallback, so a peer connects whichever one the relay accepts. Both are gathered in parallel.
+ * A server entry with no host uses `turnServerUrl`, unless the caller passed its own credentials, even one field
+ * (those belong to the caller's server, which must never get the session's credentials). Caller
+ * credentials for a host the server entry doesn't name are used alone, as before. With
+ * `fallbackRefused` (the relay refused the configured entry), the server entry is used alone,
+ * with all its URLs.
+ * @param {{server?: {urls:string[], username:string, credential:string}|null, turnServerUrl?: string, turnCredentials?: {username?:string, credential?:string}, fallbackRefused?: boolean}} [opts]
+ * @returns {RTCIceServer[]}
+ */
+export function iceServersFor({ server = null, turnServerUrl = '', turnCredentials, fallbackRefused = false } = {}) {
+  const fallback = turnServers(turnServerUrl, turnCredentials || {});
+  const builtin = /** @type {{username:string, credential:string}} */ (turnServers('-'));
+  // Compare the resolved pair, so a caller field filled in with a default still counts as the caller's.
+  const ownCreds = !!fallback && !(fallback.username === builtin.username && fallback.credential === builtin.credential);
+  let s = server;
+  if (s && !s.urls.length) s = !ownCreds && fallback ? { ...s, urls: fallback.urls } : null;
+  if (!s) return fallback ? [fallback] : [];
+  if (!fallback) return [s];
+  if (ownCreds && !s.urls.some((u) => turnHost(u) === turnHost(fallback.urls[0]))) return [fallback];
+  if (fallbackRefused) return [s];
+  const same = s.username === fallback.username && s.credential === fallback.credential
+    && s.urls.length === fallback.urls.length && s.urls.every((u) => fallback.urls.includes(u));
+  return same ? [s] : splitSharedUdp(s, fallback);
+}
+
+/** Lower-case `host:port` of a plain UDP `turn:` URL (port 3478 when none), or `''`. @param {string} url */
+function udpAddress(url) {
+  const m = /^turn:(\[[^\]]+\]|[^:?/]+)(?::(\d+))?(?:\?transport=(udp|tcp))?$/i.exec(url);
+  return m && (m[3] || 'udp').toLowerCase() === 'udp' ? `${m[1].toLowerCase()}:${m[2] || '3478'}` : '';
+}
+
+/**
+ * Give each UDP relay address both entries list to one entry only. Browsers share one UDP socket
+ * per relay address, and the entry listed first takes every reply from it: when that entry's
+ * credentials are refused, the other entry gets no UDP relay and the peer falls back to TCP.
+ * The server entry gets port 443 first (it passes more firewalls), then they alternate.
+ * TCP and TLS URLs use their own connections, so both entries keep them. Addresses compare by
+ * host name: a host spelled another way for the same relay (an IP, another DNS name) is not split.
+ * @param {{urls:string[], username:string, credential:string}} s
+ * @param {{urls:string[], username:string, credential:string}} fallback
+ * @returns {RTCIceServer[]}
+ */
+function splitSharedUdp(s, fallback) {
+  const fb = new Set(fallback.urls.map(udpAddress));
+  const shared = [...new Set(s.urls.map(udpAddress).filter((a) => a && fb.has(a)))]
+    .sort((a, b) => Number(b.endsWith(':443')) - Number(a.endsWith(':443')));
+  if (!shared.length) return [s, fallback];
+  const toServer = new Set(shared.filter((_, i) => i % 2 === 0));
+  const keep = (/** @type {typeof s} */ e, /** @type {boolean} */ isServer) => ({
+    ...e, urls: e.urls.filter((u) => { const a = udpAddress(u); return !a || !shared.includes(a) || toServer.has(a) === isServer; }),
+  });
+  return [keep(s, true), keep(fallback, false)];
 }
 
 /**
@@ -170,12 +314,24 @@ export function createPeerConnection(RTCCtor, config) {
   } catch (err) {
     const hasQuery = config.iceServers?.some((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u) => typeof u === 'string' && u.includes('?')));
     if (!hasQuery || !/turn url query string/i.test(String(err?.message))) throw err;
-    const stripped = config.iceServers.map((s) => ({
-      ...s,
-      urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).map((u) => (typeof u === 'string' ? u.split('?')[0] : u)),
-    }));
-    return new RTCCtor({ ...config, iceServers: stripped });
+    return new RTCCtor({ ...config, iceServers: withoutTurnQuery(config.iceServers) });
   }
+}
+
+/**
+ * The same ICE servers with every `?` query string removed from their URLs, for engines that
+ * reject `?transport=` (see {@link createPeerConnection}). Plain `turn:` TCP URLs are dropped (without
+ * the query they would mean UDP), then duplicates, then entries left with no URL.
+ * @param {RTCIceServer[]} iceServers
+ * @returns {RTCIceServer[]}
+ */
+export function withoutTurnQuery(iceServers) {
+  return iceServers.map((s) => ({
+    ...s,
+    urls: [...new Set((Array.isArray(s.urls) ? s.urls : [s.urls])
+      .filter((u) => !(typeof u === 'string' && /^turn:[^?]*\?(.*&)?transport=tcp(&|$)/i.test(u)))
+      .map((u) => (typeof u === 'string' ? u.split('?')[0] : u)))],
+  })).filter((s) => s.urls.length);
 }
 
 /**

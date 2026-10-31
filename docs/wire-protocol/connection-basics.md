@@ -32,7 +32,8 @@ io(conversationManagerUrl, {          // from appInit
   reconnection: true,
   auth:  { token: "<conversation KS from appInit>" },
   query: { partnerId: "<pid>", billed_client: "", stickyId: "<16 chars>",
-           level: "published", debugMode: true }
+           level: "published", debugMode: true,
+           sdk: "<SDK version>" }
 })
 ```
 
@@ -44,6 +45,7 @@ io(conversationManagerUrl, {          // from appInit
 | `level` | always `published` | The SDK does not expose an option for it. |
 | `debugMode` | `true` (the SDK sends `true`) | Only the `debug_*` events depend on it. The SDK has no handler for them. Its caption and transcript features read `stvSpeechChunk` and `generatingSpeech` ([§4d](events-catalog.md#4d-server--client-on-conversation-phase)). A raw client can connect with `false`. |
 | `billed_client` | always `""` | No effect. |
+| `sdk` | the SDK version string, sent on every connect | Optional for a custom client. |
 
 ---
 
