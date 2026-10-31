@@ -42,6 +42,10 @@ export class Catalog {
   /**
    * List catalog items. READ. Async-iterable + awaitable (first page).
    * `filter` keys and `orderBy` values: docs/api/design.md#browse-the-catalog.
+   * `orderBy: '-createdAt'` sorts newest first. `'+createdAt'` is accepted but
+   * does not change the order. `agentScope` is an agent id: without it the list
+   * holds only unscoped items. With an agent id it holds the unscoped items plus
+   * that agent's own. An unknown agent id is not an error.
    * `opts.type` is a shortcut for `filter.typeEqual`. Passing both with different
    * values throws `bad_request` before any network call.
    * @example <caption>Newest voices first</caption>
@@ -138,7 +142,8 @@ export class Catalog {
    * {@link createBackground} instead produce the two composable HALVES the
    * `face`/`background` avatar fields expect. This is the only way to add a
    * custom Face. Same attribute shape as `createVisual` (the `visual`
-   * attribute shape).
+   * attribute shape). Free-text fields (`name`, `hairStyle`, `clothing`) are sent
+   * to the server as given. The SDK does not trim, escape or check them.
    *
    * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
    * `'Image'`) describing this upload's own backdrop — unrelated to

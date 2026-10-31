@@ -30,6 +30,8 @@ Each item has an `itemId`. Pass it to avatar creation.
 
 Any other filter key returns `bad_request` (400). The request also takes a top-level `orderBy` and a top-level `agentScope` string. `orderBy` is `"+createdAt"` or `"-createdAt"`. `"-createdAt"` sorts newest first. `"+createdAt"` is accepted but does not change the order. Any other `orderBy` returns `bad_request` (400), and the error lists both values.
 
+`agentScope` is an agent id. Without it, the list returns only unscoped items. With an agent id, it returns the unscoped items plus that agent's own items. An unknown agent id is not an error.
+
 **Visual preset fields:** `itemId`, `attributes.visual.{name, genderPresentation, skinTone, ageGroup, hairColor, clothing, background}`, `imageUrl`, `loadingVideo`. These are asset URLs for previews. They are not the rendered composite that the live video stream shows.
 
 **Voice preset fields:** `itemId`, `attributes.voice.{name, description, language}`, `voiceSampleUrl`.
@@ -176,7 +178,7 @@ adminTags=custom
 
 Send `type=Background` for a backdrop image instead.
 
-**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)`. Same `attrs` shape as `createVisual`. Composing the two halves into an avatar: [build/avatar-and-agent.md § Compose from a custom Face and Background](build/avatar-and-agent.md#compose-from-a-custom-face-and-background).
+**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)`. Same `attrs` shape as `createVisual`. Free-text fields (`name`, `hairStyle`, `clothing`) reach the server as given. The SDK does not trim, escape or check them. Composing the two halves into an avatar: [build/avatar-and-agent.md § Compose from a custom Face and Background](build/avatar-and-agent.md#compose-from-a-custom-face-and-background).
 
 ---
 

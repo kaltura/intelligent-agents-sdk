@@ -145,6 +145,8 @@ export class Skills {
    * awaitable (first page) — mirrors {@link Tools#list}. The list also holds
    * shared skills that every partner can attach, marked `partner_id: 0`; filter
    * on `partner_id` to see only your own. You cannot edit or delete a shared skill.
+   * `filter.nameLike` matches the whole name, case-insensitive. Add `%` for a
+   * partial match.
    * @param {string} ks (admin) @param {{filter?:object, pageSize?:number}} [opts]
    */
   list(ks, opts = {}) {
