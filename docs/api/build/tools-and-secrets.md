@@ -41,6 +41,8 @@ Calls an external HTTP endpoint. Put `{arg_name}` in the url or body to send an 
 }
 ```
 
+An arg `type` is `str`, `int`, `float`, `bool`, `list` or `dict`. A `list` arg is a list of strings.
+
 Returns a `Tool`: `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
 
 ```json
@@ -85,7 +87,7 @@ What the builder rejects:
 | A url that starts with a placeholder, such as `{base}/x`. The url must parse as http(s) first | `invalid_url` |
 | A response path with a space, `$`, brackets or an empty segment, such as `$.items[0]` | `bad_jsonpath` |
 | `responseChapters` without `iterate_on`, `content` and `link`, or with a value that is not a dot-path | `bad_request` / `bad_jsonpath` |
-| A `request.headers` value that is not a string, such as `{ "X-N": 1 }` | `bad_request` |
+| A `request.headers` or `request.params` value that is not a string, such as `{ "X-N": 1 }` | `bad_request` |
 | `request.timeout` that is not an integer from 1 to 120 (default 10) | `bad_request` |
 | A url that is not http(s), such as `file:` or `ftp:` | `invalid_url` |
 

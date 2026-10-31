@@ -34,7 +34,7 @@ import { assertCondition } from './condition.js';
 /**
  * @typedef {object} GenieToolArg
  * @property {string} prompt         LLM-facing description of the argument.
- * @property {'str'|'int'|'float'|'bool'|'list'|'dict'} type
+ * @property {'str'|'int'|'float'|'bool'|'list'|'dict'} type  A `list` arg is a list of strings.
  * @property {boolean} [required] Omitted means required: `tools.get` returns `required: true`. Pass `false` for an optional arg.
  * @property {unknown} [default]
  */
@@ -162,7 +162,7 @@ function assertMappingPaths(mapping, where) {
  * must be `{type:'oauth2', ...}` with a `client_secret` that is a secret
  * reference, `{{secrets.<name>}}`. The bare `secrets.<name>` is accepted and
  * saved as `{{secrets.<name>}}`. A plaintext client secret is rejected, so it
- * never lands in a tool config. Header values must be strings.
+ * never lands in a tool config. Header and `params` values must be strings.
  * `url` and a string `body` may hold `{argName}` placeholders, which the server
  * fills from the model's args. Any other brace text in them makes the call
  * fail, so it is rejected here. In an object `body`, an undeclared `{name}` in
@@ -204,6 +204,10 @@ function buildRequest(request, argNames = []) {
   }
   if (request.params !== undefined) {
     if (typeof request.params !== 'object' || Array.isArray(request.params)) bad('bad_request', 'api tool `request.params` must be an object.');
+    // null stays accepted: a stored tool reads back with `params: null`.
+    for (const [k, v] of Object.entries(request.params ?? {})) {
+      if (typeof v !== 'string') bad('bad_request', `api tool \`request.params[${JSON.stringify(k)}]\` must be a string, got ${v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v}. Pass it as a string, for example "1" instead of 1.`);
+    }
     out.params = request.params;
   }
   if (request.body !== undefined) {
