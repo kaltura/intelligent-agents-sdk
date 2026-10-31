@@ -187,7 +187,7 @@ function parseRetryAfter(headers) {
   const raw = key === undefined ? undefined : headers[key];
   if (typeof raw !== 'string') return undefined;
   const v = raw.trim();
-  if (/^\d+$/.test(v)) return Number(v);
+  if (/^\d+$/.test(v)) return Number.isSafeInteger(Number(v)) ? Number(v) : undefined;
   const when = parseHttpDate(v);
   return Number.isNaN(when) ? undefined : Math.max(0, Math.ceil((when - Date.now()) / 1000));
 }

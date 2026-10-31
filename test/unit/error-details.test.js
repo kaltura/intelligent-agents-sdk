@@ -61,7 +61,7 @@ test('retryAfter applies the RFC 850 fifty-year cutoff to the full timestamp', (
 });
 
 test('retryAfter stays undefined for a missing, empty, negative, fractional or non-date Retry-After', () => {
-  for (const v of [undefined, '', '   ', '-5', '1.5', '1e3', 'soon', 'abc 1', '12 seconds', '0x10', 'Tomorrow']) {
+  for (const v of [undefined, '', '   ', '-5', '1.5', '1e3', 'soon', 'abc 1', '12 seconds', '0x10', 'Tomorrow', '99999999999999999999999', '9'.repeat(400), '120, 120']) {
     const headers = v === undefined ? {} : { 'retry-after': v };
     const e = errorFromResponse({ status: 429, path: '/x', body: null, headers });
     assert.equal(e.retryAfter, undefined, `Retry-After ${JSON.stringify(v)}`);
