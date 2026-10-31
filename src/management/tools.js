@@ -859,7 +859,7 @@ export class Tools {
 
   /**
    * List Tools for the authenticated partner. READ. Async-iterable + awaitable
-   * (first page) — mirrors {@link Intellects#list}. `filter.nameLike` matches
+   * (first page). Mirrors {@link Intellects#list}. `filter.nameLike` matches
    * the whole name, case-insensitive. Add `%` for a partial match.
    * @param {string} ks (admin) @param {{filter?:object, pageSize?:number}} [opts]
    */
