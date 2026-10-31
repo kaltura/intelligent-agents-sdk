@@ -3034,6 +3034,10 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('stvTaskFail', () => this.emit('error', new KalturaError({ type: 'about:blank', title: 'STV task failed', code: 'stv_task_fail', detail: 'The server failed to render/send the avatar video.' })));
 
     // Fatal error events.
+    // A configuration-error frame can arrive just before a refusal. It is NOT surfaced on purpose:
+    // the session reports only the stable code below and never the frame's reason or message, and a
+    // config-error frame alone changes nothing. Pinned by the "config error frame" tests in
+    // test/e2e/connect-fatal.test.js. Do not add a listener for it.
     for (const ev of Object.keys(FATAL_CODE)) {
       socket.on(ev, () => {
         this.emit('error', fatalError(ev));
