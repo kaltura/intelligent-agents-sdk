@@ -59,7 +59,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | Event | Payload | Meaning |
 |---|---|---|
 | `onServerConnected` | `{ finalUrl, agentName?, hostName?, loadingVideoURL? }` | Handshake done. The SDK emits `streamReady` with `finalUrl`, `agentName` and `hostName`. |
-| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, phoneMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
+| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](/reference/wire-protocol/client-configuration/#clientconfiguration-fields-per-session-agent-config). |
 | `joinComplete` | `{}` | Room join acknowledged. |
 | `stvNewSession` | normal: `{ session_id, status:"session started", webrtc_url? }`; **audio/phone mode**: `{ status:"audio/phone mode - no STV session" }` (no `session_id` or `webrtc_url`) | The STV session is created. `webrtc_url` is the WHEP play URL. The audio/phone variant skips STV ([§5b](/reference/wire-protocol/audio-channels/#5b-audio-mode-webrtc-separate-from-the-asr-uplink)). |
 | `showAgent` | `{}` | The agent has joined. |
@@ -87,12 +87,12 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 |---|---|---|
 | `agent_raw_text` | `{ speechId, turnId, delta:"<JSON string>" }` | The agent's streaming output. `delta` is a JSON string. Parse it ([§4e](#4e-agent_raw_textdelta-the-agent-stream-parsed)). |
 | `agent_start_speech` | `{ speechId, turnId, isNewTurn }` | A new speech segment begins. `isNewTurn` is `false` when new ASR or typed text continues the turn in flight (a correction or extension of what the user just said), and `true` for a fresh turn. The SDK only reads this field. |
-| `agent_end_turn` | `{ speechId, turnId }` | The agent's turn is complete. |
+| `agent_end_turn` | `{ speechId, turnId }` | The agent's turn is complete. The SDK emits `turnEnd { speechId, turnId }`. |
 | `generatingSpeech` | `{ text, speechId }` | **Clean sentence text** the avatar will speak, with authoritative word spacing. Arrives before audio. |
 | `stvSpeechChunk` | `{ text, speechId, durationMs }` | **Server-timed caption chunk** with its exact duration. Arrives about 400 ms before the audio plays, so add a display delay of about 400 ms to sync. Empty sentinels (`text:""`, `durationMs:1`) are filtered. |
 | `stvStartedTalking` | `{}` | Audio generation begins (`isAgentTalking = true`). Playback follows about 400 ms later. Do not use it to trigger captions. |
-| `stvFinishedTalking` | `{ agentContent:"<full spoken text>" }` | The avatar finished a turn. Reset caption buffers on **this** event, not on `stvStartedTalking`. |
-| `stvFinishedGenerating` | `{ speechId }` | Speech generation for `speechId` finished (generation is not playback end). |
+| `stvFinishedTalking` | `{ agentContent:"<full spoken text>" }` | The avatar finished a turn. The SDK emits `avatarStopTalking`. Reset caption buffers on **this** event, not on `stvStartedTalking`. |
+| `stvFinishedGenerating` | `{ speechId }` | Speech generation for `speechId` finished (generation is not playback end). The SDK emits `turnEnd { speechId }` with no `turnId`. |
 | `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
@@ -112,6 +112,12 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `debug_llm_input` | `{ userInput, finalSegment, pendingSegment, speechId, segmentType, isFinal }` | The text handed to the agent for this turn. Diagnostic. |
 | `debug_stvTaskGenerated` | `{ text, speechId, duration }` | Raw text chunks before audio. Diagnostic. |
 | `debug_conversationStateChange` | `{ state, preparingAnswerState }` | Turn-state diagnostic. Treat the values as opaque strings. |
+
+**Repeats and odd values.** The SDK passes these through and does not de-duplicate them.
+
+- `turnEnd` can fire twice for one turn: once with a `turnId` and once without.
+- A final `transcript` can have the text `"\n"`.
+- `avatarStopTalking` can fire more than once for one turn.
 
 The four `debug_*` events depend on `debugMode`, which the SDK sends as `true` ([§2](/reference/wire-protocol/connection-basics/#2-socketio-connection)). The SDK has no handler for them. Its captions and transcripts do not read them.
 

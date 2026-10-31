@@ -49,6 +49,8 @@ Calls an external HTTP endpoint. Put `{arg_name}` in the url or body to send an 
 }
 ```
 
+An arg `type` is `str`, `int`, `float`, `bool`, `list` or `dict`. A `list` arg is a list of strings.
+
 Returns a `Tool`: `{id, name, config, partner_id, created_at, updated_at}`. Link its `id` into an intellect:
 
 ```json
@@ -93,7 +95,7 @@ What the builder rejects:
 | A url that starts with a placeholder, such as `{base}/x`. The url must parse as http(s) first | `invalid_url` |
 | A response path with a space, `$`, brackets or an empty segment, such as `$.items[0]` | `bad_jsonpath` |
 | `responseChapters` without `iterate_on`, `content` and `link`, or with a value that is not a dot-path | `bad_request` / `bad_jsonpath` |
-| A `request.headers` value that is not a string, such as `{ "X-N": 1 }` | `bad_request` |
+| A `request.headers` or `request.params` value that is not a string, such as `{ "X-N": 1 }` | `bad_request` |
 | `request.timeout` that is not an integer from 1 to 120 (default 10) | `bad_request` |
 | A url that is not http(s), such as `file:` or `ftp:` | `invalid_url` |
 
@@ -106,6 +108,8 @@ What the builder rejects:
 | No `%00` | Remove it |
 | No `../` | Use the final path |
 | Redirects are not followed | Point the url at the final location |
+
+**Private addresses.** `mgmt.tools.add` refuses a url that points to a private or loopback address, such as `localhost` or `127.0.0.1`. The server answers 400 and the SDK throws `bad_request`. Use a public host.
 
 **Security note:** an `api` tool's `request` fires server-to-server, outside the SDK's reach. The model or system prompt that led to the call is not a security boundary. Your endpoint must independently authenticate and authorize each request (validate the caller's Kaltura Session and permissions), the same way you would for any other server-to-server API call. Treat interpolated `request_vars` (client-suppliable when `allow_client_variables:true`, see [Converse](/reference/api/operate/#converse)) as untrusted input, never as an authorization claim.
 

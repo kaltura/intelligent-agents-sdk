@@ -38,7 +38,7 @@ A rule is `{name, systemName, eventType, objectType, eventConditions?, action}`:
 | `has_any`, `has_all` | An array of strings | is an array that holds any, or all, of the items |
 | `not_empty` | Required. A non-empty value of the field's type | Accepted, but never matches. Use another operator |
 
-`describeFields` gives each field's type. A `value` of the wrong type returns 400 on `create`: a string for `gt`, a single value for `in`, an array for `contains`, or no `value` for `not_empty`. An operator that does not fit the field is accepted and never matches, for example `has_any` with `[1]` on the number field `object.origin`. An unknown operator returns 400 and lists the nine.
+`describeFields` gives each field's type. A `value` of the wrong type returns 400 on `create`: a string for `gt`, a single value for `in`, an array for `contains`, or a boolean or no `value` for `not_empty`. An operator that does not fit the field is accepted and never matches, for example `has_any` with `[1]` on the number field `object.origin`. An unknown operator returns 400 and lists the nine.
 
 ---
 
