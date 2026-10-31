@@ -141,10 +141,37 @@ function trimTrailingDots(s) {
   return s.slice(0, end);
 }
 
-const HTTP_DATE_RE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// The three HTTP-date formats (RFC 9110): IMF-fixdate, obsolete RFC 850, and asctime (always GMT).
+const IMF_DATE_RE = /^[A-Za-z]{3}, (\d{2}) ([A-Za-z]{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) GMT$/;
+const RFC850_DATE_RE = /^[A-Za-z]+, (\d{2})-([A-Za-z]{3})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) GMT$/;
+const ASCTIME_DATE_RE = /^[A-Za-z]{3} ([A-Za-z]{3}) ( \d|\d{2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/;
 
 /**
- * Whole seconds to wait, from a `Retry-After` header: a count of seconds or an HTTP-date.
+ * Epoch milliseconds of an HTTP-date in any of its three formats, or `NaN`.
+ * A two-digit RFC 850 year more than 50 years ahead means the previous century.
+ * @param {string} v
+ */
+function parseHttpDate(v) {
+  let m;
+  let day, mon, year, h, mi, sec;
+  if ((m = IMF_DATE_RE.exec(v))) [, day, mon, year, h, mi, sec] = m;
+  else if ((m = RFC850_DATE_RE.exec(v))) {
+    [, day, mon, year, h, mi, sec] = m;
+    const now = new Date().getUTCFullYear();
+    year = 2000 + Number(year) - now > 50 ? 1900 + Number(year) : 2000 + Number(year);
+  } else if ((m = ASCTIME_DATE_RE.exec(v))) [, mon, day, h, mi, sec, year] = m;
+  else return NaN;
+  const month = MONTHS.indexOf(String(mon).toLowerCase());
+  if (month < 0) return NaN;
+  const t = Date.UTC(Number(year), month, Number(day), Number(h), Number(mi), Number(sec));
+  const d = new Date(t);
+  // Reject overflow such as 31 Feb or 25:00, which Date.UTC would roll over.
+  return d.getUTCDate() === Number(day) && d.getUTCHours() === Number(h) && d.getUTCMinutes() === Number(mi) && d.getUTCSeconds() === Number(sec) ? t : NaN;
+}
+
+/**
+ * Whole seconds to wait, from a `Retry-After` header: a count of seconds or an HTTP-date (any of the three formats).
  * Anything else (empty, negative, fractional, free text) is `undefined`.
  * @param {Record<string,string>|undefined} headers
  */
@@ -155,7 +182,7 @@ function parseRetryAfter(headers) {
   if (typeof raw !== 'string') return undefined;
   const v = raw.trim();
   if (/^\d+$/.test(v)) return Number(v);
-  const when = HTTP_DATE_RE.test(v) ? Date.parse(v) : NaN;
+  const when = parseHttpDate(v);
   return Number.isNaN(when) ? undefined : Math.max(0, Math.ceil((when - Date.now()) / 1000));
 }
 

@@ -40,6 +40,17 @@ test('retryAfter reads an HTTP-date as the seconds from now, never below 0', (t)
   assert.equal(at('Wed, 21 Oct 2026 07:00:00 GMT'), 0, 'a date in the past');
 });
 
+test('retryAfter reads the RFC 850 and asctime HTTP-date formats', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('Wed, 21 Oct 2026 07:28:00 GMT') });
+  const at = (v) => errorFromResponse({ status: 429, path: '/x', body: null, headers: { 'retry-after': v } }).retryAfter;
+  assert.equal(at('Wednesday, 21-Oct-26 07:28:30 GMT'), 30, 'RFC 850');
+  assert.equal(at('Wed Oct 21 07:28:30 2026'), 30, 'asctime');
+  assert.equal(at('Wed Oct  1 07:28:30 2026'), 0, 'asctime with a space-padded day, in the past');
+  assert.equal(at('Wednesday, 21-Oct-26 07:00:00 GMT'), 0, 'a date in the past');
+  assert.equal(at('Wed, 31 Feb 2026 07:28:30 GMT'), undefined, 'an impossible date');
+  assert.equal(at('Wed Oct 21 25:28:30 2026'), undefined, 'an impossible time');
+});
+
 test('retryAfter stays undefined for a missing, empty, negative, fractional or non-date Retry-After', () => {
   for (const v of [undefined, '', '   ', '-5', '1.5', '1e3', 'soon', 'abc 1', '12 seconds', '0x10', 'Tomorrow']) {
     const headers = v === undefined ? {} : { 'retry-after': v };
