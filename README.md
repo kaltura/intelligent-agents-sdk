@@ -107,11 +107,11 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.36.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.36.5`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.36.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.36.5/src/experience/index.js';
 </script>
 ```
 
