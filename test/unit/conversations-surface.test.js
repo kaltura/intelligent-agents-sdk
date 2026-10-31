@@ -265,3 +265,29 @@ test('threads.delete: a throwing warn sink never breaks the delete; default sink
   assert.equal(seen.length, 1);
   assert.match(seen[0], /^\[threads\.delete\] /);
 });
+
+test('threads.delete: an empty list throws validation_error before any request, with or without confirmation', async () => {
+  const ff = fakeFetch([{ match: 'v1/thread/delete', respond: () => ({ status: 500, body: { detail: 'Internal Server Error' } }) }]);
+  const m = new Management({ partnerId: '123', fetch: ff });
+  const invalid = (e) => e.code === 'validation_error' && /threads\.delete/.test(e.detail) && /at least one thread id/.test(e.detail);
+  await assert.rejects(() => m.threads.delete([], ADMIN_KS, CONFIRM), invalid);
+  await assert.rejects(() => m.threads.delete([], ADMIN_KS), invalid, 'validation comes before the confirmation check');
+  assert.equal(ff.calls.length, 0, 'no request for an empty list');
+});
+
+test('threads.delete: a non-string or empty id throws validation_error before any request', async () => {
+  const ff = fakeFetch([{ match: 'v1/thread/delete', respond: () => ({ status: 200, body: { totalCount: 0, objects: [] } }) }]);
+  const m = new Management({ partnerId: '123', fetch: ff });
+  for (const ids of [[''], ['a', ''], [42], ['a', null], [undefined], [['a']], [{ id: 'a' }], undefined, null, '']) {
+    await assert.rejects(() => m.threads.delete(/** @type {any} */ (ids), ADMIN_KS, CONFIRM), (e) => e.code === 'validation_error', JSON.stringify(ids));
+  }
+  assert.equal(ff.calls.length, 0);
+});
+
+test('threads.delete: a single id string and a one-item list still go through', async () => {
+  const ff = fakeFetch([{ match: 'v1/thread/delete', respond: () => ({ status: 200, body: { totalCount: 1, objects: [{ id: 'a' }] } }) }]);
+  const m = new Management({ partnerId: '123', fetch: ff });
+  await m.threads.delete(/** @type {any} */ ('a'), ADMIN_KS, CONFIRM);
+  await m.threads.delete(['a'], ADMIN_KS, CONFIRM);
+  assert.deepEqual(ff.calls.map((c) => c.body.thread_ids), [['a'], ['a']]);
+});
