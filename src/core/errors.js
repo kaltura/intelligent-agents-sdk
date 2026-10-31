@@ -149,22 +149,28 @@ const ASCTIME_DATE_RE = /^[A-Za-z]{3} ([A-Za-z]{3}) ( \d|\d{2}) (\d{2}):(\d{2}):
 
 /**
  * Epoch milliseconds of an HTTP-date in any of its three formats, or `NaN`.
- * A two-digit RFC 850 year more than 50 years ahead means the previous century.
+ * An RFC 850 date more than 50 years ahead of now (full timestamp) means the previous century.
  * @param {string} v
  */
 function parseHttpDate(v) {
   let m;
   let day, mon, year, h, mi, sec;
+  let century = false;
   if ((m = IMF_DATE_RE.exec(v))) [, day, mon, year, h, mi, sec] = m;
   else if ((m = RFC850_DATE_RE.exec(v))) {
     [, day, mon, year, h, mi, sec] = m;
-    const now = new Date().getUTCFullYear();
-    year = 2000 + Number(year) - now > 50 ? 1900 + Number(year) : 2000 + Number(year);
+    year = 2000 + Number(year);
+    century = true;
   } else if ((m = ASCTIME_DATE_RE.exec(v))) [, mon, day, h, mi, sec, year] = m;
   else return NaN;
   const month = MONTHS.indexOf(String(mon).toLowerCase());
   if (month < 0) return NaN;
-  const t = Date.UTC(Number(year), month, Number(day), Number(h), Number(mi), Number(sec));
+  let t = Date.UTC(Number(year), month, Number(day), Number(h), Number(mi), Number(sec));
+  if (century) {
+    const limit = new Date();
+    limit.setUTCFullYear(limit.getUTCFullYear() + 50);
+    if (t > limit.getTime()) t = Date.UTC(Number(year) - 100, month, Number(day), Number(h), Number(mi), Number(sec));
+  }
   const d = new Date(t);
   // Reject overflow such as 31 Feb or 25:00, which Date.UTC would roll over.
   return d.getUTCDate() === Number(day) && d.getUTCHours() === Number(h) && d.getUTCMinutes() === Number(mi) && d.getUTCSeconds() === Number(sec) ? t : NaN;

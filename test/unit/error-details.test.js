@@ -51,6 +51,15 @@ test('retryAfter reads the RFC 850 and asctime HTTP-date formats', (t) => {
   assert.equal(at('Wed Oct 21 25:28:30 2026'), undefined, 'an impossible time');
 });
 
+test('retryAfter applies the RFC 850 fifty-year cutoff to the full timestamp', (t) => {
+  const now = Date.parse('Sat, 31 Oct 2026 00:00:00 GMT');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const at = (v) => errorFromResponse({ status: 429, path: '/x', body: null, headers: { 'retry-after': v } }).retryAfter;
+  assert.equal(at('Monday, 01-Nov-76 00:00:00 GMT'), 0, 'one day past the cutoff is 1976');
+  assert.equal(at('Sunday, 31-Oct-76 00:00:00 GMT'), Math.ceil((Date.UTC(2076, 9, 31) - now) / 1000), 'exactly 50 years ahead stays 2076');
+  assert.equal(at('Saturday, 30-Oct-76 23:59:59 GMT'), Math.ceil((Date.UTC(2076, 9, 30, 23, 59, 59) - now) / 1000), 'one second inside the cutoff stays 2076');
+});
+
 test('retryAfter stays undefined for a missing, empty, negative, fractional or non-date Retry-After', () => {
   for (const v of [undefined, '', '   ', '-5', '1.5', '1e3', 'soon', 'abc 1', '12 seconds', '0x10', 'Tomorrow']) {
     const headers = v === undefined ? {} : { 'retry-after': v };
