@@ -242,6 +242,14 @@ export function whepUrlHasPrivateIp(url) {
   return isPrivateOrLoopbackHost(String(url));
 }
 
+/** Linear-time `url.replace(/[?#].*$/, '').replace(/\/+$/, '')`: the URL comes from the server, so no backtracking regex on it. @param {string} url */
+function withoutQueryAndTrailingSlashes(url) {
+  let end = url.search(/[?#]/);
+  if (end === -1) end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47) end -= 1;
+  return url.slice(0, end);
+}
+
 /**
  * The URL the WHEP resource (this viewer of this STV session) is released at with a `DELETE`.
  *
@@ -258,7 +266,7 @@ export function whepResourceUrl(location, requestUrl) {
   const loc = String(location);
   const viewer = loc.indexOf('/viewer/');
   if (viewer !== -1 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(loc)) {
-    return `${String(requestUrl).replace(/[?#].*$/, '').replace(/\/+$/, '')}${loc.slice(viewer)}`;
+    return `${withoutQueryAndTrailingSlashes(String(requestUrl))}${loc.slice(viewer)}`;
   }
   try { return new URL(loc, requestUrl).href; } catch { return loc; }
 }

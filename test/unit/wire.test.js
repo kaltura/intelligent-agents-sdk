@@ -128,6 +128,21 @@ test('whepResourceUrl appends a path-absolute /viewer/ Location to the subscribe
   );
 });
 
+test('whepResourceUrl also drops a fragment and mixed query/slash tails from the subscribe URL', () => {
+  const loc = '/whep/session/s/viewer/v9';
+  assert.equal(whepResourceUrl(loc, 'https://m.example/whep/s?token=a#frag'), 'https://m.example/whep/s/viewer/v9');
+  assert.equal(whepResourceUrl(loc, 'https://m.example/whep/s///?x=1'), 'https://m.example/whep/s/viewer/v9');
+  assert.equal(whepResourceUrl(loc, 'https://m.example/#?'), 'https://m.example/viewer/v9');
+});
+
+test('whepResourceUrl stays fast on long runs of "/" and "#"', () => {
+  const t = Date.now();
+  whepResourceUrl('/viewer/v', `https://m.example/${'/'.repeat(200000)}x`);
+  whepResourceUrl('/viewer/v', `https://m.example/${'#'.repeat(200000)}\n`);
+  whepResourceUrl('/viewer/v', `https://m.example/a${'/'.repeat(200000)}`);
+  assert.ok(Date.now() - t < 500, 'must be linear time');
+});
+
 test('whepResourceUrl keeps an absolute Location as-is', () => {
   assert.equal(
     whepResourceUrl('https://other.example/whep/session/s/viewer/v9', 'https://media.example/whep/session/s'),
