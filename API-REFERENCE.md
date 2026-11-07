@@ -15,7 +15,7 @@ Every endpoint is shown as a raw HTTP call plus its SDK wrapper. See [`README.md
 | File | Covers |
 |------|--------|
 | [Authentication & Services](docs/api/authentication.md) | KS types and minting (`agentId`, `userId`, `sessionType`), `userId` binding, the five services and their base URLs, regions (`region`, `REGIONS`) |
-| [Catalog & Assets](docs/api/design.md) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, end-to-end portrait recipe |
+| [Catalog & Assets](docs/api/design.md) | Browse the catalog, custom voice (clone), provider voice import, custom visual (portrait, photo spec), custom face/background, `agentScope` tag on uploads and updates, end-to-end portrait recipe |
 | [Agent Components](docs/api/build.md) | Generate an agent profile, create/configure an intellect, preview a prompt, tools (`api`/`csv`/`code`/`client`/`var`), secrets, ground in your content (RAG), create an avatar, create an agent |
 | [Widget & Runtime Init](docs/api/deploy.md) | Resolve widget ID, initialize the browser runtime |
 | [Conversation & Analytics](docs/api/operate.md) | Converse (headless HTTP), reserved `sys__*` template variables, status, threads, feedback and follow-ups, usage analytics, knowledge search (MCP) |

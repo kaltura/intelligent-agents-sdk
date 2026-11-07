@@ -180,6 +180,28 @@ Send `type=Background` for a backdrop image instead.
 
 **SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)`. Same `attrs` shape as `createVisual`. Free-text fields (`name`, `hairStyle`, `clothing`) reach the server as given. The SDK does not trim, escape or check them. Composing the two halves into an avatar: [build/avatar-and-agent.md § Compose from a custom Face and Background](build/avatar-and-agent.md#compose-from-a-custom-face-and-background).
 
+## Tag an upload with an agent id (`agentScope`)
+
+Every upload above takes an optional `agentScope`, and `catalog-item/update` takes it too. It is one more form field on `catalog-item/create`, or one more key in the `catalog-item/update` body:
+
+```
+agentScope=<agent id>
+```
+
+[Browse the catalog](#browse-the-catalog) with the same `agentScope` to list the items tagged with that agent next to the unscoped ones. `agentScope` is a tag for listing. It is not access control.
+
+| Call | `agentScope` |
+|---|---|
+| `createVoice`, `createVisual`, `createFace`, `createBackground` | Omit it for an unscoped item. Otherwise a non-blank string. |
+| `update` | Omit it to leave the tag as it is. A non-blank string sets it. `''` clears it. |
+
+Anything else (`null`, a number, a blank string, or `''` on create) throws `validation_error` before any request. The SDK does not check that the id names an existing agent.
+
+```js
+const voice = await mgmt.catalog.createVoice(mp3, { name, description, agentScope: agentId }, adminKs);
+await mgmt.catalog.update({ itemId: voice.itemId, agentScope: '' }, adminKs);   // share with every agent
+```
+
 ---
 
 ## End-to-end: custom portrait avatar, server to browser
