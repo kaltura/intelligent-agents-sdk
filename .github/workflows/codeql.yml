@@ -19,6 +19,9 @@ jobs:
   changes:
     name: 🔍 Detect changed paths
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read   # paths-filter lists the PR files through the API
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
