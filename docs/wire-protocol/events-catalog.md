@@ -26,7 +26,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
 | `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
 | `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent by `startScreenShare()` every `intervalMs` (default 2000 ms) or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
-| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` records the submission and does not change what the agent knows. |
+| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` sends the values to the server. The agent does not see them. |
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail
 
@@ -58,7 +58,7 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | `askPermissions` | `{ constraints:{ audio: boolean \| {echoCancellation}, video: boolean } }` | The server is ready for the mic. |
 | `throwToNoAgent` | `{}` | All agent slots are busy. The socket closes after it. `connect()` rejects with `KalturaError` `code:'capacity_unavailable'`, `status:6001`. To wait for a free slot, call `waitForCapacity()` before `connect()`. |
 | `throwToExceededTier` | `{}` | Account plan limit reached. `KalturaError` `code:'tier_exceeded'`, `status:6002`. No reconnect. |
-| `unsupportedClient` | `{ code }` | Fatal setup failure: the server refused the session. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. The error does not include the payload. |
+| `unsupportedClient` | `{ code }` | Fatal setup failure: the server refused the session. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. When the payload `code` is an upper-case word (`A-Z` and `_`, up to 64 characters), it is on `err.serverCode`, and `err.code` stays `unsupported_client`. Nothing else from the payload reaches the error. `INVALID_KS`: mint a new token and call `connect()` again. `USAGE_LIMIT_EXCEEDED`: the account plan limit is reached, a new token does not help, not retryable. `INTERNAL_ERROR`: maybe transient, or a wrong agent id. |
 | `throwToBadRequest` / `removePeer` | `{}` | Fatal disconnect reasons. `KalturaError` `code:'bad_request'` (`status:400`) / `code:'peer_removed'` (`status:401`). |
 | `availabilityResult` | `{ available, details? }` (or `{ error, available:false }`) | Reply to `checkAvailability`. The socket stays open. The SDK re-emits it as `capacityChanged { available, details }`. During `connect()`, an `available:false` reply schedules the next poll on the backoff `[30,45,60,90,120,180,240,300,360]s` (±15% jitter). |
 

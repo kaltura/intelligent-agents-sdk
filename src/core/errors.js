@@ -42,6 +42,7 @@ import { redact, redactString } from './redact.js';
  * @property {string} [requestId]     Correlation id echoed from the response, if any.
  * @property {Record<string,string>} [headers]  Diagnostic response headers (see response-headers.js), when a response arrived.
  * @property {unknown} [body]         The (redacted) upstream response body.
+ * @property {string} [serverCode]   On a live-session `unsupported_client` error: the server's own reason code, when it is an upper-case word (`INVALID_KS`, `USAGE_LIMIT_EXCEEDED`, `INTERNAL_ERROR`). Absent otherwise. `code` is unchanged.
  * @property {string} [phase]         The connect step that failed, on a live-session error (`serverConnect`, `join`, `joinComplete`, `agent`, `asr`, `whep`, `ice`, `connect`, `reconnect`).
  * @property {boolean} [retryable]    True when trying the same call again can succeed. Absent when the SDK has no opinion.
  * @property {number} [retryAfter]    Whole seconds to wait before retrying, from the response's `Retry-After` header (a number of seconds or an HTTP-date). Absent when the header is missing or unreadable.
@@ -64,6 +65,7 @@ export class KalturaError extends Error {
     /** @type {string|undefined} */ this.requestId = problem.requestId;
     /** @type {Record<string,string>|undefined} */ this.headers = problem.headers && Object.keys(problem.headers).length ? { ...problem.headers } : undefined;
     /** @type {unknown} */ this.body = redact(problem.body);
+    /** @type {string|undefined} */ this.serverCode = problem.serverCode;
     /** @type {string|undefined} */ this.phase = problem.phase;
     /** @type {boolean|undefined} */ this.retryable = problem.retryable;
     /** @type {number|undefined} */ this.retryAfter = problem.retryAfter;
@@ -77,6 +79,7 @@ export class KalturaError extends Error {
       type: this.type, title: this.title, status: this.status,
       detail: this.detail, instance: this.instance, code: this.code,
       requestId: this.requestId, headers: this.headers, body: this.body,
+      ...(this.serverCode !== undefined && { serverCode: this.serverCode }),
       ...(this.phase !== undefined && { phase: this.phase }),
       ...(this.retryable !== undefined && { retryable: this.retryable }),
       ...(this.retryAfter !== undefined && { retryAfter: this.retryAfter }),

@@ -75,7 +75,7 @@ A partner prompt can make the agent emit a runtime outside the built-ins, for ex
 `onAction(action, payload)` surfaces interactions `mountWidget` can't fulfil itself:
 
 - `'followup'` `{question}` → `session.speak`
-- `'submit'` `{values, formId}` → send the values with `speak()` or `updateRequestVars()`; `submitStructuredDataForm(values)` records the submission and does not take `formId`.
+- `'submit'` `{values, formId}` → send the values with `speak()` or `updateRequestVars()`; `submitStructuredDataForm(values)` sends the values to the server (the agent does not see them) and does not take `formId`.
 - `'play'` `{entryId, url, embedUrl, startTime, endTime}`: a video clip was clicked, times in seconds or `null`
 - `'open'` `{url}`
 - `'answer'` `{questionId, variant, correct, value, explanation, optionId?}`: a `graded-question` was answered (see [widgets.md § 10](widgets.md#10-graded-question-rendergradedquestion-a-host-registered-10th-runtime))
