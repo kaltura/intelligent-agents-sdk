@@ -177,6 +177,7 @@ jobs:
       avatar-media: ${{ steps.filter.outputs.avatar-media }}
       set-forced-language: ${{ steps.filter.outputs.set-forced-language }}
       session-complete: ${{ steps.filter.outputs.session-complete }}
+      feature-pages: ${{ steps.filter.outputs.feature-pages }}
       intellects-conversations: ${{ steps.filter.outputs.intellects-conversations }}
       tools: ${{ steps.filter.outputs.tools }}
       mcp: ${{ steps.filter.outputs.mcp }}
@@ -709,6 +710,16 @@ jobs:
               - 'package-lock.json'
               - '.github/workflows/live-verify.yml'
               - *shared
+            feature-pages:
+              - 'manual-testing/feature-pages/**'
+              - 'scripts/live-verify-feature-pages.mjs'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'scripts/lib/target.mjs'
+              - 'src/management/**'
+              - 'src/experience/**'
+              - 'src/core/**'
+              - '.github/workflows/live-verify.yml'
+              - *shared
             intellects-conversations:
               - 'scripts/live-verify-intellects-conversations.mjs'
               - 'src/management/intellects.js'
@@ -775,9 +786,9 @@ jobs:
           api=false
           any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents lifecycle-audit avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
-          any browser avatar-media session-complete opening-phrase avatar-flag kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
-          any browser avatar-media session-complete startup-faults reconnect unload && engines+=(firefox)
-          any session-complete && engines+=(webkit)
+          any browser avatar-media session-complete feature-pages opening-phrase avatar-flag kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
+          any browser avatar-media session-complete feature-pages startup-faults reconnect unload && engines+=(firefox)
+          any session-complete feature-pages && engines+=(webkit)
           browser=false
           [ "${#engines[@]}" -gt 0 ] && browser=true
           {
@@ -1323,6 +1334,17 @@ jobs:
           LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
         run: node scripts/live-step.mjs --log live-verify-session-complete-output.log -- npm run live-verify:session-complete
 
+      # Throwaway agent + local server → every feature page clicked in headless ${{ matrix.engine }} → screenshots → server stopped, everything it made verified gone. The emotions page is not run here (it needs TARGET).
+      - name: Pages · Feature pages (${{ matrix.engine }})
+        id: live_verify_feature_pages
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['feature-pages'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+          LIVE_VERIFY_BROWSER: ${{ matrix.engine }}
+        run: node scripts/live-step.mjs --log live-verify-feature-pages-output.log -- npm run live-verify:feature-pages
+
       # Provision an agent with a Jinja2 opening phrase → check what landed on the intellect and avatar → voice the opening with and without requestVars → silent opening → cleanup
       - name: Session · Opening phrase and Jinja2 variables
         id: live_verify_opening_phrase
@@ -1437,6 +1459,7 @@ jobs:
           path: |
             live-verify-artifacts/
             live-verify-*-output.log
+            manual-testing/feature-pages/out/*.png
           retention-days: 90
 
       - name: 📝 Write job summary
@@ -1477,6 +1500,16 @@ jobs:
               echo
               echo '```'
               tail -n 60 live-verify-session-complete-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-feature-pages-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Pages · Feature pages (${{ matrix.engine }}) — ${{ steps.live_verify_feature_pages.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-feature-pages-output.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
