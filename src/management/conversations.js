@@ -66,7 +66,7 @@ const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
 // Every converse body key the SDK sends besides userMessage and sse. tools/check-docs.mjs
 // checks this list against the Converse field table in docs/api/operate.md.
 const CONVERSE_FIELDS = Object.freeze(['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities',
-  'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata']);
+  'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata', 'add_message_in_db', 'shared_message_id']);
 const CONTEXT_TYPES = Object.freeze(['entry', 'category', 'ancestor_category', 'global']);
 const ENTRY_ID = /^\d_[0-9a-z]{8}$/;
 const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
@@ -127,7 +127,7 @@ const failValidation = (title, detail) => { throw new KalturaError({ type: 'http
 
 /**
  * Check the typed converse options (`context_id`, `context_type`, `preload_entry_ids`,
- * `exclude_entry_ids`, `metadata`) before any request. `undefined` means omitted; `null`
+ * `exclude_entry_ids`, `metadata`, `add_message_in_db`, `shared_message_id`) before any request. `undefined` means omitted; `null`
  * is not a value for these keys. Throws `validation_error`; returns nothing.
  * @param {Record<string, any>} opts @param {string} where
  */
@@ -144,6 +144,9 @@ function assertConverseOptions(opts, where) {
     const i = list.findIndex((e) => typeof e !== 'string' || !ENTRY_ID.test(e));
     if (i >= 0) bad('invalid entry id list', `${key} must be an array of entry ids like ["0_abcd1234"] (item ${i} is ${shown(list[i])}).`);
   }
+  const { add_message_in_db: save, shared_message_id: shared } = opts;
+  if (save !== undefined && typeof save !== 'boolean') bad('invalid add_message_in_db', `add_message_in_db must be true or false (got ${save === null ? 'null, omit the key instead' : shown(save)}).`);
+  if (shared !== undefined && (typeof shared !== 'string' || shared.trim() === '')) bad('invalid shared_message_id', `shared_message_id must be a non-empty message id string (got ${shown(shared)}).`);
   if (md === undefined) return;
   if (md === null || typeof md !== 'object' || Array.isArray(md)) bad('invalid metadata', `metadata must be an object like { voice_start_time: 1.5, voice_end_time: 3 } (got ${md === null ? 'null, omit the key instead' : Array.isArray(md) ? 'array' : typeof md}).`);
   for (const [k, v] of Object.entries(md)) {
@@ -198,7 +201,8 @@ export class Conversations {
    * );
    * console.log(reply.text);
    *
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, signal?}
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, add_message_in_db?, shared_message_id?, signal?}
+   *   `add_message_in_db` is a boolean. `false` runs the turn without storing it, so the thread keeps its messages. The SDK sends the request once and never replays it. `shared_message_id` is a non-empty message id string that starts a new thread from that message. A bad value throws `validation_error` before the converse request.
    *   `context_type` is one of `entry|category|ancestor_category|global`, `context_id` a non-empty string (an entry id like `0_abcd1234` when `context_type` is `entry`),
    *   `preload_entry_ids`/`exclude_entry_ids` arrays of entry ids, `metadata` `{voice_start_time?, voice_end_time?}` finite numbers. A bad value throws `validation_error` before the converse request; any other key is not sent.
    *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else throws `validation_error` before any request is sent.
@@ -264,7 +268,7 @@ export class Conversations {
    * words, no tool calls" instruction, and returns THAT result with
    * `spiralRecovered:true` added (`firstAttempt` carries the discarded empty
    * attempt's `toolCalls`/`spiralStopped` for diagnostics). Never retries more
-   * than once. If the nudge turn is itself another spiral, that result is returned
+   * than once, and never when `add_message_in_db` is `false`. If the nudge turn is itself another spiral, that result is returned
    * as-is with `spiralRecovered:false`; a nudge turn with no segments throws `empty_reply`
    * (see EMPTY REPLY below). Off by default: without the flag,
    * `spiralStopped` is returned as-is and no follow-up turn is sent.
@@ -281,7 +285,7 @@ export class Conversations {
    * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
    * result instead. The raw `stream` and `collectConverse` never throw for it. A turn with only
    * tool calls or sources is not empty: it resolves with `text:''`, so check `toolCalls`.
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, add_message_in_db?, shared_message_id?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
    * @param {import('./client.js').KsLike} ks conversation or agent token
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, errors:object[], spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
@@ -290,7 +294,7 @@ export class Conversations {
       throw new KalturaError({ type: 'about:blank', title: 'bad onErrorSegment', code: 'bad_request', detail: `conversations.send onErrorSegment must be 'throw' or 'return', got ${JSON.stringify(opts.onErrorSegment)}.` });
     }
     const first = this._throwOnErrorSegment(await collectConverse(this.stream(opts, ks)), opts);
-    if (!opts.recoverFromSpiral || !first.spiralStopped || first.text) return first;
+    if (!opts.recoverFromSpiral || opts.add_message_in_db === false || !first.spiralStopped || first.text) return first;
     const nudgeOpts = { ...opts, threadId: first.threadId || opts.threadId, userMessage: `${SPIRAL_RECOVERY_PREFIX}${opts.userMessage}` };
     delete nudgeOpts.recoverFromSpiral;
     const retry = this._throwOnErrorSegment(await collectConverse(this.stream(nudgeOpts, ks)), nudgeOpts);

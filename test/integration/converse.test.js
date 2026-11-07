@@ -344,3 +344,59 @@ test('a value JSON cannot print still gives validation_error, not TypeError', as
   const loop = {}; loop.self = loop;
   await rejectsBeforeRequest({ context_id: loop }, /context_id must be a non-empty string/);
 });
+
+// ── add_message_in_db and shared_message_id ──
+
+test('add_message_in_db and shared_message_id are sent verbatim, false included', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', add_message_in_db: false, shared_message_id: 'abc123' }, CONV_KS);
+  await m.conversations.send({ userMessage: 'x', add_message_in_db: true }, CONV_KS);
+  await m.conversations.send({ userMessage: 'x' }, CONV_KS);
+  const [a, b, c] = converseCalls(f).map((x) => x.body);
+  assert.equal(a.add_message_in_db, false);
+  assert.equal(a.shared_message_id, 'abc123');
+  assert.equal(b.add_message_in_db, true);
+  assert.ok(!('shared_message_id' in b));
+  assert.ok(!('add_message_in_db' in c) && !('shared_message_id' in c), 'omitted keys stay out of the body');
+});
+
+test('add_message_in_db must be a boolean', async () => {
+  for (const bad of [0, 1, 'false', 'true', null, {}, []]) await rejectsBeforeRequest({ add_message_in_db: bad }, /add_message_in_db must be true or false/);
+  await rejectsBeforeRequest({ add_message_in_db: null }, /omit the key/);
+});
+
+test('shared_message_id must be a non-empty string', async () => {
+  for (const bad of ['', '  ', 5, null, {}, []]) await rejectsBeforeRequest({ shared_message_id: bad }, /shared_message_id must be a non-empty message id string/);
+});
+
+test('shared_message_id and threadId together are both sent', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', threadId: 't1', shared_message_id: 'm1' }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  assert.equal(body.threadId, 't1');
+  assert.equal(body.shared_message_id, 'm1');
+});
+
+test('converseOnce forwards add_message_in_db and shared_message_id', async () => {
+  const { f, m } = okMgmt();
+  await m.converseOnce(1222, 'x', { add_message_in_db: false, shared_message_id: 'm1' }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  assert.equal(body.add_message_in_db, false);
+  assert.equal(body.shared_message_id, 'm1');
+});
+
+test('add_message_in_db:false is sent once: no replay after a dropped connection', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => { throw new TypeError('fetch failed'); } }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.conversations.send({ userMessage: 'x', add_message_in_db: false }, CONV_KS));
+  assert.equal(converseCalls(f).length, 1);
+});
+
+test('add_message_in_db:false skips the spiral recovery turn', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ body: spiralNdjson() }) }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.conversations.send({ userMessage: 'x', recoverFromSpiral: true, add_message_in_db: false }, CONV_KS);
+  assert.equal(r.spiralStopped, true);
+  assert.equal(r.spiralRecovered, undefined);
+  assert.equal(converseCalls(f).length, 1, 'no second turn');
+});

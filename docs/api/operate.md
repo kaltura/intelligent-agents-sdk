@@ -39,8 +39,10 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
 | `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
 | `metadata` | Optional. `{ voice_start_time?, voice_end_time? }`. Each value you send must be a finite number. Saved with the user's message. |
+| `add_message_in_db` | Optional. Boolean. `false` answers the turn without storing it: the reply uses the thread's history and the thread keeps the same messages. Without a `threadId`, the returned `threadId` and `messageId` do not exist afterwards (`threads.get` gives `not_found`), so do not store them. The SDK sends the request once, and `recoverFromSpiral` sends no follow-up turn for it. |
+| `shared_message_id` | Optional. Non-empty message id string. Starts a new thread from that message of the same user. The reply carries the new `threadId`, uses that message as context, and the source thread stays unchanged. Send it without `threadId`: with both, the turn starts a new thread and the given thread is unchanged. |
 
-The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
+The SDK checks `context_type`, `context_id`, both entry id lists, `metadata`, `add_message_in_db` and `shared_message_id` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
