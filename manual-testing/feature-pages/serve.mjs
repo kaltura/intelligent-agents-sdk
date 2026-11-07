@@ -156,20 +156,46 @@ function resolveEnvironment(env, args) {
   return resolveTarget(env.NVP1_AGENTIC_PARTNER_ID ? 'nvp1' : 'prod');
 }
 
+/** Delete what a failed provision left behind and check it is gone. Throws if something stays. */
+async function dropPartial(kaltura, ks, partial) {
+  const left = [];
+  const del = async (what, remove, get) => {
+    try { await remove(); } catch (err) { if (!isNotFound(err)) left.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message))}`); }
+    try { await get(); left.push(`${what}: still present`); } catch (err) { if (!isNotFound(err)) left.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message))}`); }
+  };
+  if (partial.agentId) await del('agent', () => kaltura.agents.delete(partial.agentId, ks, { confirmPermanent: true }), () => kaltura.agents.get(partial.agentId, ks));
+  if (partial.avatarId) await del('avatar', () => kaltura.avatars.delete(partial.avatarId, ks, { confirmPermanent: true }), () => kaltura.avatars.get(partial.avatarId, ks));
+  if (partial.configId) await del('intellect', () => kaltura.intellects.delete(partial.configId, ks, { confirmPermanent: true }), () => kaltura.intellects.get(partial.configId, ks));
+  if (left.length) throw new Error(`could not remove a failed attempt: ${left.join('; ')}`);
+}
+
+/** @param {any} e */
+function isNotFound(e) { return e?.status === 404 || /(^|_)not_found$/.test(String(e?.code ?? '')) || e?.title === 'AVATAR_NOT_FOUND'; }
+
 /**
  * Create the throwaway agent. Its prompt has one custom variable and it allows request variables.
- * @param {import('../../src/management/index.js').Management} kaltura @param {(ttl?:number)=>Promise<any>} admin @param {(ids:any)=>void} [onCreated] Called as soon as ids exist, so teardown can clean a partial run.
+ * A step that fails is tried once more after a short wait, because the backend can fail a step now and then. The failed attempt is removed first.
+ * @param {import('../../src/management/index.js').Management} kaltura @param {(ttl?:number)=>Promise<any>} admin @param {string} runId @param {(ids:any)=>void} [onCreated] Called as soon as ids exist, so teardown can clean a partial run. @param {number} [backoffMs] Wait before the second try.
  */
-async function createAgent(kaltura, admin, onCreated) {
+export async function createAgent(kaltura, admin, runId, onCreated, backoffMs = 3000) {
   const ks = await admin();
-  const brief = `Throwaway live-check guide ${RUN_PREFIX}. Keep every answer to one or two short sentences.`;
+  const brief = `Throwaway live-check guide ${RUN_PREFIX}-${runId}. Keep every answer to one or two short sentences.`;
   let made;
-  try {
-    made = await kaltura.provision({ brief, ks, openingPhrase: SILENT_OPENING, adminTags: [RUN_PREFIX] });
-  } catch (err) {
-    const partial = /** @type {any} */ (err)?.body?.createdSoFar;
-    if (partial) onCreated?.(partial);
-    throw err;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      made = await kaltura.provision({ brief, ks, openingPhrase: SILENT_OPENING, adminTags: [RUN_PREFIX, `${RUN_PREFIX}-${runId}`] });
+      break;
+    } catch (err) {
+      const e = /** @type {any} */ (err);
+      const partial = e?.body?.createdSoFar;
+      if (attempt === 2 || e?.code !== 'provision_failed') {
+        if (partial) onCreated?.(partial);
+        throw err;
+      }
+      console.log(redact(`provision failed at step "${e?.body?.failedStep}", trying once more`));
+      if (partial) await dropPartial(kaltura, ks, partial);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
   }
   const ids = { configId: made.configId, agentId: made.agentId, widgetId: made.widgetId, avatarId: made.avatarId ?? made.avatarIds?.[0] };
   onCreated?.(ids);
@@ -205,6 +231,7 @@ async function main() {
   const admin = (ttlSeconds = 600) => kaltura.sessions.createAdminToken({ userId: `${RUN_PREFIX}-admin`, ttlSeconds });
   const pages = pageList(args.emotions);
   const token = newToken();
+  const runId = randomBytes(3).toString('hex');
   const userId = `${RUN_PREFIX}-user`;
 
   /** @type {{configId:number, agentId:string, widgetId:string, avatarId?:string}|undefined} */
@@ -239,7 +266,7 @@ async function main() {
     const gone = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ get) => {
       try { await get(); problems.push(`${what}: still present`); } catch (err) {
         const e = /** @type {any} */ (err);
-        if (!(e?.status === 404 || /(^|_)not_found$/.test(String(e?.code ?? '')) || e?.title === 'AVATAR_NOT_FOUND')) problems.push(`${what}: ${redact(String(e?.code || e?.message))}`);
+        if (!isNotFound(e)) problems.push(`${what}: ${redact(String(e?.code || e?.message))}`);
       }
     };
     if (ids) {
@@ -272,14 +299,15 @@ async function main() {
 
   try {
     log(`target ${target.name}; creating the throwaway agent`);
-    await createAgent(kaltura, admin, (made) => { ids = made; });
+    await createAgent(kaltura, admin, runId, (made) => { ids = made; });
     conv = await kaltura.sessions.createConversationToken({ configId: ids.configId, agentId: ids.agentId, userId, ttlSeconds: 3600 });
     if (!args.emotions) {
       const widget = await kaltura.sessions.createWidgetToken({ widgetId: ids.widgetId });
       init = await kaltura.application.appInit(widget.ks);
     }
   } catch (err) {
-    log(`setup failed: ${String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message || err)}`);
+    const failed = /** @type {any} */ (err);
+    log(`setup failed: ${String(failed?.code || failed?.message || err)}${failed?.body?.failedStep ? ` at ${failed.body.failedStep}` : ''}`);
     await shutdown(1);
     return;
   }
@@ -310,7 +338,7 @@ async function main() {
       if (catalog) return { itemId: catalog.itemId, scopeA: catalog.scopeA, scopeB: catalog.scopeB };
       const ks = await admin(120);
       const scopeA = randomUUID(); const scopeB = randomUUID();
-      const item = await kaltura.catalog.createVisual(fixtureBlob(), { name: `${RUN_PREFIX} ${Date.now().toString(36)}`, genderPresentation: 'Feminine', agentScope: scopeA }, ks);
+      const item = await kaltura.catalog.createVisual(fixtureBlob(), { name: `${RUN_PREFIX}-${runId} ${Date.now().toString(36)}`, genderPresentation: 'Feminine', agentScope: scopeA }, ks);
       catalog = { itemId: item.itemId, scopeA, scopeB };
       return { itemId: item.itemId, scopeA, scopeB };
     },

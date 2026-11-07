@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname, join } from 'node:path';
 import {
-  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route,
+  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route,
 } from '../../manual-testing/feature-pages/serve.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -180,4 +180,49 @@ test('banned words and em dashes are absent from the harness, pages, README and 
 
 test('the emotions page says Limited Availability', () => {
   assert.match(readFileSync(join(pagesDir, 'emotions.html'), 'utf8'), /Limited Availability/);
+});
+
+function fakeKaltura(provisionResults) {
+  const calls = { deleted: [], provision: 0 };
+  const removed = new Set();
+  const gone = () => { throw Object.assign(new Error('nf'), { status: 404 }); };
+  return {
+    calls,
+    provision: async (opts) => {
+      const r = provisionResults[calls.provision++];
+      if (r instanceof Error) throw r;
+      assert.ok(opts.adminTags.some((t) => /^sdk-pages-check-[0-9a-f]{6}$/.test(t)));
+      return r;
+    },
+    agents: { delete: async (id) => { calls.deleted.push(`agent:${id}`); }, get: async () => gone() },
+    avatars: { delete: async (id) => { calls.deleted.push(`avatar:${id}`); }, get: async () => gone() },
+    intellects: {
+      delete: async (id) => { calls.deleted.push(`intellect:${id}`); removed.add(id); }, get: async (id) => { if (removed.has(id)) gone(); return { prompts: [] }; },
+      setPrompts: async () => {}, setClientVariablesEnabled: async () => {},
+    },
+  };
+}
+const provisionError = (partial) => Object.assign(new Error('x'), { code: 'provision_failed', body: { failedStep: 'avatar.create', createdSoFar: partial } });
+const okResult = { configId: 7, agentId: 'a1', widgetId: 'w1', avatarId: 'v1' };
+
+test('createAgent: retries once after a failed provision and removes the failed attempt first', async () => {
+  const k = fakeKaltura([provisionError({ configId: 5, avatarId: 'old' }), okResult]);
+  const ids = await createAgent(k, async () => ({ ks: 'x' }), 'abc123', undefined, 0);
+  assert.equal(ids.agentId, 'a1');
+  assert.equal(k.calls.provision, 2);
+  assert.deepEqual(k.calls.deleted, ['avatar:old', 'intellect:5']);
+});
+
+test('createAgent: a second failure is thrown and its ids reach onCreated', async () => {
+  const k = fakeKaltura([provisionError({}), provisionError({ configId: 9 })]);
+  let seen;
+  await assert.rejects(createAgent(k, async () => ({ ks: 'x' }), 'abc123', (p) => { seen = p; }, 0), { code: 'provision_failed' });
+  assert.equal(k.calls.provision, 2);
+  assert.deepEqual(seen, { configId: 9 });
+});
+
+test('createAgent: an error that is not a provision failure is not retried', async () => {
+  const k = fakeKaltura([Object.assign(new Error('bad'), { code: 'forbidden' })]);
+  await assert.rejects(createAgent(k, async () => ({ ks: 'x' }), 'abc123', undefined, 0), { code: 'forbidden' });
+  assert.equal(k.calls.provision, 1);
 });
