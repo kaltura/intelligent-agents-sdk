@@ -158,8 +158,8 @@ test('pages: no admin secret handling in page code', () => {
   }
 });
 
-// The words are built from parts so this file does not contain them itself.
-const BANNED = [['q', 'a'], ['nvq', '2'], ['pre-?', 'release'], ['be', 'ta'], ['up', 'coming'], ['coming', ' soon']].map((p) => p.join(''));
+// The words are stored reversed so this file does not contain them itself.
+const BANNED = ['aq', '2qvn', 'esaeler?-erp', 'ateb', 'gnimocpu', 'noos gnimoc'].map((w) => [...w].reverse().join(''));
 const BANNED_RE = new RegExp(`\\b(?:${BANNED.join('|')})\\b`, 'i');
 const scanned = [
   ...pageFiles,
