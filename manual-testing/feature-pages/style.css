@@ -1,0 +1,19 @@
+body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1b1f24; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.4rem; margin: 0 0 4px; }
+p.lead { margin: 0 0 16px; color: #4a5560; }
+section { background: #fff; border: 1px solid #d8dde3; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+button { font: inherit; padding: 8px 14px; margin: 4px 8px 4px 0; border: 1px solid #2457a6; background: #2f6bd1; color: #fff; border-radius: 6px; }
+button:disabled { opacity: .5; }
+input { font: inherit; padding: 6px 8px; margin: 4px 8px 4px 0; border: 1px solid #aab3bd; border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; border-bottom: 1px solid #e3e7eb; padding: 4px 8px; vertical-align: top; }
+th { white-space: nowrap; }
+td { word-break: break-word; }
+ul.log { list-style: none; padding: 0; margin: 8px 0 0; font: 13px/1.4 ui-monospace, monospace; }
+ul.log li { border-bottom: 1px solid #eef1f4; padding: 2px 0; word-break: break-word; }
+.ok { color: #12713a; font-weight: 600; }
+.bad { color: #a31d1d; font-weight: 600; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; background: #e8eefb; border: 1px solid #b8c8ea; margin: 0 6px 6px 0; }
+.banner { background: #fff4d6; border: 1px solid #e2c36b; border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
+img.thumb { width: 96px; height: 96px; object-fit: cover; border: 1px solid #d8dde3; border-radius: 6px; }

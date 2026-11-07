@@ -100,6 +100,7 @@ const NO_TARGET = new Map([
   ['live-verify-salesforce-lead.mjs', 'talks to Salesforce only'],
   ['live-verify-matrix.mjs', 'runner, each child resolves its own target'],
   ['live-verify-preflight.mjs', 'probes the production backend, no credentials'],
+  ['live-verify-feature-pages.mjs', 'starts feature-pages/serve.mjs, which resolves its own target'],
 ]);
 
 test('every live script resolves its backend through scripts/lib/target.mjs', () => {
