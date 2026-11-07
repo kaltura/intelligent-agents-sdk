@@ -18,4 +18,5 @@ Docs for contributors. They are never published on the docs site and never loade
 | [../../scripts/README.md](../../scripts/README.md) | Pick and run the verification tiers and live-verify scripts |
 | [../../test/browser/README.md](../../test/browser/README.md) | Run and extend the avatar-media browser harness page |
 | [../../manual-testing/session-complete/README.md](../../manual-testing/session-complete/README.md) | Test the `session_completed` signal on real devices |
+| [../../manual-testing/feature-pages/README.md](../../manual-testing/feature-pages/README.md) | Look at recent SDK features in a real browser on a throwaway agent |
 | [../../manual-testing/voice-video/README.md](../../manual-testing/voice-video/README.md) | Test the voice and video avatar pipeline on real browsers and devices |
