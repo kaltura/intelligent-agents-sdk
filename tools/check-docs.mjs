@@ -69,6 +69,36 @@ function trackedFiles() {
   return out.trim().split('\n').filter(Boolean);
 }
 
+/** The page that holds every Limited Availability capability. */
+const LIMITED_AVAILABILITY_DOC = 'docs/contributor/limited-availability.md';
+
+/**
+ * Files that must not name a Limited Availability capability: every Markdown file
+ * outside `docs/contributor/`, plus everything under `docs/` and `app-builder-skill/`.
+ * @param {string[]} files tracked paths
+ */
+function publicDocFiles(files) {
+  return files.filter((f) => !f.startsWith('docs/contributor/')
+    && (f.endsWith('.md') || f.startsWith('docs/') || f.startsWith('app-builder-skill/')));
+}
+
+/**
+ * Problems with where Limited Availability capability names appear: absent from
+ * every public file, present in the contributor page.
+ * @param {readonly string[]} names @param {Record<string,string>} publicFiles path to text @param {string} contributorDoc
+ * @returns {string[]}
+ */
+function limitedAvailabilityProblems(names, publicFiles, contributorDoc) {
+  const out = [];
+  for (const name of names) {
+    for (const [f, text] of Object.entries(publicFiles)) {
+      if (text.includes(name)) out.push(`${f}: names the Limited Availability capability ${name}. Move it to ${LIMITED_AVAILABILITY_DOC}.`);
+    }
+    if (!contributorDoc.includes(name)) out.push(`${LIMITED_AVAILABILITY_DOC}: does not mention ${name}.`);
+  }
+  return out;
+}
+
 /** Slugify a heading the same way GitHub does. */
 function slugify(h) {
   let s = h.trim().toLowerCase();
@@ -581,8 +611,9 @@ describe('7. SDK invariants', () => {
   });
 
   test('CAPABILITIES and their defaults match the intellect.md catalogue', async () => {
-    const { CAPABILITIES, CAPABILITY_DEFAULTS } = await import('../src/management/capabilities.js');
-    const codeSet = new Set(CAPABILITIES);
+    const { CAPABILITIES, CAPABILITY_DEFAULTS, LIMITED_AVAILABILITY_CAPABILITIES } = await import('../src/management/capabilities.js');
+    const limited = new Set(LIMITED_AVAILABILITY_CAPABILITIES);
+    const codeSet = new Set(CAPABILITIES.filter((c) => !limited.has(c)));
     assert.ok(codeSet.size > 0, 'CAPABILITIES array is empty');
 
     const docText = read('docs/api/build/intellect.md');
@@ -595,9 +626,35 @@ describe('7. SDK invariants', () => {
     }
 
     const missingDoc  = [...codeSet].filter((c) => !catSet.has(c));
-    const missingCode = [...catSet].filter((c) => !codeSet.has(c));
+    const missingCode = [...catSet].filter((c) => !codeSet.has(c) && !limited.has(c));
     assert.deepEqual(missingDoc,  [], `in code but not in catalogue: ${missingDoc.join(', ')}`);
     assert.deepEqual(missingCode, [], `in catalogue but not in code: ${missingCode.join(', ')}`);
+  });
+
+  test('Limited Availability capabilities are only in docs/contributor/limited-availability.md', async () => {
+    const { CAPABILITIES, LIMITED_AVAILABILITY_CAPABILITIES } = await import('../src/management/capabilities.js');
+    for (const name of LIMITED_AVAILABILITY_CAPABILITIES) assert.ok(CAPABILITIES.includes(name), `${name} is not in CAPABILITIES`);
+    const publicFiles = Object.fromEntries(publicDocFiles(trackedFiles()).map((f) => [f, read(f)]));
+    assert.ok(Object.keys(publicFiles).length > 10, 'public doc scan found too few files');
+    const problems = limitedAvailabilityProblems(LIMITED_AVAILABILITY_CAPABILITIES, publicFiles, read(LIMITED_AVAILABILITY_DOC));
+    assert.deepEqual(problems, [], problems.join('\n'));
+  });
+
+  test('the Limited Availability rule flags a public mention and a missing contributor entry', () => {
+    const doc = 'The `avatar_emotions` capability turns emotions on.';
+    assert.deepEqual(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'plain text' }, doc), []);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'set avatar_emotions on' }, doc).length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'app-builder-skill/x.md': 'avatar_emotions' }, doc).length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], {}, 'no mention here').length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'avatar_emotions' }, '').length, 2);
+  });
+
+  test('public doc selection covers docs, the skill and root pages, and skips contributor docs', () => {
+    const picked = publicDocFiles([
+      'README.md', 'API-REFERENCE.md', 'docs/api/build/intellect.md', 'docs/contributor/limited-availability.md',
+      'app-builder-skill/skills/x/SKILL.md', 'app-builder-skill/evals/case.json', 'src/management/capabilities.js', '.github/release-notes/v1.0.0.md',
+    ]);
+    assert.deepEqual(picked, ['README.md', 'API-REFERENCE.md', 'docs/api/build/intellect.md', 'app-builder-skill/skills/x/SKILL.md', 'app-builder-skill/evals/case.json', '.github/release-notes/v1.0.0.md']);
   });
 
   test('converse field list matches the operate.md Converse field table', () => {
