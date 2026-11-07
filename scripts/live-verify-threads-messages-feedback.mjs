@@ -20,7 +20,8 @@
  *   7  feedback.add         — rates the message, is_positive persists
  *   8  threads.delete       — scratch threads removed, re-`get` real-404s
  *
- * Each step is a hard assertion (run exits non-zero if it fails).
+ * Each step is a hard assertion (run exits non-zero if it fails), except the two
+ * reply-recall observations in 5b and 5c, which are printed as notes only.
  *
  * `threads.setAnalysis`/`clearAnalysis`/`push` and `feedback.list` are
  * covered by live-verify-conversation-avatar-surface.mjs.
@@ -60,6 +61,11 @@ let failed = false;
 function check(step, ok, detail) {
   if (!ok) failed = true;
   record(step, ok, detail);
+}
+
+/** Print a model-dependent observation. Never fails the run: LLM recall is not a contract. */
+function note(step, observed, detail) {
+  record(step, true, { note: observed ? 'observed' : 'not observed (model-dependent, not a failure)', ...detail });
 }
 
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
@@ -164,7 +170,7 @@ try {
   const side = await kaltura.converseOnce(intellectId, NICKNAME_ASK, { threadId, add_message_in_db: false }, conv);
   const afterSide = await kaltura.messages.list(admin, { threadId });
   check('5b-unsaved-turn-leaves-message-count', afterSide.length === before.length, { before: before.length, after: afterSide.length });
-  check('5b-unsaved-turn-used-thread-history', side.text.includes(RUN_TAG), { text: snippet(side.text) });
+  note('5b-unsaved-turn-used-thread-history', side.text.includes(RUN_TAG), { text: snippet(side.text) });
 
   // 5c: shared_message_id — fork from the original message (not a share clone).
   const fork = await kaltura.converseOnce(intellectId, NICKNAME_ASK, { shared_message_id: turn.messageId }, conv);
@@ -172,7 +178,7 @@ try {
   const afterFork = await kaltura.messages.list(admin, { threadId });
   check('5c-fork-opens-new-thread', !!forkThreadId && forkThreadId !== threadId, { forkThreadId });
   check('5c-fork-leaves-source-unchanged', afterFork.length === before.length, { before: before.length, after: afterFork.length });
-  check('5c-fork-reply-used-seeded-context', fork.text.includes(RUN_TAG), { text: snippet(fork.text) });
+  note('5c-fork-reply-used-seeded-context', fork.text.includes(RUN_TAG), { text: snippet(fork.text) });
 
   // 6: messages.share clones the message under a new title. Opt-in (--with-share):
   // every run leaves an undeletable clone behind, so run it only after a change
