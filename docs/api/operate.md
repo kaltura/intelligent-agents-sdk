@@ -18,11 +18,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 ```
 
 ```json
-{
-  "userMessage": "How do I fix video buffering?",
-  "threadId": null,
-  "sse": false
-}
+{ "userMessage": "How do I fix video buffering?", "threadId": null, "sse": false }
 ```
 
 | Field | Notes |
