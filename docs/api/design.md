@@ -188,7 +188,7 @@ Every upload above takes an optional `agentScope`, and `catalog-item/update` tak
 agentScope=<agent id>
 ```
 
-[Browse the catalog](#browse-the-catalog) with the same `agentScope` to list the items tagged with that agent next to the unscoped ones. `agentScope` is a tag for listing. It is not access control.
+[Browse the catalog](#browse-the-catalog) with the same `agentScope` to list the items tagged with that agent next to the unscoped ones. `agentScope` is a tag for listing. It is not access control. A list call without `agentScope` does not return a scoped item, and after `update` with `agentScope: ''` the item shows up in that list and in every agent's list.
 
 | Call | `agentScope` |
 |---|---|
