@@ -32,7 +32,7 @@ test('SKILL_MODES / THINKING_LEVELS / SUMMARY_CONTENT_TYPES / CALL_STAGES are fr
   assert.deepEqual([...CALL_STAGES], ['start', 'middle', 'end']);
 });
 
-test('MODEL_IDS lists the known model ids (Claude Sonnet 5, Sonnet 4, Haiku us+eu, Gemini)', () => {
+test('MODEL_IDS lists the known model ids (Claude Sonnet 5, Sonnet 4, Haiku us+eu, provider-neutral Claude, Gemini)', () => {
   assert.deepEqual([...MODEL_IDS], [
     'us.anthropic.claude-sonnet-5',
     'eu.anthropic.claude-sonnet-5',
@@ -40,6 +40,8 @@ test('MODEL_IDS lists the known model ids (Claude Sonnet 5, Sonnet 4, Haiku us+e
     'eu.anthropic.claude-sonnet-4-20250514-v1:0',
     'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'claude-sonnet-5',
+    'claude-haiku-4-5',
     'gemini-3-flash-preview',
     'gemini-2.5-flash',
     'gemini-3.1-flash-lite',

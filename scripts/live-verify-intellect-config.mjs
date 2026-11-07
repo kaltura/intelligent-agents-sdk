@@ -10,6 +10,7 @@
  *   3  setSkillIds([])                         — empty list, no real Skill needed
  *   4  setThreadStartTools([])                 — empty list, no real Tool needed
  *   5  setModelConfiguration({...})            — a real MODEL_IDS entry, then null to clear
+ *      5b  one converseOnce per provider-neutral Claude id in MODEL_IDS (each must answer)
  *   6  setOpeningPhrase('...')                 — then null to clear
  *   7  setAvatarSummaryConfig({...})           — then null to restore defaults
  *   8  setSecrets({CI_SCRATCH_SECRET: fake})   — fake name/value, never a real credential
@@ -43,6 +44,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { MODEL_IDS } from '../src/management/intellect-config.js';
 import { resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +55,7 @@ const { partnerId } = target;
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-intellect-config-${Date.now()}`;
 const RUN_TAG = `ic${Date.now().toString(36)}`;
+const SCRATCH_NAME = `sdk-live-${Math.random().toString(36).slice(2, 8)}`;
 const artifact = { runId, startedAt, partnerId, steps: [] };
 
 function record(step, ok, detail) {
@@ -70,6 +73,14 @@ const kaltura = new Management(target);
 let admin;
 let configId;
 
+// Ctrl-C or a cancelled job still deletes the scratch intellect.
+process.once('SIGINT', async () => {
+  if (configId && admin) {
+    try { await kaltura.intellects.delete(configId, admin, { confirmPermanent: true }); } catch { /* best effort */ }
+  }
+  process.exit(130);
+});
+
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
@@ -78,7 +89,7 @@ try {
   const intel = await kaltura.intellects.add({
     type: 'internal',
     status: 2,
-    prompts: [{ key: 'name', label: 'name', headerTemplate: 'Your name is:', type: 'custom', value: `Live-Verify IntellectConfig Probe ${RUN_TAG}` }],
+    prompts: [{ key: 'name', label: 'name', headerTemplate: 'Your name is:', type: 'custom', value: `${SCRATCH_NAME} IntellectConfig Probe ${RUN_TAG}` }],
   }, admin);
   configId = intel.id;
   check('1-intellect-create', !!configId, { configId });
@@ -104,6 +115,14 @@ try {
   check('5-set-model-configuration', modelConfig.applied === true, { applied: modelConfig.applied });
   const modelConfigClear = await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
   check('5-clear-model-configuration', modelConfigClear.applied === true, { applied: modelConfigClear.applied });
+
+  // 5b: the provider-neutral Claude ids (no us./eu. prefix) must answer one real turn.
+  for (const modelId of MODEL_IDS.filter((id) => id.startsWith('claude-'))) {
+    await kaltura.intellectConfig.setModelConfiguration(configId, { model_id: modelId }, admin);
+    const turn = await kaltura.converseOnce(configId, 'Reply with one word: pong', {});
+    check(`5b-model-answers-${modelId}`, typeof turn.text === 'string' && turn.text.trim().length > 0, { modelId, chars: turn.text?.length });
+  }
+  await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
 
   // 6: setOpeningPhrase — then null to clear.
   const openingPhrase = await kaltura.intellectConfig.setOpeningPhrase(configId, `Hello from live-verify ${RUN_TAG}!`, admin);
