@@ -118,6 +118,8 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Structured-data forms the agent asks for. Set via `intellectConfig.setUserPropertiesForms`. Fields, types and titles: [STRUCTURED-DATA-FORMS.md](../../STRUCTURED-DATA-FORMS.md) |
 
+`temperature: 0` does not make replies repeatable. The same prompt can still return different text, so do not rely on it for fixed output.
+
 ### Conditions
 
 A `condition` switches a skill, a prompt block or a tool on only while it is true. It is a **bare expression** over thread variables:

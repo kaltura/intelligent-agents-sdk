@@ -93,7 +93,7 @@ export class Catalog {
    * );
    *
    * @param {Blob|File} file
-   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `language`: a language code, for example `'en'` or `'he'`; defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
+   * @param {{name:string,description:string,language?:string,consentRef?:string}} attrs  `name`: up to 100 characters; more returns `bad_request` (400). `language`: a language code, for example `'en'` or `'he'`; defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
    * @param {string} ks
    */
   async createVoice(file, attrs, ks) {
