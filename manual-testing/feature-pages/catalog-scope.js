@@ -12,7 +12,7 @@ async function refresh() {
     ['listed with no scope filter', st.inListNone],
   ]);
   const img = $('thumb');
-  if (st.thumbnail) { img.setAttribute('src', st.thumbnail); img.hidden = false; }
+  if (st.thumbnail) { if (img.getAttribute('src') !== st.thumbnail) img.setAttribute('src', st.thumbnail); img.hidden = false; }
   document.body.dataset.scope = label(st.scope);
 }
 async function run(label, fn) {

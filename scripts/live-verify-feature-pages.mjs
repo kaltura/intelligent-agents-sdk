@@ -143,6 +143,7 @@ async function main() {
       await stepClick('#clear', 'clear');
       c = await text('#state');
       check('catalog-scope-cleared', cell(c, 'item scope') === 'none' && cell(c, 'listed with no scope filter') === '1', c.replace(/\s+/g, ' '));
+      await page.waitForFunction(() => { const i = /** @type {HTMLImageElement} */ (document.getElementById('thumb')); return i.complete && i.naturalWidth > 0; }, null, { timeout: 20_000 }).catch(() => {});
       const thumb = await page.evaluate(() => { const i = /** @type {HTMLImageElement} */ (document.getElementById('thumb')); return { shown: !i.hidden, w: i.naturalWidth }; });
       check('catalog-scope-thumbnail-loads', thumb.shown && thumb.w > 0, thumb);
       await shot('catalog-scope');

@@ -8,10 +8,11 @@ const kaltura = new Management({ partnerId: cfg.partnerId, genieUrl: cfg.genieUr
 async function ask(emotions) {
   $('badges').replaceChildren();
   $('chunks').replaceChildren();
-  let segments = 0; let withLabel = 0; let anyMeta = 0;
+  let segments = 0; let withLabel = 0; let anyMeta = 0; const types = new Set();
   try {
     const capabilities = { avatar: 'on', avatar_emotions: emotions ? 'on' : 'off' };
     for await (const seg of kaltura.conversations.stream({ userMessage: 'Tell me a short sad story, then cheer me up.', capabilities }, cfg.conversationKs)) {
+      types.add(String(seg.type));
       if (seg.metadata && 'emotion' in seg.metadata) anyMeta++;
       if (seg.type === 'avatar' && seg.segmentStart) {
         segments++;
@@ -25,7 +26,7 @@ async function ask(emotions) {
         logLine('chunks', `segment ${segments}: ${known ? raw : raw ? 'unknown label' : 'no label'}`);
       }
     }
-    fillRows('result', [['emotions', emotions ? 'on' : 'off'], ['avatar segments', segments], ['segments with a known label', withLabel], ['chunks carrying any emotion field', anyMeta]]);
+    fillRows('result', [['emotions', emotions ? 'on' : 'off'], ['avatar segments', segments], ['segments with a known label', withLabel], ['chunks carrying any emotion field', anyMeta], ['chunk types', [...types].join(', ')]]);
   } catch (err) {
     fillRows('result', [['emotions', emotions ? 'on' : 'off'], ['error', describe(err)]]);
   }

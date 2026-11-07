@@ -9,7 +9,7 @@ input { font: inherit; padding: 6px 8px; margin: 4px 8px 4px 0; border: 1px soli
 table { border-collapse: collapse; width: 100%; font-size: .92rem; }
 th, td { text-align: left; border-bottom: 1px solid #e3e7eb; padding: 4px 8px; vertical-align: top; }
 th { white-space: nowrap; }
-td { word-break: break-word; }
+td { overflow-wrap: anywhere; min-width: 5.5em; }
 ul.log { list-style: none; padding: 0; margin: 8px 0 0; font: 13px/1.4 ui-monospace, monospace; }
 ul.log li { border-bottom: 1px solid #eef1f4; padding: 2px 0; word-break: break-word; }
 .ok { color: #12713a; font-weight: 600; }
