@@ -5,6 +5,8 @@
  */
 import { KalturaError } from '../core/errors.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class Application {
   /** @param {import('./client.js').Ctx} ctx */
   constructor(ctx) { this._ = ctx; }
@@ -78,5 +80,29 @@ export class Application {
   async getCustomPrompts(ks) {
     this._.assertAny(ks, 'application.getCustomPrompts');
     return (await this._.agentic('application/getCustomPrompts', {}, ks)).data;
+  }
+
+  /**
+   * List the `{{ variables }}` of one agent: the reserved `sys__*` ones and the
+   * custom ones its prompts, tools and skills reference. READ, no state change.
+   * Returned verbatim, no SDK-side transform or defaults:
+   *   `{systemVariables[], customVariables[]}`.
+   * `systemVariables[]` items: `{name, template, type, description, example, used, properties?[]}`.
+   * `used` says whether the agent references that variable.
+   * `customVariables[]` items: `{name, template, type, paths[], origins[], sources[]}`.
+   * `type` is `"unknown"` when it cannot be inferred. `origins[]` says where a
+   * value comes from (`"referenced"`, or set at runtime by a tool).
+   * `sources[]` items: `{documentType, documentId, field, origin}`.
+   * An unknown agent id throws `agent_not_found`.
+   * @param {string} agentId The agent UUID (`agents.create` returns it as `id`).
+   * @param {string} ks (admin)
+   * @returns {Promise<{systemVariables?: Array<{name:string, template:string, type:string, description:string, example?:string, used:boolean, properties?:object[]}>, customVariables?: Array<{name:string, template:string, type:string, paths:string[], origins:string[], sources:Array<{documentType:string, documentId:string, field:string, origin:string}>}>}>}
+   */
+  async getCustomVariables(agentId, ks) {
+    this._.assertAdmin(ks, 'application.getCustomVariables');
+    if (typeof agentId !== 'string' || !UUID_RE.test(agentId)) {
+      throw new KalturaError({ type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid agent id', code: 'validation_error', detail: 'application.getCustomVariables needs the agent UUID as a string (the `id` agents.create returns).' });
+    }
+    return (await this._.agentic('application/getCustomVariables', { agentId }, ks)).data;
   }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Live-backend verification for four capabilities on real Kaltura
- * API, no fakes: Knowledge#list, Application#getCustomPrompts,
+ * API, no fakes: Knowledge#list, Application#getCustomPrompts, Application#getCustomVariables,
  * Avatars#listTemplates, and the full Lifecycle domain (9 methods) plus the
  * InsightSettings domain a `triggerInsightSettingsKai` lifecycle action
  * references.
@@ -44,6 +44,8 @@ let admin;
 let ruleId;
 let ruleId2;
 let insightSettingId;
+let varsIntellectId;
+let varsAgentId;
 let failed = false;
 
 try {
@@ -62,6 +64,31 @@ try {
   record('application.getCustomPrompts', true, {
     count: prompts.length,
     keys: prompts.map((p) => p.key),
+  });
+
+  // ── Application#getCustomVariables ─────────────────────────────────────
+  // Scratch intellect + agent whose directive reads one custom {{ var }}.
+  const varName = `sdk_live_var_${Math.random().toString(36).slice(2, 8)}`;
+  const varsIntellect = await kaltura.intellects.add({
+    type: 'internal',
+    status: 2,
+    base_directive: `You are a probe. Greet the user and mention {{ ${varName} }}.`,
+  }, admin);
+  varsIntellectId = varsIntellect.id;
+  const varsAgent = await kaltura.agents.create({
+    displayName: `sdk-live-${varName}`,
+    intellect: { intellectType: 'genie', id: varsIntellectId },
+    adminTags: ['ci-scratch'],
+  }, admin);
+  varsAgentId = varsAgent.agentId || varsAgent.id;
+  const vars = await kaltura.application.getCustomVariables(varsAgentId, admin);
+  const mine = (vars.customVariables || []).find((v) => v.name === varName);
+  const sysNames = (vars.systemVariables || []).map((v) => v.name);
+  record('application.getCustomVariables', !!mine && sysNames.length > 0 && sysNames.every((n) => n.startsWith('sys__')) && (mine.sources || []).some((x) => x.field === 'base_directive'), {
+    customNames: (vars.customVariables || []).map((v) => v.name),
+    systemCount: sysNames.length,
+    systemSample: sysNames.slice(0, 4),
+    custom: mine,
   });
 
   // ── Avatars#listTemplates ───────────────────────────────────────────────
@@ -155,6 +182,24 @@ try {
   failed = true;
   record('live-verify-capabilities', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  if (varsAgentId) {
+    try {
+      await kaltura.agents.delete(varsAgentId, admin, { confirmPermanent: true });
+      record('agents.delete (getCustomVariables probe)', true, { id: varsAgentId });
+    } catch (err) {
+      failed = true;
+      record('agents.delete (getCustomVariables probe)', false, { id: varsAgentId, message: err?.detail || err?.message || String(err) });
+    }
+  }
+  if (varsIntellectId) {
+    try {
+      await kaltura.intellects.delete(varsIntellectId, admin, { confirmPermanent: true });
+      record('intellects.delete (getCustomVariables probe)', true, { id: varsIntellectId });
+    } catch (err) {
+      failed = true;
+      record('intellects.delete (getCustomVariables probe)', false, { id: varsIntellectId, message: err?.detail || err?.message || String(err) });
+    }
+  }
   if (ruleId) {
     try {
       const del = await kaltura.lifecycle.delete(ruleId, admin, { confirmPermanent: true });

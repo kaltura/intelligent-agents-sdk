@@ -187,6 +187,31 @@ Each is `"on"` / `"off"` / `"disabled"`:
 
 ---
 
+## List an Agent's Variables
+
+**SDK:** `mgmt.application.getCustomVariables(agentId, ks)`. Needs an admin KS and the agent UUID (the `id` that `agents.create` returns). It only reads data.
+
+Use it to see which `{{ name }}` variables an agent uses and where each one comes from. The result is returned as the server sends it:
+
+| Field | Meaning |
+|---|---|
+| `systemVariables[]` | The reserved `sys__*` variables. Each has `name`, `template`, `type`, `description`, `example`, `used`, and sometimes `properties[]`. `used` is `true` when the agent references the variable |
+| `customVariables[]` | Every other variable the agent references. Each has `name`, `template`, `type` (`"unknown"` when it cannot be inferred), `paths[]`, `origins[]` and `sources[]` |
+| `origins[]` | How the variable gets a value: `referenced` (the agent's text reads it, and you can pass it as a [request variable](../operate.md#converse)), or set at runtime by a tool |
+| `sources[]` | Where the variable is used: `{documentType, documentId, field, origin}` |
+
+The SDK adds no defaults. A response without one of the arrays comes back without it.
+
+```js
+const { systemVariables, customVariables } = await mgmt.application.getCustomVariables(agentId, adminKs);
+customVariables.map((v) => v.name);              // ['pass_var']
+systemVariables.filter((v) => v.used).length;    // reserved variables the agent reads
+```
+
+An empty or non-UUID `agentId` throws `validation_error` and a missing KS throws `bad_request`, both before any request. An unknown agent throws `agent_not_found`. A dropped connection is resent, like other reads.
+
+---
+
 ## Related docs
 
 | Doc | What it adds |
