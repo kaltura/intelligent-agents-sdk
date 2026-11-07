@@ -1506,7 +1506,7 @@ jobs:
           if [ -f live-verify-feature-pages-output.log ]; then
             echo >> "$GITHUB_STEP_SUMMARY"
             {
-              echo "### Pages · Feature pages (${{ matrix.engine }}) — ${{ steps.live_verify_feature_pages.outcome }}"
+              echo "### Pages · Feature pages (${{ matrix.engine }}): ${{ steps.live_verify_feature_pages.outcome }}"
               echo
               echo '```'
               tail -n 40 live-verify-feature-pages-output.log
