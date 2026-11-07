@@ -1,6 +1,6 @@
 # Live demos
 
-The `examples/` folder has five browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos need your partner id, plus either an admin secret (to create a throwaway agent) or the widget id of an existing agent. Three of the scripts need the admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
+The `examples/` folder has five browser demos, one full app ([Showroom](../examples/showroom/README.md)), four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos need your partner id, plus either an admin secret (to create a throwaway agent) or the widget id of an existing agent. Three of the scripts need the admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
 
 ## Run a browser demo
 

@@ -1,0 +1,170 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg-0); color: var(--ink); overflow: hidden; }
+body { font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; min-height: 44px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:focus-visible { outline: 0.18em solid var(--accent); outline-offset: 0.15em; }
+
+.stage {
+  position: fixed; inset: 0; display: grid; overflow: hidden;
+  /* A photo of a shop floor, graded dark so the light panel text stays readable. The floor sits at the bottom edge. */
+  background:
+    radial-gradient(50em 40em at 90% 90%, #0d6b5a44, transparent 60%),
+    linear-gradient(180deg, rgb(7 10 24 / 0.62), rgb(7 10 24 / 0.8)),
+    var(--scene) center bottom / cover no-repeat,
+    var(--bg-0);
+  font-size: 16px; line-height: 1.35;
+}
+.stage { --scene: url("../assets/store.webp"); }
+@media (min-aspect-ratio: 1 / 1) { .stage { --scene: url("../assets/store-wide.webp"); } } /* a landscape photo for landscape screens */
+.stage[data-kiosk] { cursor: none; user-select: none; -webkit-user-select: none; }
+
+/* ---- robot column ---- */
+.robot-col { position: relative; min-width: 0; min-height: 0; display: flex; justify-content: center; align-items: stretch; padding-bottom: 1em; }
+.rig { position: relative; height: 100%; aspect-ratio: 600 / 1000; max-width: 100%; }
+.rig-body { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.rig-head { position: absolute; left: 25%; top: 12%; width: 50%; height: 29%; transform-origin: 50% 85%; will-change: transform; }
+.rig-head > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.rig-head-front { pointer-events: none; }
+.rig-visor { position: absolute; left: 11.33%; top: 13.1%; width: 77.33%; height: 80%; border-radius: 25%; overflow: hidden; background: #0b0e1a; }
+.rig-visor video, .rig-visor > .avatar-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.4s; }
+.rig[data-live="true"] .rig-visor video { opacity: 1; }
+.rig-eyes { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; align-content: center; justify-items: center; padding: 0 18%; gap: 0 12%; transition: opacity 0.4s; }
+.rig-eyes i { width: 55%; aspect-ratio: 1 / 1.25; margin-top: 18%; border-radius: 50%; background: var(--accent); box-shadow: 0 0 1.2em var(--accent); animation: blink 5s infinite; }
+.rig-eyes b { grid-column: 1 / 3; width: 30%; height: 0.55em; margin-top: 10%; border-radius: 1em; background: var(--accent); opacity: 0.8; }
+.rig[data-speaking="true"] .rig-eyes b { animation: mouth 0.32s infinite alternate ease-in-out; }
+.rig[data-thinking="true"] .rig-eyes i { transform: translateY(-20%); }
+.rig[data-live="true"] .rig-eyes { opacity: 0; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.08); } }
+@keyframes mouth { to { height: 1.4em; width: 22%; } }
+
+.status { position: absolute; left: 0; right: 0; bottom: 0.6em; display: flex; gap: 0.8em; align-items: center; justify-content: center; z-index: 3; }
+.chip { display: inline-flex; align-items: center; gap: 0.5em; padding: 0.35em 0.9em; border-radius: 2em; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(0.8em); -webkit-backdrop-filter: blur(0.8em); font-size: max(0.85em, 13px); color: var(--ink-dim); }
+.chip::before { content: ""; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--ink-dim); }
+.chip[data-state="listening"]::before { background: var(--accent); box-shadow: 0 0 0.6em var(--accent); }
+.chip[data-state="speaking"]::before { background: #7aa8ff; animation: pulse 0.8s infinite alternate; }
+.chip[data-state="thinking"]::before { background: var(--warn); animation: pulse 0.5s infinite alternate; }
+@keyframes pulse { to { transform: scale(1.5); } }
+
+.mic { flex: none; width: 3.4em; height: 3.4em; border-radius: 50%; border: 1px solid var(--line); background: var(--accent); color: var(--accent-ink); font-weight: 700; display: grid; place-items: center; cursor: pointer; box-shadow: 0 0.4em 1.6em #6ee7b755; transition: transform 0.15s var(--ease); }
+.mic:active { transform: scale(0.94); }
+.mic[aria-pressed="true"] { background: #fff; }
+.mic svg { width: 1.6em; height: 1.6em; }
+
+/* ---- panel ---- */
+.panel { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 1.6em 2em 4.4em; gap: 1em; } /* bottom room for the caption line */
+/* The panel sits on a photo, so its text gets a soft dark halo for contrast. */
+.panel { text-shadow: 0 1px 0.8em rgb(5 8 20 / 0.75); }
+.tabs { display: flex; gap: 0.5em; flex-wrap: wrap; }
+.tabs[hidden], .hint[hidden] { display: none; }
+.tab { padding: 0.55em 1.1em; border-radius: 2em; background: var(--glass); border: 1px solid var(--line); cursor: pointer; display: inline-flex; gap: 0.6em; align-items: center; min-height: max(2.75em, 44px); }
+.tab[aria-current="page"] { background: var(--ink); color: #0a0f24; border-color: var(--ink); }
+.tab-badge { font-size: 0.8em; padding: 0.1em 0.6em; border-radius: 1em; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.scene-host { flex: 1; min-height: 0; overflow: auto; outline: none; scrollbar-width: thin; }
+.hint { margin: 0; color: var(--ink-dim); font-size: 0.95em; }
+.captions { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; display: grid; place-items: center; padding: 0 1.5em 0.6em; z-index: 4; }
+.caption-line { margin: 0; max-width: 46em; padding: 0.55em 1.1em; border-radius: 1em; background: rgba(5, 8, 20, 0.78); backdrop-filter: blur(0.6em); -webkit-backdrop-filter: blur(0.6em); opacity: 0; transform: translateY(0.4em); transition: opacity 0.3s, transform 0.3s var(--ease); text-align: center; font-size: 1.05em; }
+.caption-line.on { opacity: 1; transform: none; }
+.caption-line[data-who="user"] { color: var(--accent); font-style: italic; }
+
+/* ---- layouts ---- */
+.stage[data-layout="wide"] { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+.stage[data-layout="wide"] .robot-col { padding-bottom: 6.5em; }
+.stage[data-layout="wide"] .captions { left: 0; right: 0; }
+.stage[data-layout="tall"] { grid-template-rows: minmax(0, 0.44fr) minmax(0, 0.56fr); }
+/* Tablets are shorter than kiosks, and their text cannot shrink further, so the scene gets more room. */
+@media (min-aspect-ratio: 0.62) { .stage[data-layout="tall"] { grid-template-rows: minmax(0, 0.52fr) minmax(0, 0.48fr); } }
+.stage[data-layout="tall"] .panel { order: -1; padding-top: 2.2em; }
+.stage[data-layout="tall"] .robot-col { padding-bottom: 6.5em; }
+.stage[data-layout="tall"] .captions { bottom: 5em; }
+.stage[data-layout="phone"] { grid-template-rows: minmax(0, 0.40fr) minmax(0, 0.60fr); }
+.stage[data-layout="phone"] .panel { padding: 0.9em 1em 3.6em; }
+.stage[data-layout="phone"] .robot-col { padding-bottom: 0; }
+.stage[data-layout="phone"] .status { bottom: auto; top: 0.6em; padding: 0 0.8em; justify-content: space-between; }
+.stage[data-layout="phone"] .mic { width: 3em; height: 3em; }
+
+/* ---- start overlay ---- */
+.start { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(5, 8, 20, 0.72); backdrop-filter: blur(1em); -webkit-backdrop-filter: blur(1em); }
+.start[hidden] { display: none; }
+.start-card { text-align: center; padding: 2em; max-width: 26em; display: grid; gap: 0.9em; justify-items: center; }
+.start-card h1 { margin: 0; font-size: 2.2em; letter-spacing: -0.02em; }
+.start-card p { margin: 0; color: var(--ink-dim); }
+.start-card .btn { font-size: 1.15em; }
+
+/* ---- start flow: Juno is "away" (dim, grey) until the session is up, then she steps into the light ---- */
+.rig-canvas, .rig-head-canvas, .rig-body, .rig-head { transition: filter 0.7s var(--ease); }
+.stage:not([data-presence="here"]) :is(.rig-canvas, .rig-head-canvas, .rig-body, .rig-head) { filter: grayscale(0.9) brightness(0.5); }
+.spinner { display: none; width: 2.4em; height: 2.4em; border-radius: 50%; border: 0.25em solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.start[data-phase="joining"] { background: rgba(5, 8, 20, 0.35); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.start[data-phase="joining"] .start-card { background: var(--glass-hi); border: 1px solid var(--line); border-radius: 1.2em; padding: 1.4em 1.8em; backdrop-filter: blur(0.8em); -webkit-backdrop-filter: blur(0.8em); max-width: min(22em, 86%); }
+.start[data-phase="joining"] h1 { font-size: 1.5em; }
+.start[data-phase="joining"] :is(.btn, .eyebrow) { display: none; }
+.start[data-phase="joining"] .spinner { display: block; }
+.panel { transition: opacity 0.6s var(--ease); }
+.stage:not([data-presence="here"]) .panel { opacity: 0.35; }
+.chip[data-state="connecting"]::before { background: var(--warn); animation: pulse 0.5s infinite alternate; }
+.chip[data-state="ready"] { color: var(--ink); font-size: max(1.15em, 16px); font-weight: 600; background: rgb(74 222 128 / 0.22); border-color: #4ade80; animation: pop 0.6s var(--ease); }
+.chip[data-state="ready"]::before { background: #4ade80; box-shadow: 0 0 0.7em #4ade80; }
+@keyframes pop { 50% { transform: scale(1.12); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important; }
+}
+.mic[hidden] { display: none; }
+
+/* ---- video-clip body (js/rig/clip-body.js) ----
+   Each clip video holds the picture over its alpha matte. The videos only decode (hidden); a WebGL canvas draws them with real alpha. */
+.rig-clips .clip { position: absolute; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+.rig[data-mirror] .rig-canvas, .rig[data-mirror] .rig-head-canvas { transform: scaleX(-1); }
+.rig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* The head area of the footage is transparent. The live video (or, before a session, the still) fills it, cut out of its backdrop by the matte
+   so it sits on any scene. Over the seam rows it fades out while the footage under it is solid: one figure, no cut. */
+/* A pool of floor light with a soft contact shadow in it, under the feet. Both sit under the canvas, and only when the body names its floor. */
+.rig-clips[data-floor]::before, .rig-clips[data-floor]::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; left: calc(50% - var(--floor-w, 0%) * 1.6); width: calc(var(--floor-w, 0%) * 3.2); top: calc(var(--floor-y, 100%) - 5%); height: 10%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent, #6ee7b7) 26%, #9fb4ff) 0%, transparent 100%); opacity: 0.2; }
+.rig-clips[data-floor]::after { left: calc(50% - var(--floor-w, 0%) * 0.8); width: calc(var(--floor-w, 0%) * 1.6); top: calc(var(--floor-y, 100%) - 1.6%); height: 3.2%; background: radial-gradient(closest-side, #000f 0%, #000a 50%, transparent 100%); opacity: 1; }
+.rig-clips .rig-visor { background: none; border-radius: 0; overflow: visible; transform: translate(var(--hx, 0px), var(--hy, 0px)) rotate(var(--hr, 0rad)) scale(var(--hs, 1)); transform-origin: 50% var(--pivot-y, 100%); will-change: transform; }
+.rig-clips .rig-visor video, .rig-clips[data-live="true"] .rig-visor video, .rig-clips .rig-still { opacity: 0; transition: none; pointer-events: none; } /* the video only decodes and the still only loads: the head canvas draws them */
+.rig-head-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.rig-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; user-select: none; }
+
+/* Tall kiosk (portrait, narrower than 0.62): she stands full-body at life size on the left, the panel is a column on the right.
+   The footage frame is wider than her column, but its edges are black and see-through, so it spills under the panel. */
+@media (max-aspect-ratio: 0.62) {
+  .stage[data-layout="tall"] { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 0.57fr) minmax(0, 0.43fr); }
+  .stage[data-layout="tall"] .panel { order: 0; z-index: 2; padding-bottom: 7.6em; }
+  .stage[data-layout="tall"] .robot-col { padding-bottom: 0; overflow: visible; align-items: flex-end; }
+  .stage[data-layout="tall"] .robot-col { position: relative; }
+  .stage[data-layout="tall"] .rig { position: absolute; bottom: 0; left: calc(55% - 50vh * var(--rig-ar, 0.6)); left: calc(55% - 50dvh * var(--rig-ar, 0.6)); height: 100%; max-width: none; } /* centred at 55% of her column. No transform here: it would make the footage opaque black instead of see-through */
+  .stage[data-layout="tall"] .captions { left: 57%; right: 0; bottom: 0.6em; }
+  .stage[data-layout="tall"] .status { bottom: 0.6em; }
+}
+
+/* ---- light theme (?theme=light) ----
+   The shop photo under a white veil, dark text, white glass. Only tokens and the few fixed colors above are overridden. */
+.stage[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #f4f6fb; --bg-1: #e8ecf6;
+  --ink: #0d1330; --ink-dim: #3a4262;
+  --line: rgba(13, 19, 48, 0.16); --glass: rgba(255, 255, 255, 0.66); --glass-hi: rgba(255, 255, 255, 0.9);
+  --accent: #076b50; --accent-ink: #fff; --warn: #b45f06;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0.6)), var(--scene) center bottom / cover no-repeat, var(--bg-0);
+  color: var(--ink);
+}
+.stage[data-theme="light"] .panel { text-shadow: 0 1px 0.8em rgb(255 255 255 / 0.85); }
+.stage[data-theme="light"] .tab[aria-current="page"], .stage[data-theme="light"] .btn[aria-pressed="true"] { color: #fff; }
+.stage[data-theme="light"] .btn-primary:hover { background: color-mix(in srgb, var(--accent) 85%, #000); }
+.stage[data-theme="light"] .mic[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.stage[data-theme="light"] .chip[data-state="speaking"]::before { background: #2f5fd0; }
+.stage[data-theme="light"] .caption-line { background: rgba(255, 255, 255, 0.88); color: var(--ink); }
+.stage[data-theme="light"] .caption-line[data-who="user"] { color: var(--accent); }
+.stage[data-theme="light"] .start { background: rgba(244, 246, 251, 0.78); }
+.stage[data-theme="light"] .start[data-phase="joining"] { background: rgba(244, 246, 251, 0.35); }
+
+/* ---- depth: a soft spotlight behind her and a vignette on the scene ----
+   Both are static gradients (no animation, no extra paint cost per frame) and sit under the figure and the panel. */
+.stage { --vignette: rgb(2 4 12 / 0.4); --spot: rgb(255 255 255 / 0.17); }
+.stage[data-theme="light"] { --vignette: rgb(40 50 80 / 0.14); --spot: rgb(255 255 255 / 0.55); }
+.stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 85% 75% at 50% 45%, transparent 55%, var(--vignette) 100%); }
+.robot-col::before { content: ""; position: absolute; left: 50%; bottom: 3%; width: 150%; max-width: 46em; height: 92%; transform: translateX(-50%); pointer-events: none; background: radial-gradient(closest-side at 50% 52%, var(--spot), transparent 100%); }
+.stage[data-layout="wide"] .robot-col { padding-bottom: 4.6em; }

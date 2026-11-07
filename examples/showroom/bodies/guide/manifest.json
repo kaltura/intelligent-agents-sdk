@@ -1,0 +1,41 @@
+{
+  "aspect": [
+    1080,
+    1920
+  ],
+  "packed": true,
+  "mirror": true,
+  "fit": {
+    "scale": 0.86,
+    "dx": 0.0056,
+    "dy": -0.0056
+  },
+  "floor": {
+    "y": 0.943,
+    "width": 0.2
+  },
+  "head": {
+    "left": 0.347,
+    "top": 0.0918,
+    "width": 0.299,
+    "height": 0.168
+  },
+  "seam": [
+    0.239,
+    0.2561
+  ],
+  "still": "head.jpg",
+  "matte": "head-matte.png",
+  "idle": "idle",
+  "tracked": true,
+  "clips": {
+    "beat": "beat",
+    "beat2": "beat2",
+    "celebrate": "celebrate",
+    "present-right": "present-right",
+    "shrug": "shrug",
+    "wave": "wave",
+    "present": "present-right"
+  },
+  "joins": "joins.json"
+}

@@ -27,3 +27,6 @@ live-verify-artifacts/
 # Claude Code agent worktree scratch space — regenerated per run, never committed
 .claude/worktrees/
 app-builder-skill/evals/results/
+
+# Showroom example: ids of the agent each user provisions for themselves
+examples/showroom/agent/agent.json
