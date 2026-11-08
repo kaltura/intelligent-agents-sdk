@@ -9,11 +9,11 @@ Features the SDK supports before every environment has them. **Employee or certi
 | Avatar emotions in the reply stream | Capability `avatar_emotions` | Off |
 | Avatar emotions setting | `emotions` on `avatars.create` and `avatars.update` | Not sent |
 
-These names appear in no user doc, no docs site page and no assistant knowledge base. `node tools/check-docs.mjs` enforces that. The list lives in `LIMITED_AVAILABILITY_CAPABILITIES` in `src/management/capabilities.js`.
+The capability name `avatar_emotions` appears in no user doc, no docs site page and no assistant knowledge base. `node tools/check-docs.mjs` enforces that. Keep the `emotions` avatar setting out of those places by review. The list lives in `LIMITED_AVAILABILITY_CAPABILITIES` in `src/management/capabilities.js`.
 
 ## Environments without the feature
 
-The server refuses the unknown capability with a validation error (HTTP 422). The SDK validates the name locally and never adds it by itself, so send it only when you opt in. The same holds for the `emotions` avatar field: a server without the feature can refuse it.
+A server without the feature can refuse the capability. The SDK accepts the name and never adds it by itself, so send it only when you opt in. The same holds for the `emotions` avatar field: a server without the feature can refuse it.
 
 ## Avatar emotions in the stream
 
@@ -74,7 +74,7 @@ for await (const seg of kaltura.conversations.stream({ userMessage, capabilities
 Rules:
 
 - Omit a key to keep its stored value.
-- `null` is refused, offline and by the server. Send `allowed: []` to clear.
+- `null` is refused offline. Send `allowed: []` to clear.
 - An unknown key is refused offline.
 
 ```js
@@ -87,6 +87,6 @@ await kaltura.avatars.update({ id: avatarId, emotions: { enabled: true, intensit
 TARGET=<name> node scripts/live-verify-emotions.mjs
 ```
 
-`TARGET` is required, so a run never reaches an environment by accident. Set it to the name of the Limited Availability environment. The script needs that environment's credentials. It creates a throwaway agent and avatar, runs three trials with emotions on and one control with them off, and deletes everything. It passes when at least two of three trials show two or more distinct labels over two or more avatar segments, and the control shows none. CI has no credentials for this environment, so the script is not part of any workflow.
+`TARGET` is required, so a run never reaches an environment by accident. Set it to the name of the Limited Availability environment. The script needs that environment's credentials. It creates a throwaway agent and avatar, runs three trials with emotions on and one control with them off, and deletes everything. It passes when at least two of three trials show two or more distinct labels over two or more avatar segments, the control shows none and has a non-empty reply, and the avatar `emotions` setting round-trips on `create`, `get` and `update`. CI has no credentials for this environment, so the script is not part of any workflow.
 
 For a statistical check of the output, run the [emotions eval](emotions-eval.md).
