@@ -12,8 +12,9 @@
  *   3  threads.rename       — title change persists on a follow-up get
  *   4  threads.transcript   — flattened human:/ai: transcript contains the turn
  *   5  messages.list        — filtered to this thread, contains the message
- *   5b conversations add_message_in_db:false — a side question on the thread reuses its
- *                           history and leaves the message count unchanged
+ *   5b conversations add_message_in_db:false — a side question on the thread leaves the
+ *                           message count unchanged and returns the given thread id; the returned
+ *                           message id (and, without a thread, the thread id) real-404s
  *   5c conversations shared_message_id — forks a new thread from the message, source
  *                           thread unchanged, reply uses the seeded context
  *   6  messages.share       : clones the message under a new title, clone readable via messages.get (only with --with-share)
@@ -66,6 +67,11 @@ function check(step, ok, detail) {
 /** Print a model-dependent observation. Never fails the run: LLM recall is not a contract. */
 function note(step, observed, detail) {
   record(step, true, { note: observed ? 'observed' : 'not observed (model-dependent, not a failure)', ...detail });
+}
+
+/** The error code a call fails with, or 'none' if it succeeds. */
+async function errorCode(fn) {
+  try { await fn(); return 'none'; } catch (err) { return err?.code ?? 'unknown'; }
 }
 
 const snippet = (text) => JSON.stringify(text ?? '').slice(0, 160);
@@ -174,6 +180,12 @@ try {
   const side = await kaltura.converseOnce(intellectId, NICKNAME_ASK, { threadId, add_message_in_db: false }, conv);
   const afterSide = await kaltura.messages.list(admin, { threadId });
   check('5b-unsaved-turn-leaves-message-count', afterSide.length === before.length, { before: before.length, after: afterSide.length });
+  check('5b-unsaved-turn-keeps-given-thread-id', side.threadId === threadId, { given: threadId, returned: side.threadId });
+  check('5b-unsaved-turn-message-id-not-found', (await errorCode(() => kaltura.messages.get(side.messageId, admin))) === 'not_found', { messageId: side.messageId });
+  // Without a threadId the returned ids must not exist either.
+  const lone = await kaltura.converseOnce(intellectId, 'Say hello.', { add_message_in_db: false }, conv);
+  check('5b-unsaved-turn-no-thread-id-not-found', !!lone.threadId && (await errorCode(() => kaltura.threads.get(lone.threadId, admin))) === 'not_found', { threadId: lone.threadId });
+  check('5b-unsaved-turn-no-thread-message-id-not-found', !!lone.messageId && (await errorCode(() => kaltura.messages.get(lone.messageId, admin))) === 'not_found', { messageId: lone.messageId });
   note('5b-unsaved-turn-used-thread-history', side.text.includes(RUN_TAG), { text: snippet(side.text) });
 
   // 5c: shared_message_id — fork from the original message (not a share clone).
