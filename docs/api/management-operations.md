@@ -39,7 +39,7 @@ The request also takes a top-level `orderBy`, next to `filter`, not inside it. `
 |---|---|---|
 | `INVALID_VISUAL_ID` | `visual.id` is not in the catalog | create and update |
 | `AVATAR_TEMPLATE_NOT_FOUND` | `templateId` does not exist | create only |
-| `AVATAR_MISSING_VISUAL_RESOLUTION` | No usable visual: none sent, or `face` without `background` | create |
+| `AVATAR_MISSING_VISUAL_RESOLUTION` | No usable visual: none sent, or only one of `face` and `background` | create |
 | `AVATAR_FAILED_TO_COMPOSE_VISUAL` | `face` and `background` could not be combined, for example an unknown face id | create |
 | `AVATAR_MISSING_VOICE` | No `voice` sent | create |
 | `AVATAR_NOT_FOUND` | Unknown avatar id | get |
@@ -86,7 +86,7 @@ Each validates client-side and throws `bad_request` before any network call. See
 
 ## Tools
 
-A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409. Skills below follow the same rule.
+A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -100,14 +100,14 @@ A standalone, partner-level entity, not embedded in an intellect. A name that is
 
 ## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. Names are unique ignoring case. A name that is already in use returns 409 on add and on rename. Tools above follow the same rule.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. Names are unique ignoring case. A name that is already in use returns 409 on add and on rename.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}`. `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A new `name` follows the same character rule as add, checked before the request. A rename to a name already in use returns 409 |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A new `name` uses the same character rule as add, checked before the request |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
 **Variables in skills.** The `instructions` of a skill render `{{ variable }}` placeholders and template tags, like prompt blocks, in every mode (`'adhoc'`, `'adhoc-save'` and `'preloaded'`). A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
@@ -189,7 +189,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record thr
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` does not tell you that indexing is complete. For the completion check, see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag).
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. `removeSource` on a source that lists `categoryIds` is refused with `bad_request`: to drop the categories, delete the record. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` and `mgmt.skills.delete` use the same guard.
 

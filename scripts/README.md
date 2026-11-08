@@ -12,7 +12,7 @@ Three tiers, cheapest first. Run the tier that matches what you changed.
 | 2. Real browser, offline | Real WebRTC, real media elements, real autoplay policy | Playwright browsers | `npm run verify:avatar-media`, `npm run verify:noise-suppressor` |
 | 3. Live backend | The SDK against the actual server | Partner credentials | `npm run live-verify:<name>` |
 
-Tier 1 and 2 run on every PR. Tier 3 runs on PRs too, but only some of it (see [What CI runs](#what-ci-runs)).
+Tier 1 runs on every PR. Tier 2 runs on PRs that touch browser paths. Tier 3 also runs on PRs, but only some of it (see [What CI runs](#what-ci-runs)).
 
 ## Tier 1: offline tests
 
@@ -40,7 +40,7 @@ VERIFY_AVATAR_MEDIA_ONLY=shapes-simple,swaps npm run verify:avatar-media
 
 `verify-avatar-media.mjs` writes `.harness-output/avatar-media-<engine>.json` (gitignored, regenerated every run). `verify-noise-suppressor.mjs` only prints its result.
 
-Adding or renaming a scenario in `avatar-media.html` means updating `EXPECTED_CELLS` in `verify-avatar-media.mjs` too, and an engine that cannot run a check has to be listed in `ALLOWED_SKIPS`. [test/browser/README.md](../test/browser/README.md) is the guide for that page.
+To add or rename a scenario in `avatar-media.html`, follow [Adding a cell](../test/browser/README.md#adding-a-cell).
 
 ## Tier 3: live backend
 
@@ -57,7 +57,7 @@ export AGENTIC_PARTNER_ID=1234567
 export AGENTIC_ADMIN_SECRET=your-admin-secret
 ```
 
-Use `prod` unless you have access to another environment. Environments such as the QA target `nvq2` are open to Kaltura employees and certified partners only. Set `TARGET` to use one. The scripts built on `live-verify-kickoff-shared.mjs` take the same value as `--env`, and `live-verify-mcp.mjs` takes it as `--target` (default `nvq2`).
+Use `prod` unless you have access to another environment. Non-production targets such as `nvq2` are open to Kaltura employees and certified partners only. Set `TARGET` to use one. The scripts built on `live-verify-kickoff-shared.mjs` take the same value as `--env`, and `live-verify-mcp.mjs` takes it as `--target` (default `nvq2`).
 
 | `TARGET` | Credentials | URLs |
 |---|---|---|
@@ -72,14 +72,16 @@ The resolved target's `fetch` refuses any host outside the target's own URLs. So
 
 `live-verify-regions.mjs` needs no credentials. It sends one unauthenticated request to every non-null base URL in `REGIONS` and checks that each host answers over TLS with the same status and content type as nvp1. Run it after changing `REGIONS`.
 
-The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`). They require an `https:` URL on a `.salesforce.com` or `.force.com` host, and exit 0 with a "skipped" message when the variables are missing. `live-verify-salesforce-lead.mjs` is the exception to the partner-credentials rule: it sends nothing to the Kaltura backend and checks Salesforce itself and the SDK's request shapes. `live-verify-salesforce-agent.mjs` also needs partner credentials and a `TARGET`, and runs real conversations. It stores the token as a write-only agent secret and deletes the agent and tool at the end.
+The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`). They require an `https:` URL on a `.salesforce.com` or `.force.com` host. They exit 0 with a "skipped" message when the variables are missing.
+- `live-verify-salesforce-lead.mjs` needs no partner credentials. It sends nothing to the Kaltura backend and checks Salesforce itself and the SDK's request shapes.
+- `live-verify-salesforce-agent.mjs` needs partner credentials and a `TARGET`, and runs real conversations. It stores the token as a write-only agent secret and deletes the agent and tool at the end.
 
 ### Which script to run
 
 | Script | Covers |
 |---|---|
 | `live-verify.mjs` | Smoke test: admin token → intellect → conversation token → one turn → delete |
-| `live-verify-matrix.mjs` | Runs the scripts above on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default, needs `nvq2` access; pass `--targets prod` without it), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
+| `live-verify-matrix.mjs` | Runs its default script list (`scripts/lib/matrix.mjs`) on every target, one at a time, and prints one table (script × target). `--targets prod,nvq2:1` (default, needs `nvq2` access; pass `--targets prod` without it), `--scripts a,b`, `--out DIR`, `--list`. Logs go to `DIR/<target>/<script>.log`. A target without credentials fails every script. Exits 1 on any non-pass |
 | `live-verify-kickoff.mjs` | Every silent-opening + `kickoff` scenario, one fresh browser context each |
 | `live-verify-connect-timing.mjs` | Startup KPIs: time to `connect()`, first video frame, first audio, first agent words |
 | `live-verify-startup-faults.mjs` | `connect()` under client-side faults injected in the browser (nothing is broken on the server): a WHEP POST that answers 3.5 s late, is reset, answers 503, 404 or 409, a join that times out, and an answer whose media address is unreachable (`ice_failed`). Asserts the connect result, the retry count, `error.phase` and `retryable` |
@@ -90,7 +92,8 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
 | `live-verify-session-complete.mjs` | The `session_completed` signal and its presence mechanism |
-| `live-verify-feature-pages.mjs` | Starts `manual-testing/feature-pages/serve.mjs` and clicks through every page in a real browser. `LIVE_VERIFY_BROWSER` picks the engine |
+| `live-verify-feature-pages.mjs` | Starts `manual-testing/feature-pages/serve.mjs` and clicks through every page in a real browser. `LIVE_VERIFY_BROWSER` picks the engine. `--emotions` runs only the Limited Availability page, needs `TARGET`, and refuses to run when `CI` is set. See [feature pages](../manual-testing/feature-pages/README.md) |
+| `live-verify-limits.mjs` | Documented numeric limits: pass at the limit, fail at limit + 1 (badge id, badge score, insight setting key). Uses `TARGET`. Deletes everything it creates |
 | `live-verify-context-fields.mjs` | `contextId`/`contextType` actually reach the prompt at runtime |
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
@@ -102,7 +105,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-set-forced-language.mjs`, `live-verify-force-language.mjs` | A forced language changes the reply, not just storage |
 | `live-verify-capabilities.mjs` | Capability resolution plus the Lifecycle domain |
 | `live-verify-agents.mjs`, `live-verify-avatars.mjs`, `live-verify-catalog.mjs`, `live-verify-tools.mjs`, `live-verify-skills.mjs`, `live-verify-knowledge.mjs`, `live-verify-intellects-conversations.mjs`, `live-verify-threads-messages-feedback.mjs`, `live-verify-conversation-avatar-surface.mjs` | The write path of one management resource each |
-| `live-verify-authoring.mjs` | Conditions on skills, prompt blocks and tools (the grammar the server accepts, one scratch intellect per expression), prompt block types, the `var` tool (int type, later value wins, skill and tool conditions that read it), `{arg}` placeholders in an `api` tool url, body, headers and params, shared skills (list, attach, refused get/update/delete, unknown id), the doctor findings for a saved templated condition, the server's empty reply to one, and read-back of unset fields as `null`, and `tool_ids` read back as `{id, condition}` with a per-attachment condition. Uses `TARGET`, scratch intellects, tools and skills, all deleted at the end |
+| `live-verify-authoring.mjs` | The authoring contract: conditions on skills, prompt blocks and tools, the `var` tool, `{arg}` placeholders in `api` tools, shared skills, and `tool_ids` read-back. The script header lists every case. Uses `TARGET`, scratch intellects, tools and skills, all deleted at the end |
 | `live-verify-avatar-flag.mjs` | `sys__avatar_enabled` is true in a browser avatar session and false in a plain conversation, for a prompt block, a compound condition, a skill and a tool, and, with `--share`, that `sys__avatar_share_screen_enabled` flips when a simulated screen share runs. Uses `TARGET`, a throwaway agent and a headless browser, all removed at the end |
 | `live-verify-emotions.mjs` | Avatar emotions (Limited Availability, employee or certified partner only): three turns with the feature on show two or more distinct `metadata.emotion` labels over two or more avatar segments in at least two trials, a control turn with it off shows none, and `avatars.create`, `get` and `update` round-trip `emotions`. Needs `TARGET` (no default), one throwaway agent and avatar. See [limited-availability.md](../docs/contributor/limited-availability.md) |
 | `live-eval-emotions.mjs` | Statistical eval of avatar emotions (Limited Availability, employee or certified partner only): many trials per scenario, rates with 95% intervals, raw JSON and one self-contained HTML report. Needs `TARGET` (no default); `--dry-run` needs nothing. See [emotions-eval.md](../docs/contributor/emotions-eval.md) |
@@ -114,7 +117,10 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-regions.mjs` | Every `REGIONS` host answers over TLS like nvp1. No credentials |
 | `live-verify-threads-messages-feedback.mjs --with-share` | Also runs the `messages.share` step (step 6), which leaves an undeletable clone per run. Off by default: use it only after a change to `messages.share` |
 
-Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). Six have no npm script and no CI job. Run them with `node scripts/<name>.mjs`: `live-verify-emotions.mjs`, `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`, `live-verify-thread-access.mjs`. Five more have an npm script but no CI job: `live-verify-force-language.mjs`, `live-verify-regions.mjs`, `live-verify-matrix.mjs`, `live-verify-salesforce-lead.mjs` and `live-verify-salesforce-agent.mjs`. Run them by hand, for example `npm run live-verify:regions`.
+Every one of these has an `npm run live-verify:<name>` script except `live-verify.mjs` and `live-verify-mcp.mjs` (CI runs both with `node`). These have no CI job. Run them by hand.
+
+- No npm script, so use `node scripts/<name>.mjs`: `live-eval-emotions.mjs`, `live-verify-emotions.mjs`, `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`, `live-verify-thread-access.mjs`.
+- With an npm script, for example `npm run live-verify:regions`: `live-verify-force-language.mjs`, `live-verify-limits.mjs`, `live-verify-regions.mjs`, `live-verify-matrix.mjs`, `live-verify-salesforce-lead.mjs`, `live-verify-salesforce-agent.mjs`.
 
 ### Lifecycle audit CLI
 
@@ -139,7 +145,7 @@ Four helper modules are not scripts and are never run directly: `lib/target.mjs`
 
 ### Flags
 
-Nine scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script is configured by env vars alone.
+Nine scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script reads env vars. A few take their own flags, listed in their row above or in the script header.
 
 Shared by all nine (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`; `live-verify-avatar-flag.mjs` never sends a kickoff, so it ignores `--kickoff`):
 
@@ -218,11 +224,11 @@ Three entry points are easy to confuse. They do different things.
 | `live-verify.yml` | One job per CI-run live script. Runs on manual dispatch, on every PR from a branch in this repo (only jobs whose paths changed), and in the merge queue (same path filter). Fork and Dependabot PRs get no secrets, so no live job runs there: a fork PR that touches live paths fails the `Live verification` check until a maintainer opens a replacement PR from a branch in this repo, and a Dependabot PR passes with a notice. A nightly schedule (03:00 UTC) runs every job and is the startup-KPI trend run |
 | `release.yml` | On a `v*.*.*` tag. Job `release`: release notes file check, docs manifest coverage, jsDelivr smoke test, npm install route test, create the GitHub Release, fire `generate-docs`. Job `distribution`: `npm run verify:distribution -- <tag>`, which checks the published jsDelivr tree matches the tag |
 
-Ten live scripts have no CI job (named under the script table). Run them by hand when you touch their surface.
+Thirteen live scripts have no CI job (named under the script table). Run them by hand when you touch their surface.
 
 ## Extending
 
-**A new media scenario.** Add a cell to `../test/browser/avatar-media.html` and its name to `EXPECTED_CELLS` in `verify-avatar-media.mjs`. See [test/browser/README.md](../test/browser/README.md).
+**A new media scenario.** See [Adding a cell](../test/browser/README.md#adding-a-cell).
 
 **A new kickoff scenario.** Add an entry to `SCENARIOS` in `live-verify-kickoff.mjs`. Each entry has a `name` and a function that drives the page and returns checks. Add the id to the table in the file header, then add a row to the `--only` docs above if the id scheme changes.
 

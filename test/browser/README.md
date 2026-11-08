@@ -17,7 +17,9 @@ VERIFY_AVATAR_MEDIA_ONLY=shapes-simple,swaps npm run verify:avatar-media
 VERIFY_AVATAR_MEDIA_DEBUG=1 npm run verify:avatar-media        # mirror page console to stdout
 ```
 
-`scripts/verify-avatar-media.mjs` serves the repo, opens the page, runs every cell in order, prints each failure, and exits non-zero if any cell fails, a skip is not on the allowed list, or the run is over budget. Results land in `.harness-output/avatar-media-<engine>.json` (gitignored). On WebKit only, `races-recover` and `pc-closed` get one retry on a fresh browser after a "page hung", because WebKitGTK's media pipeline can deadlock there. The log shows it as `RETRY`, and the artifact lists it under `retriedAfterHang`.
+`scripts/verify-avatar-media.mjs` serves the repo, opens the page, runs every cell in order, prints each failure, and exits non-zero if any cell fails, a skip is not on the allowed list, or the run is over budget. Results land in `.harness-output/avatar-media-<engine>.json` (gitignored).
+
+WebKit only: if `races-recover` or `pc-closed` ends in "page hung", the script retries it once on a fresh browser. WebKitGTK's media pipeline can deadlock there. The log shows `RETRY`, and the artifact lists the cell under `retriedAfterHang`. A second hang fails the run.
 
 | Env var | Effect |
 |---|---|
@@ -26,7 +28,7 @@ VERIFY_AVATAR_MEDIA_DEBUG=1 npm run verify:avatar-media        # mirror page con
 | `VERIFY_AVATAR_MEDIA_DEBUG` | Print every page console message |
 | `VERIFY_AVATAR_MEDIA_PORT` | Static-server port. Default `4789` |
 
-Budgets: 30 s per cell, 90 s for the whole run. A cell that needs longer is doing too much.
+Budgets: 30 s per cell, 90 s for the whole run. The time of a hung attempt that was retried does not count toward the 90 s. A cell that needs longer is doing too much.
 
 ### By hand
 
@@ -99,4 +101,4 @@ A `Bn` prefix on a check name marks a real-browser behavior this tier exists to 
 
 ## CI
 
-`ci.yml` runs this page on all three engines in parallel and uploads each engine's JSON. Run at least Chromium locally before pushing a change to `src/experience/avatar-media.js` or to this page.
+`ci.yml` runs this page on all three engines in parallel when `src/experience/**`, this page or the verify script change. Each step has a 6-minute limit. It uploads each engine's JSON. Run at least Chromium locally before pushing a change to `src/experience/avatar-media.js` or to this page.

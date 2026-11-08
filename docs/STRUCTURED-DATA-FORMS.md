@@ -2,7 +2,7 @@
 
 This page shows how to make an agent ask the viewer for structured, typed data mid-conversation. Examples: a support ticket's category and urgency, a booking's preferred date, a survey rating, or a sales lead's email and phone. It also covers how the SDK renders that request, and how to read the submitted values back.
 
-`user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive. The fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method you call to report values back is `session.submitStructuredDataForm()`, over a wire event named `setFormLeadInfo`. Both are named after the feature's most common use case, not its only one.
+`user_properties_forms` is a general-purpose "collect typed fields from the viewer" primitive. The fields, the instruction the agent acts on, rendering, and reporting all work identically no matter what the fields represent. The one place this shows up in the SDK's own surface is naming: the method `session.submitStructuredDataForm()` sends the values to the server, over a wire event named `setFormLeadInfo`. Both are named after the feature's most common use case, not its only one.
 
 ## What it is and isn't
 
@@ -56,7 +56,7 @@ The form arrives with a default heading. To show your own copy (e.g. "Tell us ab
 - The field types in `FORM_FIELD_TYPES`: six base types plus `email`, `phone` and `text`.
 - A `required` flag and a `description` per field when the incoming form carries them. The default renderer maps them to `aria-required`/`aria-describedby`.
 - Model-side pre-fill (`known_value`) from information already in the transcript.
-- Reporting the collected values: `session.submitStructuredDataForm(values)` sends them to the server, but the agent does not see them. Send them to the agent with `speak()` or `updateRequestVars()` ([§ Reading back](#reading-back-what-the-viewer-submitted)). Both work identically for any field shape.
+- Reporting the collected values: send them to the agent with `speak()` or `updateRequestVars()`. `session.submitStructuredDataForm(values)` does not reach the agent ([§ Reading back](#reading-back-what-the-viewer-submitted)). All of these work for any field shape.
 
 **Not possible / not designed for:**
 
@@ -108,7 +108,7 @@ Two independent axes:
   }));
   ```
 
-Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `updateRequestVars()` or `speak()` with the values yourself when the viewer submits (and `submitStructuredDataForm(values)` if you want the submission recorded).
+Or skip the SDK's default DOM builder entirely by passing a mount **function** instead of an `Element`. You get the descriptor and build any UI you want (React, a modal, whatever), calling `updateRequestVars()` or `speak()` with the values yourself when the viewer submits (`submitStructuredDataForm(values)` does not reach the agent).
 - **Visual styling.** The default DOM path emits plain, unstyled class names only: `.kgenui__form`, `.kgenui__field`, `.kgenui__label`, `.kgenui__input`, `.kgenui__help`, `.kgenui__submit`. The SDK ships **zero CSS**. Any consumer styles the same class names in their own stylesheet.
 
 ## Reading back what the viewer submitted

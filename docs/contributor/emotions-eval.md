@@ -23,7 +23,7 @@ node scripts/live-eval-emotions.mjs --from out/x/emotions-eval-<stamp>.json   # 
 | `--concurrency` | 4 | Turns in flight |
 | `--rate` | 80 | Most turns started per minute. The server allows 100 per minute and answers `rate_limited` above that |
 | `--max-turns` | 400 | Turn budget. Whole trials are dropped, latest first. The report shows a banner when the plan was cut |
-| `--turn-timeout` | 90 | Seconds before a turn is aborted. The abort closes the connection, so the turn stops running. The aggregate `send` call has no documented `signal` option, so the eval passes one through to the stream it uses |
+| `--turn-timeout` | 90 | Seconds before a turn is aborted. The abort closes the connection and the turn stops. The eval passes the abort signal to the stream that `send` uses |
 | `--out` | `out/emotions-eval` | Output folder (git-ignored) |
 | `--strict` | off | Exit 2 on PASS WITH WARNINGS |
 | `--expand` | off | Open every turn list (for printing) |
@@ -65,8 +65,9 @@ The page has no script and makes no request. Status uses an icon and a word, not
 | Verdict | Exit | When |
 |---|---|---|
 | FAIL | 1 | A hard dimension has a violation, or turns were tried for a hard dimension and none was usable (an outage) |
-| INCOMPLETE | 3 | A hard dimension has no data (for example its path was left out of `--paths`), or the run was stopped early (Ctrl-C) |
-| SOFT FAIL | 2 | Every hard dimension passes, a quality dimension is confidently below target |
+| INCOMPLETE | 3 | A hard dimension has no data (for example its path was left out of `--paths`), or the run was stopped early (Ctrl-C) and no hard dimension failed |
+| Second Ctrl-C | 130 | Cleans up and quits at once. No report is written |
+| SOFT FAIL | 2 | Every hard dimension passes, and a quality dimension is confidently below target |
 | PASS WITH WARNINGS | 0 (2 with `--strict`) | A quality dimension is undecided at this sample size |
 | PASS | 0 | Everything is on the good side |
 | Usage or run error | 4 | Bad flag, missing `TARGET`, read error |

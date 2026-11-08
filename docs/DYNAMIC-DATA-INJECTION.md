@@ -10,7 +10,7 @@ The SDK gives you three mechanisms, each solving a different problem. The most c
 |---|---|---|
 | [Request variables](#the-context-channel-request-variables): `requestVars` / `updateRequestVars()` / `setDynamicPrompt()` | Everything the agent should *know*: viewer facts for `{{var}}` prompt slots, and a full structured page-context blob. Persists for the whole thread. | No, passive |
 | [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn. The agent reacts immediately, in this turn | Yes, the only one that does |
-| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Record a form the agent asked for | No. Sends the values to the server and the agent does not see them; send them with `speak()` or `updateRequestVars()` |
+| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Send form values to the server | No. The agent does not see the values. Use `speak()` or `updateRequestVars()` for that |
 
 Request variables are **passive**: they update what the agent will see, whenever its next turn happens to occur. `speak()` is the only **active** one: it's the trigger that makes a turn happen right now.
 
@@ -89,7 +89,7 @@ const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['pag
 
 ### Reserved `sys__*` variables
 
-Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn. The SDK rejects any key that starts with lowercase `sys__` and the exact key `secrets`, and non-scalar values such as objects and arrays, client-side before anything hits the wire, regardless of the gate. See [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__).
+Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn. The SDK rejects reserved keys, and non-scalar values such as objects and arrays, before anything hits the wire, regardless of the gate. Rules: [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__).
 
 ### Server-side tools read them too
 
@@ -159,7 +159,7 @@ session.updateRequestVars({ email: 'ada@example.com' });
 session.speak('[FORM] The viewer submitted their email: ada@example.com.');
 ```
 
-The agent acts on the values you send with `speak()` or `updateRequestVars()`. `submitStructuredDataForm()` sends the values to the server and the agent does not see them ([details](STRUCTURED-DATA-FORMS.md#reading-back-what-the-viewer-submitted)). Treat the moment your UI closes that form (submitted or explicitly declined) as a real, immediate event worth an active nudge too. See the worked example below.
+The agent acts on the values you send with `speak()` or `updateRequestVars()`. `submitStructuredDataForm()` does not reach the agent ([details](STRUCTURED-DATA-FORMS.md#reading-back-what-the-viewer-submitted)). Treat the moment your UI closes that form (submitted or explicitly declined) as a real, immediate event worth an active nudge too. See the worked example below.
 
 ## How they work together: a worked example
 
@@ -200,7 +200,7 @@ The pattern that repeats: **update context, then actively nudge, in that order, 
 | Give the agent a full snapshot of what's on screen, for whenever it next speaks | `setDynamicPrompt(data)` |
 | Make the agent react to something *right now*, not whenever it next happens to speak | `setDynamicPrompt()` + `speak()` |
 | Feed a value into a server-side `api` tool the agent calls | Any request variable the tool's template interpolates |
-| Give the agent a field the viewer typed into a form the agent asked for | `updateRequestVars()` + `speak()` (and `submitStructuredDataForm()` to record it) |
+| Give the agent a field the viewer typed into a form the agent asked for | `updateRequestVars()` + `speak()` |
 
 ## Related but distinct: client-side commands
 

@@ -7,7 +7,7 @@ What a contributor needs when changing the `go_to` site navigation code. App-fac
 ## Testing
 
 - `npm test` covers the key algorithm, manifest build/validate/resolve, the prompt builders and the browser plugin offline (`test/unit/site-keys.test.js`, `test/unit/site-nav-management.test.js`, `test/unit/site-nav.test.js`). `test/fixtures/site-map.snapshot.txt` pins the rendered SITE MAP for the docs site, so a key change is a visible diff.
-- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none. It then deletes everything it created. CI runs it on every merge and on PRs that touch its paths, except fork and Dependabot PRs, which get no secrets.
+- `npm run live-verify:site-nav` (`scripts/live-verify-site-nav.mjs`) runs against the real Kaltura API: tool echo shape, idempotent update, prompt echo, one mapped ask producing exactly one resolvable `go_to`, one unmapped ask producing none. It then deletes everything it created. When CI runs it: [What CI runs](../../scripts/README.md#what-ci-runs).
 - The script names its throwaway tool `go_to_<run tag>`, so it never collides with a live `go_to` tool on the same partner.
 
 ## Extension points

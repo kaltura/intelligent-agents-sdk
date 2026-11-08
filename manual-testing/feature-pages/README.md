@@ -26,7 +26,7 @@ It creates one agent, prints an `Open:` URL and waits. Ctrl+C, or the time limit
 
 ## Emotions page
 
-It needs a Limited Availability environment and is for Kaltura employees and certified partners only. It is not in the default run. Set `TARGET` to the environment name, with no default:
+It needs a Limited Availability environment and is for Kaltura employees and certified partners only. It is not in the default run. With `--emotions` the server serves only this page. Set `TARGET` to the environment name, with no default:
 
 ```bash
 TARGET=<name> node manual-testing/feature-pages/serve.mjs --emotions
@@ -39,4 +39,4 @@ TARGET=<name> node manual-testing/feature-pages/serve.mjs --emotions
 - The admin secret and admin tokens stay in `serve.mjs`. A page gets a conversation token, an avatar token, the partner id and the base URLs.
 - Every URL starts with a random 128-bit path. Anyone with the URL can use the agent until you stop the server, so share it only on a network you trust.
 - Pages send a strict Content-Security-Policy. All page code is in external files.
-- Screenshots and the server log go to `out/` (git-ignored). Pages never show tokens, and the log is redacted.
+- `npm run live-verify:feature-pages` writes screenshots and the server log to `manual-testing/feature-pages/out/` (git-ignored). Pages never show tokens, and the log is redacted.

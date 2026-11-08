@@ -372,7 +372,7 @@ export class Threads {
    * Filter fields: `agentIdEquals`, `agentIdIn`, `contextIdEqual`,
    * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
    * `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`,
-   * `partnerIdEquals`, `statusEquals`, `statusIn`,
+   * `statusEquals`, `statusIn`,
    * `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`.
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
@@ -1368,7 +1368,9 @@ export class Knowledge {
    * (`applied:false`) — no wire write. Symmetric counterpart to
    * {@link addSource}; same read-merge-write shape, and the same
    * concurrent-call caveat: two overlapping calls race on the same
-   * pre-write `config.sources` snapshot.
+   * pre-write `config.sources` snapshot. A source that lists `categoryIds`
+   * cannot be removed: the server refuses the write with `bad_request`.
+   * Delete the record to drop its categories.
    * @param {number} id @param {object} source The exact source object to remove.
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
