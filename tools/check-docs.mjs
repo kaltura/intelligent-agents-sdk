@@ -57,16 +57,27 @@ const DOCS = [
 const CONTRIBUTOR_DOCS = readdirSync(join(ROOT, 'docs/contributor'))
   .filter((f) => f.endsWith('.md')).map((f) => `docs/contributor/${f}`);
 
-/** Read a file relative to ROOT, return empty string if missing. */
+// The gate never writes files, so reads and the file list are cached for the run.
+const readCache = new Map();
+
+/** Read a file relative to ROOT, return empty string if missing. Cached. */
 function read(rel) {
-  const p = join(ROOT, rel);
-  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+  let text = readCache.get(rel);
+  if (text === undefined) {
+    const p = join(ROOT, rel);
+    text = existsSync(p) ? readFileSync(p, 'utf8') : '';
+    readCache.set(rel, text);
+  }
+  return text;
 }
 
-/** Git-tracked file list (paths relative to ROOT). */
+let trackedCache;
+
+/** Git-tracked file list (paths relative to ROOT). Cached. */
 function trackedFiles() {
-  const out = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' });
-  return out.trim().split('\n').filter(Boolean);
+  trackedCache ??= execSync('git ls-files', { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .trim().split('\n').filter(Boolean);
+  return trackedCache;
 }
 
 /** The page that holds every Limited Availability capability. */
@@ -713,12 +724,13 @@ describe('7. SDK invariants', () => {
     const result = spawnSync(
       process.execPath,
       ['--test', '--test-concurrency=1', ...testFiles],
-      // The full suite runs ~2 min on an unloaded machine; leave headroom so
-      // host load can't kill the child mid-run and report a phantom failure.
-      { cwd: ROOT, encoding: 'utf8', timeout: 300_000 },
+      // The full suite runs 2-4.5 min depending on host load. 900 s leaves
+      // headroom so load can't kill the child mid-run and report a phantom failure.
+      { cwd: ROOT, encoding: 'utf8', timeout: 900_000, maxBuffer: 64 * 1024 * 1024 },
     );
     if (result.status !== 0) {
       const out = (result.stdout || '') + (result.stderr || '');
+      if (result.error) assert.fail(`SDK tests did not finish: ${result.error.message}`);
       const failLines = out.split('\n')
         .filter((l) => /not ok|cancelled|Error|ERR_|SyntaxError/.test(l))
         .slice(0, 20).join('\n');
