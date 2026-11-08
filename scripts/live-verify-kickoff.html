@@ -18,6 +18,7 @@
     hints       1 → the server injects <link> resource hints into <head> (see
                 resourceHints() in live-verify-kickoff-shared.mjs); recorded in
                 harness:ready as the number of <link rel> tags actually present
+    badKs       1 → the avatar token is altered, so connect() is refused (`unsupported_client`)
     reconnectWindowMs   forwarded to the avatar session
     timeouts    JSON object → the avatar session's `timeouts` override (for example {"prepareIdle":3000})
     requestVars JSON object → the session's requestVars (top level of
@@ -291,6 +292,8 @@
     // ---- build the session -----------------------------------------------
     const init = await (await fetch('/init')).json();
     if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
+    // badKs=1 spoils the end of the avatar token, so the server refuses the session.
+    if (q.get('badKs') === '1') init.ks = init.ks.slice(0, -8) + 'AAAAAAAA';
     const kickoff = kickoffText ? (echo ? { text: kickoffText, echo: true } : kickoffText) : undefined;
 
     const avatarCfg = {
@@ -372,7 +375,7 @@
       rec('connect:start', {});
       startTicker();
       try { await session.connect(); rec('connect:resolved', { state: session.state, mode: session.mode }); return { ok: true, state: session.state }; }
-      catch (e) { rec('connect:rejected', { code: e?.code, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message }); return { ok: false, code: e?.code, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message, ice: e?.ice }; }
+      catch (e) { rec('connect:rejected', { code: e?.code, serverCode: e?.serverCode, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message }); return { ok: false, code: e?.code, serverCode: e?.serverCode, phase: e?.phase, status: e?.status, retryable: e?.retryable, message: e?.message, ice: e?.ice }; }
     };
     window.testPrepare = async () => {
       rec('prepare:start', {});

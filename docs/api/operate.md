@@ -61,6 +61,10 @@ Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for fee
 
 **Token-kind check timing.** `conversations.send(...)` and `converseOnce(...)` check the token kind before they return. `conversations.stream(...)` is an async generator, so its check runs on the first iteration. Iterate it, or use `send`, to get the check up front.
 
+### Size limits
+
+Over a limit, the server answers 413 and the SDK throws `payload_too_large`. The SDK does not check these limits before it sends. `converse` `userMessage`, `threads.push` `content` and `system_message`: 4000 characters each, and `err.detail` has no number. `threads.push` `request_vars`: 200 keys, 128 characters per key, 100,000 characters per value once serialized (a 99,998-character string passes, 99,999 fails), and `err.detail` names the limit. `converse` can also end a turn with no text and no HTTP error. Keep `request_vars` inside these limits, and use `conversations.send` or `converseOnce`, which throw `empty_reply` on an empty turn.
+
 ### Refusals that arrive with HTTP 200
 
 The server reports some refusals in the stream, not in the HTTP status. The status is 200 and the body holds one `"error"` segment. The common case is a `threadId` that belongs to a different user: the segment reads `No permission for thread`, nothing is written, and the turn has no text.
