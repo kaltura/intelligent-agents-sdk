@@ -191,6 +191,29 @@ test('catalog.importVoiceFrom* rejects a voiceId with characters outside letters
   assert.equal(f.calls.length, 1);
 });
 
+test('catalog.importVoiceFrom* accepts 1 and 128 character voiceIds and refuses 129 or more with zero fetch calls', async () => {
+  const f = fakeFetch([
+    { match: '/catalog-item/createVoiceFromElevenLabs', respond: (req) => ({ body: { itemId: 'v-el', type: 'Voice', voiceId: req.body.voiceId } }) },
+    { match: '/catalog-item/createVoiceFromCartesia', respond: (req) => ({ body: { itemId: 'v-ca', type: 'Voice', voiceId: req.body.voiceId } }) },
+  ]);
+  const k = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  const tooLong = [129, 200, 1000].map((n) => 'a'.repeat(n));
+  const notStrings = [0, 5, null, undefined, {}, ['a']];
+  const badChars = ['\u00e9\u00e9', '\u{1F600}', 'a b', '\t', ' a'];
+  for (const id of [...tooLong, ...notStrings, ...badChars]) {
+    await assert.rejects(() => k.catalog.importVoiceFromElevenLabs(/** @type {any} */ (id), ADMIN), (e) => e.code === 'bad_request');
+    await assert.rejects(() => k.catalog.importVoiceFromCartesia(/** @type {any} */ (id), ADMIN), (e) => e.code === 'bad_request');
+  }
+  await assert.rejects(() => k.catalog.importVoiceFromElevenLabs('a'.repeat(129), ADMIN), (e) => /1 to 128/.test(e.detail) && !e.detail.includes('a'.repeat(129)));
+  assert.equal(f.calls.length, 0, 'no transport for an invalid voiceId');
+  for (const id of ['a', 'Z-9_'.repeat(32)]) {
+    await k.catalog.importVoiceFromElevenLabs(id, ADMIN);
+    await k.catalog.importVoiceFromCartesia(id, ADMIN);
+  }
+  assert.equal(f.calls.length, 4);
+  assert.equal(f.calls[2].body.voiceId.length, 128);
+});
+
 test('an unknown provider voiceId raises the typed voice_not_found error from the HTTP-200 exception envelope', async () => {
   const f = fakeFetch([
     { match: '/catalog-item/createVoiceFromElevenLabs', respond: () => ({ status: 200, body: { objectType: 'KalturaAPIException', code: 'VOICE_DOES_NOT_EXIST_ON_ELEVEN_LABS', message: 'Voice does not exist on ElevenLabs' } }) },

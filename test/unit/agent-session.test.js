@@ -68,6 +68,7 @@ test('requires token and a valid mode; validates requestVars at construction', (
   assert.throws(() => new KalturaAgentSession({}), (e) => e.code === 'bad_request');
   assert.throws(() => new KalturaAgentSession({ token: CONV_KS, mode: 'video' }), (e) => e.code === 'bad_request');
   assert.throws(() => new KalturaAgentSession({ token: CONV_KS, requestVars: { sys__user_id: 'x' } }), (e) => e.code === 'validation_error');
+  assert.throws(() => new KalturaAgentSession({ token: CONV_KS, requestVars: { sys__custom: 'x' } }), (e) => e.code === 'validation_error');
 });
 
 test('connect builds the starting transport with the merged shared cfg and forwards its events', async () => {
@@ -390,6 +391,7 @@ test('respondToTool / setDynamicPrompt / updateRequestVars delegate; vars merge 
   session.setDynamicPrompt({ page: '/pricing' });
   session.updateRequestVars({ plan: 'pro' });
   assert.throws(() => session.updateRequestVars({ secrets: 'nope' }), (e) => e.code === 'validation_error');
+  assert.throws(() => session.updateRequestVars({ sys__custom: 'nope' }), (e) => e.code === 'validation_error');
   const t = made.avatar[0];
   assert.deepEqual(t.calls.filter((c) => c[0] !== 'connect'), [
     ['respondToTool', 'inv-1', { ok: 1 }],

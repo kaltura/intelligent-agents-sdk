@@ -89,14 +89,14 @@ A standalone, partner-level entity, not embedded in an intellect. A name that is
 
 ## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. Names are unique ignoring case. A name that is already in use returns 409 on add and on rename. Tools above follow the same rule.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}`. `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A new `name` follows the same character rule as add, checked before the request. A rename to a name already in use returns 409 |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
 **Variables in skills.** The `instructions` of a skill render `{{ variable }}` placeholders and template tags, like prompt blocks, in every mode (`'adhoc'`, `'adhoc-save'` and `'preloaded'`). A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
@@ -120,7 +120,7 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
-**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [operate.md § Threads](operate.md#threads).
+**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [operate.md § Threads](operate.md#threads).
 
 Rules to know:
 
