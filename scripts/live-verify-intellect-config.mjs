@@ -10,8 +10,8 @@
  *   3  setSkillIds([])                         — empty list, no real Skill needed
  *   4  setThreadStartTools([])                 — empty list, no real Tool needed
  *   5  setModelConfiguration({...})            — a real MODEL_IDS entry, then null to clear
- *      5b  one converseOnce per MODEL_IDS entry. Plain claude-* ids must answer; for the
- *          rest the result is recorded, because region-prefixed and older ids may be refused
+ *      5b  one converseOnce per MODEL_IDS entry. The ids the docs say answer must answer;
+ *          the others are recorded only (they failed in the live turn run for the docs)
  *   6  setOpeningPhrase('...')                 — then null to clear
  *   7  setAvatarSummaryConfig({...})           — then null to restore defaults
  *   8  setSecrets({CI_SCRATCH_SECRET: fake})   — fake name/value, never a real credential
@@ -118,8 +118,16 @@ try {
   check('5-clear-model-configuration', modelConfigClear.applied === true, { applied: modelConfigClear.applied });
 
   // 5b: one real turn per MODEL_IDS entry. A refused turn is recorded, never thrown,
-  // so later steps still run. The plain claude-* ids must answer; for the others the
-  // answer depends on the environment, so the result is recorded without failing the run.
+  // so later steps still run. Ids in DOCUMENTED_TO_ANSWER must answer, so the run fails
+  // when one stops and the docs go stale. The others are recorded for information only.
+  // Keep DOCUMENTED_TO_ANSWER in step with MODEL_IDS in src/management/intellect-config.js
+  // and the model_configuration row in docs/api/build/intellect.md.
+  const DOCUMENTED_TO_ANSWER = new Set([
+    'claude-sonnet-5', 'claude-haiku-4-5',
+    'us.anthropic.claude-sonnet-5', 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.5-flash',
+    'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash',
+  ]);
   for (const modelId of MODEL_IDS) {
     let answered = false;
     let detail;
@@ -131,9 +139,10 @@ try {
     } catch (err) {
       detail = { modelId, answered: false, code: err?.code, message: err?.detail || err?.message };
     }
-    if (modelId.startsWith('claude-')) check(`5b-model-answers-${modelId}`, answered, detail);
-    else record(`5b-model-${modelId}`, true, detail);
+    if (DOCUMENTED_TO_ANSWER.has(modelId)) check(`5b-model-answers-${modelId}`, answered, detail);
+    else record(`5b-model-info-${modelId}`, true, detail);
   }
+  check('5b-documented-ids-are-in-MODEL_IDS', [...DOCUMENTED_TO_ANSWER].every((id) => MODEL_IDS.includes(id)), { missing: [...DOCUMENTED_TO_ANSWER].filter((id) => !MODEL_IDS.includes(id)) });
   await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
 
   // 6: setOpeningPhrase — then null to clear.
