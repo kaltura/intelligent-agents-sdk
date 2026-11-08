@@ -422,10 +422,12 @@ try {
   const lowered = await tryTwice(async () => {
     const small = await turn('The number is 1.', big.t1.threadId);
     return { small, after: await turn('Say hi.', big.t1.threadId) };
-  }, (r) => setToOne(r) && !hasMark(r.after));
+  }, (r) => setToOne(r) && nonEmpty(r.after) && !hasMark(r.after));
   const { small, after } = lowered;
-  check('12-later-var-value-wins', setToOne(lowered) && !hasMark(after) && nonEmpty(after), {
-    argValues: (small.toolCalls ?? []).map((c) => c.args?.au_count), marked: hasMark(after), text: after.text?.slice(0, 80),
+  // `cause` tells a wrong tool argument (or args missing from the reply) apart from a reply that still has the mark.
+  const cause = !setToOne(lowered) ? 'tool-not-called-with-1' : hasMark(after) ? 'marked' : !nonEmpty(after) ? 'empty-reply' : 'none';
+  check('12-later-var-value-wins', cause === 'none', {
+    cause, argValues: (small.toolCalls ?? []).map((c) => c.args?.au_count), marked: hasMark(after), text: after.text?.slice(0, 80),
   });
 
   const readerSkill = await kaltura.skills.add({
