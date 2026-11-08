@@ -161,7 +161,8 @@ export class Avatars {
    * `name` (≤255 chars) labels the avatar; over 255 is a 400.
    *
    * Domain failures arrive in an HTTP 200 body. The SDK throws `KalturaError`
-   * with `code:'api_exception'` and the failure code in `err.title`:
+   * with the failure code in `err.title`. `code` is `api_exception`, or a more
+   * specific SDK code such as `catalog_item_not_found`:
    * `AVATAR_MISSING_VISUAL_RESOLUTION` (face/background/template incomplete),
    * `AVATAR_FAILED_TO_COMPOSE_VISUAL` (for example a bogus face id),
    * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`, `INVALID_VISUAL_ID` (a
