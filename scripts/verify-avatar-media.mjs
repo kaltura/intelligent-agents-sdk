@@ -100,6 +100,15 @@ if (!engine) {
   process.exit(1);
 }
 
+/**
+ * WebKitGTK only: cells that may get one retry after a "page hung". On that build the WebProcess
+ * main thread can deadlock inside the GStreamer media pipeline when a re-subscribed downlink is torn
+ * down. CI backtraces show it at about 1 in 70 runs of these cells in a loop. Changing the SDK's
+ * teardown order cut that rate but did not remove it. A retry runs on a fresh browser, is printed
+ * as RETRY and is listed in the artifact. A second hang, or any other failure, still fails the run.
+ */
+const RETRY_ON_HANG = engineName === 'webkit' ? ['races-recover', 'pc-closed'] : [];
+
 // Silent + gesture-free launch per engine. WebKit has no mute flag; the page keeps its tone at gain 0.005.
 const LAUNCH = {
   // `--use-fake-device-for-media-stream` also gives Chromium enumerable fake audiooutput devices, which B2/B10/B11 need.
@@ -176,11 +185,12 @@ try {
   console.log(`[${engineName}] features: ${JSON.stringify(has)}; ${cells.length} cells`);
 
   const results = [];
-  for (const name of cells) {
+  const retried = [];   // { name, ms, detail } for each hung attempt that got its one retry
+  const runCell = async (name) => {
     const errorsBefore = consoleErrors.length;
     cellLog = [];
     const started = Date.now();
-    let result = null;
+    let result;
     try {
       result = await within((async () => {
         const p = page;   // a late step of an abandoned cell must not act on the page that replaced it
@@ -204,6 +214,16 @@ try {
     const newErrors = consoleErrors.slice(errorsBefore);
     if (newErrors.length) result.checks.push({ name: 'no console errors / page errors', ok: false, detail: newErrors.join(' | ') });
     result.pass = result.checks.every((c) => c.ok);
+    return result;
+  };
+  for (const name of cells) {
+    let result = await runCell(name);
+    const hung = result.checks.find((c) => c.name === 'page hung');
+    if (hung && RETRY_ON_HANG.includes(name)) {
+      retried.push({ name, ms: result.ms, detail: hung.detail });
+      console.log(`[${engineName}] RETRY ${name}: page hung after ${result.ms}ms (WebKitGTK media pipeline deadlock), running it once more on a fresh browser`);
+      result = await runCell(name);
+    }
     results.push(result);
     console.log(`[${engineName}] ${result.pass ? 'OK  ' : 'FAIL'} ${name} (${result.ms}ms, ${result.checks.length} checks${result.skipped.length ? `, ${result.skipped.length} skipped` : ''})`);
     for (const c of result.checks.filter((c) => !c.ok)) console.log(`         ✖ ${c.name}${c.detail ? `: ${c.detail}` : ''}`);
@@ -242,7 +262,7 @@ try {
     writeFileSync(resolve(ARTIFACT_DIR, `avatar-media-${engineName}.json`), `${JSON.stringify({
       engine: engineName, features: has, ms: elapsed, budgetMs: BUDGET_MS,
       cells: results.length, checks: results.reduce((a, r) => a + r.checks.length, 0),
-      failedCells: failed.map((r) => r.name), unlistedSkips: unlisted,
+      failedCells: failed.map((r) => r.name), unlistedSkips: unlisted, retriedAfterHang: retried,
       latency: { trackToReadyMs: lat, max: sorted.at(-1) ?? 0, over: over.length, budgetMs: TRACK_TO_READY_MS },
       results: results.map((r) => ({ name: r.name, pass: r.pass, ms: r.ms, checks: r.checks.length, failures: r.checks.filter((c) => !c.ok), skipped: r.skipped, lat: r.lat || [] })),
     }, null, 2)}\n`);
@@ -250,8 +270,10 @@ try {
 
   console.log(`[${engineName}] ${results.length - failed.length}/${results.length} cells passed, ${results.reduce((a, r) => a + r.checks.length, 0)} checks, ${skipped.length} skipped, ${(elapsed / 1000).toFixed(1)}s`);
   if (skipped.length) console.log(`[${engineName}] skipped: ${skipped.join(', ')}`);
+  if (retried.length) console.log(`[${engineName}] retried after a page hang: ${retried.map((r) => r.name).join(', ')}`);
   if (results.length !== cells.length || failed.length) process.exitCode = 1;
-  if (elapsed > BUDGET_MS) { console.error(`[${engineName}] FAIL — over the ${BUDGET_MS / 1000}s budget`); process.exitCode = 1; }
+  // A hung attempt's time is the deadline plus a browser restart, not the cells' speed.
+  if (elapsed - retried.reduce((a, r) => a + r.ms, 0) > BUDGET_MS) { console.error(`[${engineName}] FAIL — over the ${BUDGET_MS / 1000}s budget`); process.exitCode = 1; }
 } catch (err) {
   console.error(`[${engineName}] FAIL —`, err);
   process.exitCode = 1;
