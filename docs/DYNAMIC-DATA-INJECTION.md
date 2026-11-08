@@ -10,7 +10,7 @@ The SDK gives you three mechanisms, each solving a different problem. The most c
 |---|---|---|
 | [Request variables](#the-context-channel-request-variables): `requestVars` / `updateRequestVars()` / `setDynamicPrompt()` | Everything the agent should *know*: viewer facts for `{{var}}` prompt slots, and a full structured page-context blob. Persists for the whole thread. | No, passive |
 | [`session.speak()`](#the-active-nudge-speak) | Actively provoke a new turn. The agent reacts immediately, in this turn | Yes, the only one that does |
-| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Record a form the agent asked for | No. Sends the values to the server and the agent does not see them; send them with `speak()` or `updateRequestVars()` |
+| [`session.submitStructuredDataForm()`](#answering-an-agent-initiated-request) | Send form values to the server | No. The agent does not see the values. Use `speak()` or `updateRequestVars()` for that |
 
 Request variables are **passive**: they update what the agent will see, whenever its next turn happens to occur. `speak()` is the only **active** one: it's the trigger that makes a turn happen right now.
 
