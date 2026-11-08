@@ -82,6 +82,15 @@ test('threads.push rejects a reserved request_vars key BEFORE any network call',
   assert.equal(ff.calls.length, 0);
 });
 
+test('threads.push rejects a custom sys__ key BEFORE any network call', async () => {
+  const { mgmt, ff } = harness([]);
+  await assert.rejects(
+    () => mgmt.threads.push({ id: 't1', content: 'hi', request_vars: { sys__x: 'x' } }, ADMIN_KS),
+    (e) => e.code === 'validation_error' && e.detail.includes('"sys__x"'),
+  );
+  assert.equal(ff.calls.length, 0);
+});
+
 test('threads.push maps a client-variables 403 to client_variables_disabled, a 413 to payload_too_large, and leaves other 403s alone', async () => {
   const reply = { status: 403, body: { detail: 'Client variables are not allowed' } };
   const { mgmt } = harness([{ match: 'thread/push', respond: () => reply }]);

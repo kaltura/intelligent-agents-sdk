@@ -18,6 +18,7 @@
  *   4b catalog.importVoiceFromElevenLabs — an unknown provider voiceId creates
  *      nothing server-side, so the rejection path is free to exercise live
  *   4c catalog.importVoiceFromCartesia   — same contract, same free coverage
+ *   4d voice id length     : a 129 character voiceId is refused offline for both imports (zero fetch calls)
  *   5  catalog.delete       — scratch item removed, re-`get` real-404s
  *
  * `catalog.createVoice` (a real ElevenLabs clone) is NOT exercised here: it
@@ -73,7 +74,8 @@ function check(step, ok, detail) {
   record(step, ok, detail);
 }
 
-const kaltura = new Management(target);
+let fetchCount = 0;
+const kaltura = new Management({ ...target, fetch: (...args) => { fetchCount += 1; return target.fetch(...args); } });
 let admin;
 let itemId;
 let strayItemId;
@@ -179,6 +181,13 @@ try {
     check('4c-import-voice-cartesia-rejects-unknown-id', false, { message: 'expected a rejection, got a created item' });
   } catch (err) {
     check('4c-import-voice-cartesia-rejects-unknown-id', err?.code === 'voice_not_found_cartesia', { code: err?.code, message: err?.detail || err?.message });
+  }
+
+  // 4d: a voiceId over 128 characters is refused before any request, for both providers.
+  for (const [name, fn] of [['elevenlabs', 'importVoiceFromElevenLabs'], ['cartesia', 'importVoiceFromCartesia']]) {
+    const before = fetchCount;
+    const err = await kaltura.catalog[fn]('a'.repeat(129), admin).then(() => null, (e) => e);
+    check(`4d-import-voice-${name}-129-chars-refused-offline`, err?.code === 'bad_request' && fetchCount === before, { code: err?.code, fetchCalls: fetchCount - before });
   }
 } catch (err) {
   failed = true;

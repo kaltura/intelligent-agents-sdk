@@ -28,8 +28,9 @@
  * - `{actionType:'createBadges', badges:Array<{badgeId:string,
  *   type:'boolean'|'numeric', score?:number, scoreAction?:'upsert'|'delta'}>}`:
  *   gives the conversation's user a badge. `badgeId` is the insight key
- *   whose value sets the badge. A `boolean` badge needs `score` and is given
- *   when the insight is true. A `numeric` badge takes its score from the
+ *   whose value sets the badge: 1 to 64 characters, letters, digits, `_` and
+ *   `-` (no dot). A `boolean` badge needs `score` (-1,000,000 to 1,000,000)
+ *   and is given when the insight is true. A `numeric` badge takes its score from the
  *   insight value and must not set `score`. `scoreAction` sets (`upsert`) or
  *   adds to (`delta`) the user's score. Add a `changed_keys` filter on the
  *   badge keys, as `lifecycle.audit` advises (`badges_unfiltered`).
