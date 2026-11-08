@@ -4,6 +4,10 @@
  * docs/api/authentication.md.
  */
 import { KalturaError } from '../core/errors.js';
+import { resolveIntellectId } from './agents.js';
+import { isNotFound } from './audit-report.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class Application {
   /** @param {import('./client.js').Ctx} ctx */
@@ -78,5 +82,68 @@ export class Application {
   async getCustomPrompts(ks) {
     this._.assertAny(ks, 'application.getCustomPrompts');
     return (await this._.agentic('application/getCustomPrompts', {}, ks)).data;
+  }
+
+  /**
+   * List the `{{ variables }}` of one agent: the reserved `sys__*` ones and the
+   * custom ones its prompts, tools and skills reference. READ, no state change.
+   * Returned verbatim, no SDK-side transform or defaults:
+   *   `{systemVariables[], customVariables[]}`.
+   * `systemVariables[]` items: `{name, template, type, description, example, used, properties?[]}`.
+   * `used` says whether the agent references that variable.
+   * `customVariables[]` items: `{name, template, type, paths[], origins[], sources[]}`.
+   * `type` is `"unknown"` when it cannot be inferred. `origins[]` says where a
+   * value comes from (`"referenced"`, or `"set_by_tool"` for a value a `var` tool
+   * sets at runtime).
+   * `sources[]` items: `{documentType, documentId, documentName?, field, origin}`.
+   * `documentId` is a number for an intellect source and a string for the others.
+   * An unknown agent id throws `agent_not_found`. An agent whose intellect no
+   * longer exists throws `intellect_not_found`: on a `server_error` the SDK reads
+   * the agent and its intellect (two more reads) to tell this case apart, and
+   * `err.cause` holds the original error. Any other `server_error` is thrown unchanged.
+   * A non-string or non-UUID-shaped `agentId` throws `bad_request` before any
+   * request. The check is on shape only, so the server may still refuse the id.
+   * @param {string} agentId UUID-shaped string (`agents.create` returns it as `id`).
+   * @param {string} ks (admin)
+   * @returns {Promise<{systemVariables?: Array<{name:string, template:string, type:string, description:string, example?:string|boolean|object, used:boolean, properties?:object[]}>, customVariables?: Array<{name:string, template:string, type:string, paths:string[], origins:string[], sources:Array<{documentType:string, documentId:string|number, documentName?:string, field:string, origin:string}>}>}>}
+   */
+  async getCustomVariables(agentId, ks) {
+    this._.assertAdmin(ks, 'application.getCustomVariables');
+    if (typeof agentId !== 'string' || !UUID_RE.test(agentId)) {
+      throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'application.getCustomVariables needs the agent id as a UUID-shaped string (the `id` agents.create returns).' });
+    }
+    try {
+      return (await this._.agentic('application/getCustomVariables', { agentId }, ks)).data;
+    } catch (e) {
+      if (!(e instanceof KalturaError) || e.code !== 'server_error') throw e;
+      throw (await this._missingIntellect(agentId, ks, e)) ?? e;
+    }
+  }
+
+  /**
+   * After a `server_error`, check whether the agent points at an intellect that
+   * no longer exists. Returns an `intellect_not_found` error for that case, else
+   * `null` (also when a lookup itself fails), so the caller throws the original.
+   * @param {string} agentId @param {string} ks @param {KalturaError} cause
+   * @returns {Promise<KalturaError|null>}
+   */
+  async _missingIntellect(agentId, ks, cause) {
+    try {
+      const configId = resolveIntellectId((await this._.agentic('agent/get', { agentId }, ks)).data?.intellect);
+      if (configId === undefined) return null;
+      try {
+        await this._.genie('v1/intellect/get', { id: configId }, ks);
+        return null;
+      } catch (e) {
+        if (!isNotFound(e)) return null;
+        return new KalturaError({
+          type: 'about:blank', title: 'intellect not found', code: 'intellect_not_found', status: cause.status,
+          detail: `application.getCustomVariables: agent ${agentId} points at intellect ${configId}, which does not exist. Point the agent at an existing intellect.`,
+          instance: cause.instance, requestId: cause.requestId, headers: cause.headers, retryable: false, cause,
+        });
+      }
+    } catch {
+      return null;
+    }
   }
 }
