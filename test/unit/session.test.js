@@ -653,6 +653,17 @@ test('updateRequestVars / setDynamicPrompt keep cfg.contextId and cfg.contextTyp
   session.disconnect();
 });
 
+test('KalturaAvatarSession refuses a custom sys__ key in the constructor and in updateRequestVars, with no emit', async () => {
+  assert.throws(() => newSession({ cfg: { requestVars: { sys__custom: 'x' } } }), (e) => e.code === 'validation_error' && e.detail.includes('"sys__custom"'));
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const before = socket.emitsOf('updateGenieContext').length;
+  assert.throws(() => session.updateRequestVars({ sys__custom: 'x' }), (e) => e.code === 'validation_error');
+  assert.equal(socket.emitsOf('updateGenieContext').length, before);
+  session.disconnect();
+});
+
 test('updateGenieContext omits contextId/contextType when the session has none', async () => {
   const { session, socket } = newSession();
   scriptHappyPath(socket);

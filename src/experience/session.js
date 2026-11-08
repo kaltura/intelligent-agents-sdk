@@ -77,7 +77,7 @@ import { SCREEN_SHARE_DEFAULTS, createStillCapturer, screenShareError, unsupport
 const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 
 // One-time `submitStructuredDataForm()` notice (fixed text, never carries viewer values).
-const FORM_RECORDS_ONLY_MSG = '[KalturaAvatarSession] submitStructuredDataForm() records the submission only. It does not change what the agent knows. To give the agent the values, send them in a message with speak(), or as request variables with updateRequestVars() that your prompt reads.';
+const FORM_NOT_SEEN_MSG = '[KalturaAvatarSession] submitStructuredDataForm() sends the values to the server. The agent does not see them. To give the agent the values, send them in a message with speak(), or as request variables with updateRequestVars() that your prompt reads.';
 
 // `joinRoom` (5 s) covers `clientConfiguration`. `joinComplete` has its own, longer budget
 // (20 s): under load it can arrive after 5 s, and a 5 s cap surfaced a JoinRoomTimeout while
@@ -2195,9 +2195,9 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Record the viewer's structured-data-form submission. Emits `setFormLeadInfo`
-   * on the socket and returns nothing. It does NOT change what the agent knows:
-   * send the values in a message (`speak()`) or as request variables
+   * Send the viewer's structured-data-form values to the server. Emits `setFormLeadInfo`
+   * on the socket and returns nothing. The agent does NOT see the values:
+   * send them in a message (`speak()`) or as request variables
    * (`updateRequestVars()`) to make the agent act on them. Logs one
    * `console.warn` per session the first time it is called. APP-initiated, so it
    * is UNGATED: the `_gateAgentAction` guardrail is for AGENT-pushed actions,
@@ -2207,9 +2207,9 @@ export class KalturaAvatarSession extends Emitter {
   submitStructuredDataForm(values) {
     this._requireConnected('submitStructuredDataForm');
     this._touchActivity();
-    if (!this._warned.has('form-records-only')) {
-      this._warned.add('form-records-only');
-      if (typeof console !== 'undefined') console.warn(FORM_RECORDS_ONLY_MSG);
+    if (!this._warned.has('form-not-seen')) {
+      this._warned.add('form-not-seen');
+      if (typeof console !== 'undefined') console.warn(FORM_NOT_SEEN_MSG);
     }
     this._socket.emit('setFormLeadInfo', sanitizeJson(values || {}));
   }
@@ -3039,12 +3039,12 @@ export class KalturaAvatarSession extends Emitter {
     // config-error frame alone changes nothing. Pinned by the "config error frame" tests in
     // test/e2e/connect-fatal.test.js. Do not add a listener for it.
     for (const ev of Object.keys(FATAL_CODE)) {
-      socket.on(ev, () => {
-        this.emit('error', fatalError(ev));
+      socket.on(ev, (payload) => {
+        this.emit('error', fatalError(ev, payload));
         // After this event the connection ends, so no setup wait can succeed.
         // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
         if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) {
-          const err = fatal(ev);
+          const err = fatal(ev, payload);
           ANNOUNCED.add(err);   // already emitted above: _endWith() must not emit it again
           this._failPending(err);
         }
@@ -3843,14 +3843,24 @@ function openingText(speechId, text) {
 
 /** Fatal errors whose `error` event already fired, so `_endWith()` skips a second one. */
 const ANNOUNCED = new WeakSet();
-/** The SDK error for a fatal socket event. */
-function fatalError(event) {
-  const info = FATAL_CODE[event];
-  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: info.detail, retryable: info.retry });
+/**
+ * The server's reason code from an `unsupportedClient` payload, or undefined. Only an upper-case
+ * word of 1 to 64 characters passes. Nothing else from the frame is read.
+ * @param {unknown} payload
+ */
+function serverCodeOf(payload) {
+  const code = payload && typeof payload === 'object' ? /** @type {any} */ (payload).code : undefined;
+  return typeof code === 'string' && /^[A-Z_]{1,64}$/.test(code) ? code : undefined;
 }
-/** A fatal socket event that ended `connect()`. */
-function fatal(event) {
-  const err = fatalError(event);
+/** The SDK error for a fatal socket event. @param {string} event @param {unknown} [payload] */
+function fatalError(event, payload) {
+  const info = FATAL_CODE[event];
+  const serverCode = event === 'unsupportedClient' ? serverCodeOf(payload) : undefined;
+  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: info.detail, retryable: info.retry, serverCode });
+}
+/** A fatal socket event that ended `connect()`. @param {string} event @param {unknown} [payload] */
+function fatal(event, payload) {
+  const err = fatalError(event, payload);
   err.phase = 'connect';
   return err;
 }

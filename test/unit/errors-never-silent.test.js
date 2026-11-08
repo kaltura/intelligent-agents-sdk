@@ -193,6 +193,14 @@ test('empty_reply says check context_id only when context_id was sent', async ()
   );
 });
 
+test('empty_reply says check shared_message_id when shared_message_id was sent', async () => {
+  const { mgmt } = mgmtFor('');
+  await assert.rejects(
+    () => mgmt.conversations.send({ userMessage: 'hi', shared_message_id: 'm1' }, CONV_TOKEN),
+    (e) => e.code === 'empty_reply' && /Check that shared_message_id exists and that its turn was saved\./.test(e.detail) && !e.body.threadId,
+  );
+});
+
 test('a single empty final chunk is still an empty reply', async () => {
   const { mgmt } = mgmtFor('{"type":"think","content":"","isFinal":true,"extra":{"n":1}}\n');
   await assert.rejects(() => mgmt.conversations.send({ userMessage: 'hi' }, CONV_TOKEN), (e) => e.code === 'empty_reply');

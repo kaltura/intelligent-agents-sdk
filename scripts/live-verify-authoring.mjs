@@ -417,9 +417,18 @@ try {
     return { t1, t2: await turn('Say hi.', t1.threadId) };
   }, (r) => hasMark(r.t2));
   check('12-int-var-compares-as-number', hasMark(big.t2), { calls: (big.t1.toolCalls ?? []).map((c) => c.name), text: big.t2.text?.slice(0, 80) });
-  const small = await turn('The number is 1.', big.t1.threadId);
-  const after = await turn('Say hi.', big.t1.threadId);
-  check('12-later-var-value-wins', (small.toolCalls ?? []).length > 0 && !hasMark(after) && nonEmpty(after), { calls: (small.toolCalls ?? []).length, text: after.text?.slice(0, 80) });
+  // The model must call the tool with 1 (calling it at all is not enough), then the next turn must drop the gated rule.
+  const setToOne = (r) => (r.small.toolCalls ?? []).some((c) => Number(c.args?.au_count) === 1);
+  const lowered = await tryTwice(async () => {
+    const small = await turn('The number is 1.', big.t1.threadId);
+    return { small, after: await turn('Say hi.', big.t1.threadId) };
+  }, (r) => setToOne(r) && nonEmpty(r.after) && !hasMark(r.after));
+  const { small, after } = lowered;
+  // `cause` tells a wrong tool argument (or args missing from the reply) apart from a reply that still has the mark.
+  const cause = !setToOne(lowered) ? 'tool-not-called-with-1' : hasMark(after) ? 'marked' : !nonEmpty(after) ? 'empty-reply' : 'none';
+  check('12-later-var-value-wins', cause === 'none', {
+    cause, argValues: (small.toolCalls ?? []).map((c) => c.args?.au_count), marked: hasMark(after), text: after.text?.slice(0, 80),
+  });
 
   const readerSkill = await kaltura.skills.add({
     name: `live-verify-reader-${TAG}`, description: 'Scratch skill gated by a var, for scripts/live-verify-authoring.mjs',
