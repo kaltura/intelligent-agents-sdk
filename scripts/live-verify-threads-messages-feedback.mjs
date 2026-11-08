@@ -75,12 +75,16 @@ let admin;
 let intellectId;
 let threadId;
 let forkThreadId;
-let cleanedUp = false;
+let cleanupP;
 
-/** Delete the scratch threads and intellect once, then re-check that each thread is gone. Also runs on SIGINT. */
-async function cleanup() {
-  if (cleanedUp) return;
-  cleanedUp = true;
+/** Run the cleanup once. Every caller (finally, SIGINT) awaits the same run, so exit never cuts it short. */
+function cleanup() {
+  cleanupP ??= doCleanup();
+  return cleanupP;
+}
+
+/** Delete the scratch threads and intellect, then re-check that each thread is gone. */
+async function doCleanup() {
   for (const id of [threadId, forkThreadId].filter(Boolean)) {
     // 8: threads.delete — scratch thread removed, re-get real-404s.
     try {
