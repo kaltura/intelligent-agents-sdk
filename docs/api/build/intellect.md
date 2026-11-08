@@ -104,7 +104,7 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `base_directive` | Global system instruction |
 | `force_language` | English name of the forced reply language (e.g. `"Hebrew"`). Replies come back in that language whatever the user writes or speaks. `null` or `""` clears it. Set it via `mgmt.setForcedLanguage`, which also sets the agent's `asr.language` so speech recognition matches |
 | `opening_phrase` | The line spoken as the first turn of every avatar session, a template rendered once per session. The intellect owns it. `null` clears it; `SILENT_OPENING` makes the opening silent so the browser sends the first turn with `kickoff`. Set via `intellectConfig.setOpeningPhrase`. Guide: [START-THE-CONVERSATION.md § Personalize the opening](../../START-THE-CONVERSATION.md#personalize-the-opening) |
-| `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature?, provider? }`; every key optional, `null` uses the defaults. `model_id` is any model id string; `MODEL_IDS` lists known ones. `thinking_level` is one of `THINKING_LEVELS` (`none`, `minimal`, `low`, `medium`, `high`). Not every model uses it, so check the effect with one live turn. `include_thoughts` is a boolean. `temperature` 0..1. `provider` is `vertex` or `bedrock`, the cloud that serves the model. Any other key or value throws `bad_request` before the request. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
+| `model_configuration` | `{ model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature?, provider? }`; every key optional, `null` uses the defaults. `model_id` is any model id string; `MODEL_IDS` lists known ones (region-prefixed and plain `claude-*` names, and Gemini ids). On the default production environment, one live turn answered for `claude-sonnet-5`, `claude-haiku-4-5`, `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-haiku-4-5-20251001-v1:0` and `gemini-3.1-flash-lite` to `gemini-3.8-flash`. These failed in the live turn we ran: `gemini-3-flash-preview`, `gemini-2.5-flash`, `us.anthropic.claude-sonnet-4-20250514-v1:0` and every `eu.` id. The failure was a server error, so retry before you rule one out. No other environment was checked. `thinking_level` is one of `THINKING_LEVELS` (`none`, `minimal`, `low`, `medium`, `high`). Not every model uses it, so check the effect with one live turn. `include_thoughts` is a boolean. `temperature` 0..1. `provider` is `vertex` or `bedrock`, the cloud that serves the model. Any other key or value throws `bad_request` before the request. Set via `intellectConfig.setModelConfiguration`. Which models answer depends on your partner's region: verify with `converseOnce` after switching |
 | `thread_start_tools` | Tool ids that run once when a thread starts, before the first turn. Use an `api` tool (a `code` tool needs an account Kaltura support has enabled, see [Tools](tools-and-secrets.md#code-tool)). The result is not given to the model and never appears as a `tool` segment. An `api` tool with `wait_for_response:false` runs without waiting; the others are waited for. A failing tool does not fail the conversation. Set via `intellectConfig.setThreadStartTools` (same entry forms as `tool_ids`); `[]` clears |
 | `avatar_summary_config` | `{ prompt?, analysis?, template?, content_type? }` for the end-of-session summary of avatar sessions. `analysis` maps output keys to descriptions, `template` is a template over those keys, `content_type` is one of `SUMMARY_CONTENT_TYPES` (`text`/`html`/`html_with_js`). The summary is stored on the thread as a `summary` message. `null` restores defaults. Set via `intellectConfig.setAvatarSummaryConfig` |
 | `glossary` | Domain terms (e.g. `"HLS: HTTP Live Streaming"`) |
@@ -117,6 +117,8 @@ const fields = await mgmt.application.getCustomPrompts(ks);
 | `mcp_servers` | MCP server configs the intellect can call. Set via `intellectConfig.setMcpServers`. See [MCP-INTEGRATIONS.md](../../MCP-INTEGRATIONS.md) |
 | `secrets` | Named secrets for tool OAuth (write-only, masked on read) |
 | `user_properties_forms` | Structured-data forms the agent asks for. Set via `intellectConfig.setUserPropertiesForms`. Fields, types and titles: [STRUCTURED-DATA-FORMS.md](../../STRUCTURED-DATA-FORMS.md) |
+
+`temperature: 0` does not make replies repeatable. The same prompt can still return different text, so do not rely on it for fixed output.
 
 ### Conditions
 
@@ -184,6 +186,31 @@ Each is `"on"` / `"off"` / `"disabled"`:
 `setCapability` and `setCapabilities` throw `capability_vetoed` when you set a stored `disabled` back to `on`, unless you pass `{ force: true }`. An unknown capability name throws `unknown_capability`.
 
 **Note:** `force_experience` is not an intellect field. It is a per-call option on `converse()` (values `"markdown"`, `"summarization"`, `"flashcards"`, `"avatar_only"`; a hint, not a guarantee). See [Converse](../operate.md#converse).
+
+---
+
+## List an Agent's Variables
+
+**SDK:** `mgmt.application.getCustomVariables(agentId, ks)`. Needs an admin KS and the agent id, a UUID-shaped string (the `id` that `agents.create` returns). It only reads data.
+
+Use it to see which `{{ name }}` variables an agent uses and where each one comes from. The result is returned as the server sends it:
+
+| Field | Meaning |
+|---|---|
+| `systemVariables[]` | The reserved `sys__*` variables. Each has `name`, `template`, `type`, `description`, `example`, `used`, and sometimes `properties[]`. `used` is `true` when the agent references the variable |
+| `customVariables[]` | Every other variable the agent references. Each has `name`, `template`, `type` (`"unknown"` when it cannot be inferred), `paths[]`, `origins[]` and `sources[]` |
+| `origins[]` | How the variable gets a value: `referenced` (the agent's text reads it, and you can pass it as a [request variable](../operate.md#converse)), or `set_by_tool` (a [`var` tool](tools-and-secrets.md#var-tool) sets it at runtime) |
+| `sources[]` | Where the variable is used: `{documentType, documentId, documentName, field, origin}`. `documentType` is `intellect`, `tool` or `skill`. `documentId` is a number for an intellect and a string for a tool or skill. An intellect source has no `documentName` |
+
+The SDK adds no defaults. A response without one of the arrays comes back without it.
+
+```js
+const { systemVariables, customVariables } = await mgmt.application.getCustomVariables(agentId, adminKs);
+customVariables.map((v) => v.name);              // ['pass_var']
+systemVariables.filter((v) => v.used).length;    // reserved variables the agent reads
+```
+
+A non-string or non-UUID-shaped `agentId` throws `bad_request`, and so does a missing KS, both before any request. The agent id check is on shape only, so the server can still refuse an id with `bad_request`. An unknown agent throws `agent_not_found`. An agent whose intellect was deleted throws `intellect_not_found`, with the original `server_error` in `err.cause`. A dropped connection is resent, like other reads.
 
 ---
 

@@ -152,6 +152,32 @@ test('skills.update validates BEFORE any network call, then posts a patch to v1/
   assert.deepEqual(ff.calls[0].body, { id: SKILL.id, name: 'greeter2', description: 'd2' });
 });
 
+test('skills.update checks patch.name characters like skills.add, before any request', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  for (const name of ['has space', 'a.b', 'caf\u00e9', 'a/b', ' ', '']) {
+    await assert.rejects(() => mgmt.skills.update(SKILL.id, { name }, ADMIN_KS), (e) => e.code === 'bad_request', JSON.stringify(name));
+  }
+  for (const name of [5, null, {}, []]) {
+    await assert.rejects(() => mgmt.skills.update(SKILL.id, /** @type {any} */ ({ name }), ADMIN_KS), (e) => e.code === 'bad_request');
+  }
+  assert.equal(ff.calls.length, 0);
+  await assert.rejects(() => mgmt.skills.update(SKILL.id, { name: 'has space' }, ADMIN_KS), (e) => /letters, digits/.test(e.detail) && /patch\.name|skills\.update/.test(e.detail));
+});
+
+test('skills.update sends a valid rename, the current name, and skips name when absent', async () => {
+  const { mgmt, ff } = harness([
+    { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
+  ]);
+  await mgmt.skills.update(SKILL.id, { name: 'new_name-2' }, ADMIN_KS);
+  await mgmt.skills.update(SKILL.id, { name: SKILL.name }, ADMIN_KS);
+  await mgmt.skills.update(SKILL.id, { description: 'only desc' }, ADMIN_KS);
+  assert.equal(ff.calls[0].body.name, 'new_name-2');
+  assert.equal(ff.calls[1].body.name, 'greeter');
+  assert.equal('name' in ff.calls[2].body, false);
+});
+
 test('skills.update accepts condition alone', async () => {
   const { mgmt, ff } = harness([
     { match: 'v1/skill/update', respond: (req) => ({ status: 200, body: { ...SKILL, ...req.body } }) },
