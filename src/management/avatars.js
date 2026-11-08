@@ -24,6 +24,40 @@ function assertNoAvatarTags(body, where) {
 }
 
 /**
+ * Validate the Limited Availability `emotions` setting BEFORE the network call.
+ * Types only. Which labels exist is the server's call. `null` and unknown keys
+ * are refused, `allowed: []` is valid. Pure: no network.
+ * @param {object} body @param {string} where
+ */
+function assertEmotions(body, where) {
+  const e = body && typeof body === 'object' ? /** @type {any} */ (body).emotions : undefined;
+  if (e === undefined) return;
+  const bad = (/** @type {string} */ why) => {
+    throw new KalturaError({
+      type: 'about:blank', title: 'invalid emotions', code: 'bad_request',
+      detail: `${where}: emotions ${why}. Expected {enabled?: boolean, intensity?: number 0..1, allowed?: string[]}; omit a key to keep its stored value.`,
+    });
+  };
+  if (e === null || typeof e !== 'object' || Array.isArray(e)) bad(`must be an object (got ${e === null ? 'null' : Array.isArray(e) ? 'array' : typeof e})`);
+  for (const [k, v] of Object.entries(e)) {
+    if (k === 'enabled') {
+      if (typeof v !== 'boolean') bad(`.enabled must be a boolean (got ${typeof v})`);
+    } else if (k === 'intensity') {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) bad('.intensity must be a finite number from 0 to 1');
+    } else if (k === 'allowed') {
+      if (!Array.isArray(v)) bad(`.allowed must be an array of strings (got ${v === null ? 'null, use [] to clear' : typeof v})`);
+      // Index loop, not `.some`: `.some` skips holes, and a hole is sent as null.
+      for (let i = 0; i < v.length; i++) {
+        if (typeof v[i] !== 'string' || v[i] === '') bad('.allowed must hold non-empty strings only');
+      }
+      if (new Set(v).size !== v.length) bad('.allowed must not repeat a label');
+    } else {
+      bad(`has an unknown key ${JSON.stringify(k)}`);
+    }
+  }
+}
+
+/**
  * Validate a `face`/`background` composition BEFORE the network call.
  * `strict` (create only) rejects an incomplete pairing — `face` alone or
  * `background` alone both 200 with `AVATAR_MISSING_VISUAL_RESOLUTION`, an
@@ -160,6 +194,11 @@ export class Avatars {
    *
    * `name` (≤255 chars) labels the avatar; over 255 is a 400.
    *
+   * `emotions` (Limited Availability) is `{enabled?, intensity?: 0..1, allowed?: string[]}`.
+   * The SDK checks types only and throws `bad_request` before the request for `null`,
+   * unknown keys, a bad `intensity`, or a non-string, empty or repeated `allowed` entry.
+   * See docs/contributor/limited-availability.md.
+   *
    * Domain failures arrive in an HTTP 200 body. The SDK throws `KalturaError`
    * with the failure code in `err.title`. `code` is `api_exception`, or a more
    * specific SDK code such as `catalog_item_not_found`:
@@ -180,14 +219,15 @@ export class Avatars {
    *   { displayName: 'Lobby greeter', intellect, avatarIds: [avatar.id], adminTags: ['lobby'] },
    *   adminKs,
    * );
-   * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string} — leave `openingPhrase` unset (see above)
+   * @param {object} body {voice:{id,speed?},visual?:{id,motionControl?:{speaking,nonSpeaking}},face?:{id},background?:{type:'color'|'visual',value?:string},name?:string,templateId?:string,openingPhrase?:string,emotions?:{enabled?:boolean,intensity?:number,allowed?:string[]}} — leave `openingPhrase` unset (see above)
    * @param {string} ks @param {{idempotencyKey?:string}} [opts]
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel).
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, if `face`/`background` are incomplete/malformed, or if `background.value` for `type:'color'` isn't a 6-digit hex string (no alpha channel), or if `emotions` is invalid.
    */
   async create(body, ks, opts = {}) {
     this._.assertAdmin(ks, 'avatars.create');
     assertNoAvatarTags(body, 'avatars.create');
     assertComposition(body, 'avatars.create', true);
+    assertEmotions(body, 'avatars.create');
     return (await this._.agentic('avatar/create', body, ks, { idempotencyKey: opts.idempotencyKey || uuidv4() })).data;
   }
 
@@ -210,6 +250,8 @@ export class Avatars {
    * existing visual is left untouched, so a response with unchanged
    * `visual.composition` means the new face was NOT applied; send
    * `background` too to actually recompose). `name` is also accepted.
+   * `emotions` (Limited Availability) merges per key: omitted keys keep their stored value,
+   * and `allowed: []` clears the list. Same offline checks as {@link create}.
    * `templateId` is REJECTED on update (400 `property templateId should not
    * exist`) — it's a create-only convenience.
    *
@@ -219,14 +261,15 @@ export class Avatars {
    *
    * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
    * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);
-   * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, openingPhrase?:string|null, ...} — `openingPhrase: null` clears it; omitted preserves it
+   * @param {object} body {id:string, face?:{id}, background?:{type:'color'|'visual',value?:string}, name?:string, openingPhrase?:string|null, emotions?:{enabled?:boolean,intensity?:number,allowed?:string[]}, ...} — `openingPhrase: null` clears it; omitted preserves it
    * @param {string} ks
-   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed.
+   * @throws {import('../core/errors.js').KalturaError} `code:'bad_request'` if `adminTags` is passed, or if a present `background` is malformed, or if `emotions` is invalid.
    */
   async update(body, ks) {
     this._.assertAdmin(ks, 'avatars.update');
     assertNoAvatarTags(body, 'avatars.update');
     assertComposition(body, 'avatars.update', false);
+    assertEmotions(body, 'avatars.update');
     return (await this._.agentic('avatar/update', body, ks)).data;
   }
 
