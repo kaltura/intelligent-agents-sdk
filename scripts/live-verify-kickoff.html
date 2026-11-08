@@ -291,9 +291,9 @@
 
     // ---- build the session -----------------------------------------------
     const init = await (await fetch('/init')).json();
+    if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
     // badKs=1 spoils the end of the avatar token, so the server refuses the session.
     if (q.get('badKs') === '1') init.ks = init.ks.slice(0, -8) + 'AAAAAAAA';
-    if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
     const kickoff = kickoffText ? (echo ? { text: kickoffText, echo: true } : kickoffText) : undefined;
 
     const avatarCfg = {

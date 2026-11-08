@@ -204,7 +204,9 @@ const SCENARIOS = {
       report.check(`${id}: the refusal came well before the 30 s overall limit`, Date.now() - t0 < 15000, { ms: Date.now() - t0 });
       report.check(`${id}: serverCode is INVALID_KS and code is unchanged`, connect.serverCode === 'INVALID_KS' && connect.code === 'unsupported_client', { serverCode: connect.serverCode });
       const text = JSON.stringify(connect);
-      report.check(`${id}: the error holds no token text`, !/ks=|\bks\b.{0,3}[A-Za-z0-9_-]{40,}/.test(text) && !text.includes('AAAAAAAA'), undefined);
+      const real = await mintPageInit(kaltura, agent, target.genieUrl);
+      const leaks = [real.ks, real.conversationKs].filter((k) => typeof k === 'string' && text.includes(k.slice(0, 24)));
+      report.check(`${id}: the error holds no token text`, !/ks=|\bks\b.{0,3}[A-Za-z0-9_-]{40,}/.test(text) && !text.includes('AAAAAAAA') && !/djJ8/.test(text) && leaks.length === 0, undefined);
       await callHook(page, 'testDisconnect').catch(() => {});
     },
   },
