@@ -126,7 +126,7 @@ Rules to know:
 
 - Put `orderBy` inside `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`).
 - Send `statusEquals`/`statusIn` as numbers, `0` or `1`. `statusEquals: 1` returns deleted threads, which the default list omits ([operate.md § Threads](operate.md#threads)).
-- Use only the filter fields listed above. The partner always comes from the token, so there is no partner filter. `userIdEquals`, `threadId` and `idEquals` never widen a user token beyond its own data.
+- Use only the filter fields listed above. `partnerIdIn` is not supported.
 - Pager is `{pageIndex, pageSize}` (1-based). Use `pageIndex`/`pageSize`, not `{offset, limit}`.
 - `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback).
 
