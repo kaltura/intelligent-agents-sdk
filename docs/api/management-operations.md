@@ -189,7 +189,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record thr
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` does not tell you that indexing is complete. For the completion check, see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag).
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. `removeSource` on a source that lists `categoryIds` is refused with `bad_request`: to drop the categories, delete the record. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` and `mgmt.skills.delete` use the same guard.
 

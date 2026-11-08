@@ -21,7 +21,7 @@
  *   7  knowledge.addSource       — one source carrying a categoryIds entry
  *   8  knowledge.corpusStatus({configId}) — now resolves real categoryIds (entryCount 0, populated:false, NOT unlinked)
  *   9  knowledge.isIndexed       — READY immediately, indexPosition null (nothing indexed yet)
- *  10  knowledge.removeSource    — cleanup, back to no sources
+ *  10  knowledge.removeSource    — a source with categoryIds is refused with `bad_request` (the record is deleted in step 13)
  *  11  knowledge.deleteRecord WITHOUT force, still linked — typed `knowledge_in_use` naming the configId
  *  12  intellectConfig.setKnowledgeIds([]) — unlink, confirmed via getLinkage
  *  13  knowledge.deleteRecord (real cleanup) — re-`getRecord` real-404s
@@ -150,9 +150,13 @@ try {
   const indexed = await kaltura.knowledge.isIndexed(recordId, admin);
   check('9-is-indexed-ready', indexed.ready === true && indexed.status === 'READY' && indexed.indexPosition === null, indexed);
 
-  // 10: removeSource — cleanup, back to no sources.
-  const removedSource = await kaltura.knowledge.removeSource(recordId, source, admin);
-  check('10-remove-source-applied', removedSource.applied === true, { applied: removedSource.applied });
+  // 10: removeSource on a source with categoryIds is refused; step 13 deletes the record.
+  try {
+    await kaltura.knowledge.removeSource(recordId, source, admin);
+    check('10-remove-source-with-categories-refused', false, { message: 'expected a rejection, the source was removed' });
+  } catch (err) {
+    check('10-remove-source-with-categories-refused', err?.code === 'bad_request', { code: err?.code, message: err?.detail || err?.message });
+  }
 
   // 11: deleteRecord WITHOUT force, still linked — typed `knowledge_in_use`.
   try {

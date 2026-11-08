@@ -60,7 +60,7 @@ await mgmt.knowledge.addSource(
 
 `knowledge.addSource(id, source, ks)` is the step that actually makes the uploaded content retrievable. A knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`.
 
-`knowledge.removeSource(id, source, ks)` is the inverse. Both calls change one entry of `config.sources[]` without disturbing the others, and are idempotent. Call them one at a time for the same record id, because two overlapping calls can lose one of the changes. To change sources, use these two calls. If you call `updateRecord({config}, ks)` directly, send the full `config`.
+`knowledge.removeSource(id, source, ks)` is the inverse, but a source that lists `categoryIds` cannot be removed: the call is refused with `bad_request`. Delete the record instead. Both calls change one entry of `config.sources[]` without disturbing the others, and are idempotent. Call them one at a time for the same record id, because two overlapping calls can lose one of the changes. To change sources, use these two calls. If you call `updateRecord({config}, ks)` directly, send the full `config`.
 
 `buildIndexerObjects()` defaults to all three modalities (in this order: `document`, `caption`, `ocr`) when called with no arguments or an empty array:
 
