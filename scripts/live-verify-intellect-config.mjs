@@ -10,7 +10,8 @@
  *   3  setSkillIds([])                         — empty list, no real Skill needed
  *   4  setThreadStartTools([])                 — empty list, no real Tool needed
  *   5  setModelConfiguration({...})            — a real MODEL_IDS entry, then null to clear
- *      5b  one converseOnce per provider-neutral Claude id in MODEL_IDS (each must answer)
+ *      5b  one converseOnce per MODEL_IDS entry. Plain claude-* ids must answer; for the
+ *          rest the result is recorded, because region-prefixed and older ids may be refused
  *   6  setOpeningPhrase('...')                 — then null to clear
  *   7  setAvatarSummaryConfig({...})           — then null to restore defaults
  *   8  setSecrets({CI_SCRATCH_SECRET: fake})   — fake name/value, never a real credential
@@ -116,11 +117,22 @@ try {
   const modelConfigClear = await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
   check('5-clear-model-configuration', modelConfigClear.applied === true, { applied: modelConfigClear.applied });
 
-  // 5b: the provider-neutral Claude ids (no us./eu. prefix) must answer one real turn.
-  for (const modelId of MODEL_IDS.filter((id) => id.startsWith('claude-'))) {
-    await kaltura.intellectConfig.setModelConfiguration(configId, { model_id: modelId }, admin);
-    const turn = await kaltura.converseOnce(configId, 'Reply with one word: pong', {});
-    check(`5b-model-answers-${modelId}`, typeof turn.text === 'string' && turn.text.trim().length > 0, { modelId, chars: turn.text?.length });
+  // 5b: one real turn per MODEL_IDS entry. A refused turn is recorded, never thrown,
+  // so later steps still run. The plain claude-* ids must answer; for the others the
+  // answer depends on the environment, so the result is recorded without failing the run.
+  for (const modelId of MODEL_IDS) {
+    let answered = false;
+    let detail;
+    try {
+      await kaltura.intellectConfig.setModelConfiguration(configId, { model_id: modelId }, admin);
+      const turn = await kaltura.converseOnce(configId, 'Reply with one word: pong', {});
+      answered = typeof turn.text === 'string' && turn.text.trim().length > 0;
+      detail = { modelId, answered, chars: turn.text?.length };
+    } catch (err) {
+      detail = { modelId, answered: false, code: err?.code, message: err?.detail || err?.message };
+    }
+    if (modelId.startsWith('claude-')) check(`5b-model-answers-${modelId}`, answered, detail);
+    else record(`5b-model-${modelId}`, true, detail);
   }
   await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
 
