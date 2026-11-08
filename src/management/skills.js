@@ -161,8 +161,10 @@ export class Skills {
    * Update a Skill's name/description/instructions/condition. WRITE — idempotent.
    * `/v1/skill/update` re-checks the partner-unique-name constraint on a
    * rename (409 on conflict, same as `add`). `condition` is checked before any
-   * network call like in {@link Skills#add}. Pass `condition: ''` to clear it.
-   * `null` is skipped.
+   * network call like in {@link Skills#add}. `patch.name` must use only
+   * letters, digits, `_` and `-`, the same rule as {@link Skills#add}; an
+   * invalid name throws `bad_request` before any request. Pass `condition: ''`
+   * to clear it. `null` is skipped.
    * @param {string} id @param {{name?:string, description?:string, instructions?:string, condition?:string|null}} patch
    * @param {string} ks (admin)
    * @returns {Promise<{id:string, name:string, description:string, condition?:string|null, instructions:string|null, partner_id:number, created_at:string, updated_at:string}>}
@@ -177,6 +179,7 @@ export class Skills {
     const body = { id };
     if (patch.name !== undefined) {
       if (typeof patch.name !== 'string' || !patch.name.trim()) throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: 'skills.update patch.name must be a non-empty string.' });
+      requireSkillNameChars(patch.name, 'skills.update patch.name');
       body.name = patch.name;
     }
     if (patch.description !== undefined) {
