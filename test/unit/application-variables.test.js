@@ -49,6 +49,22 @@ test('getCustomVariables: returns the server shape unchanged', async () => {
   assert.deepEqual(out, payload);
 });
 
+test('getCustomVariables: passes numeric documentId, documentName and non-string example through', async () => {
+  const payload = {
+    systemVariables: [
+      { name: 'sys__is_new_thread', template: '{{ sys__is_new_thread }}', type: 'boolean', description: 'd', example: true, used: false },
+      { name: 'sys__user_obj', template: '{{ sys__user_obj }}', type: 'object', description: 'd', example: { id: 'u1' }, used: false },
+    ],
+    customVariables: [
+      { name: 'a', template: '{{ a }}', type: 'unknown', paths: ['p'], origins: ['referenced'], sources: [{ documentType: 'intellect', documentId: 12345, field: 'base_directive', origin: 'referenced' }] },
+      { name: 'b', template: '{{ b }}', type: 'unknown', paths: ['p'], origins: ['set_by_tool'], sources: [{ documentType: 'tool', documentId: 't-1', documentName: 'My tool', field: 'config.args.b', origin: 'set_by_tool' }] },
+    ],
+  };
+  const out = await mgmtWith(recorder(() => reply(200, payload))).application.getCustomVariables(AGENT_ID, ADMIN_KS);
+  assert.deepEqual(out, payload);
+  assert.equal(out.customVariables[0].sources[0].documentId, 12345);
+});
+
 test('getCustomVariables: passes a response without arrays through, adds no defaults', async () => {
   const out = await mgmtWith(recorder(() => reply(200, { systemVariables: [{ name: 'sys__x' }] }))).application.getCustomVariables(AGENT_ID, ADMIN_KS);
   assert.deepEqual(out, { systemVariables: [{ name: 'sys__x' }] });
@@ -62,7 +78,7 @@ for (const [label, id] of [['empty string', ''], ['whitespace', '   '], ['undefi
     const f = recorder(() => reply(200, {}));
     await assert.rejects(
       () => mgmtWith(f).application.getCustomVariables(/** @type {any} */ (id), ADMIN_KS),
-      (e) => e instanceof KalturaError && e.code === 'validation_error',
+      (e) => e instanceof KalturaError && e.code === 'bad_request',
     );
     assert.equal(f.calls.length, 0);
   });

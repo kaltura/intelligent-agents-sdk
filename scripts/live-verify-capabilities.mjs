@@ -48,6 +48,41 @@ let varsIntellectId;
 let varsAgentId;
 let failed = false;
 
+// Deletes the scratch agent and intellect. Safe to call twice (ids are cleared
+// after use), so both the `finally` block and the signal handlers can run it.
+async function cleanupVars() {
+  const agentToDelete = varsAgentId;
+  const intellectToDelete = varsIntellectId;
+  varsAgentId = undefined;
+  varsIntellectId = undefined;
+  if (!admin) return;
+  if (agentToDelete) {
+    try {
+      await kaltura.agents.delete(agentToDelete, admin, { confirmPermanent: true });
+      record('agents.delete (getCustomVariables probe)', true, { id: agentToDelete });
+    } catch (err) {
+      failed = true;
+      record('agents.delete (getCustomVariables probe)', false, { id: agentToDelete, message: err?.detail || err?.message || String(err) });
+    }
+  }
+  if (intellectToDelete) {
+    try {
+      await kaltura.intellects.delete(intellectToDelete, admin, { confirmPermanent: true });
+      record('intellects.delete (getCustomVariables probe)', true, { id: intellectToDelete });
+    } catch (err) {
+      failed = true;
+      record('intellects.delete (getCustomVariables probe)', false, { id: intellectToDelete, message: err?.detail || err?.message || String(err) });
+    }
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    console.error(`${signal} received, deleting scratch agent and intellect`);
+    cleanupVars().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  });
+}
+
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
@@ -182,24 +217,7 @@ try {
   failed = true;
   record('live-verify-capabilities', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
-  if (varsAgentId) {
-    try {
-      await kaltura.agents.delete(varsAgentId, admin, { confirmPermanent: true });
-      record('agents.delete (getCustomVariables probe)', true, { id: varsAgentId });
-    } catch (err) {
-      failed = true;
-      record('agents.delete (getCustomVariables probe)', false, { id: varsAgentId, message: err?.detail || err?.message || String(err) });
-    }
-  }
-  if (varsIntellectId) {
-    try {
-      await kaltura.intellects.delete(varsIntellectId, admin, { confirmPermanent: true });
-      record('intellects.delete (getCustomVariables probe)', true, { id: varsIntellectId });
-    } catch (err) {
-      failed = true;
-      record('intellects.delete (getCustomVariables probe)', false, { id: varsIntellectId, message: err?.detail || err?.message || String(err) });
-    }
-  }
+  await cleanupVars();
   if (ruleId) {
     try {
       const del = await kaltura.lifecycle.delete(ruleId, admin, { confirmPermanent: true });
