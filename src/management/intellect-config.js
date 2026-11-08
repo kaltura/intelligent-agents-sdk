@@ -101,9 +101,16 @@ export const SKILL_MODES = Object.freeze(['adhoc', 'adhoc-save', 'preloaded']);
 
 /**
  * Known `model_configuration.model_id` values. `us.`/`eu.` prefixes pick the
- * Claude region; Gemini ids are global. `setModelConfiguration` sends any
- * non-empty string, so you can send an id that is not listed here. Check a new
- * id with one live turn.
+ * Claude region; the unprefixed `claude-*` names are provider-neutral; Gemini
+ * ids are global. On the default production environment, one live turn
+ * answered for `claude-sonnet-5`, `claude-haiku-4-5`,
+ * `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`
+ * and `gemini-3.1-flash-lite` to `gemini-3.8-flash`. These failed in the
+ * live turn we ran: `gemini-3-flash-preview`, `gemini-2.5-flash`,
+ * `us.anthropic.claude-sonnet-4-20250514-v1:0` and every `eu.` id. The failure
+ * was a server error, so retry before you rule one out.
+ * `setModelConfiguration` sends any non-empty string, so you can
+ * send an id that is not listed here. Check an id with one live turn.
  * @type {readonly string[]}
  */
 export const MODEL_IDS = Object.freeze([
@@ -113,6 +120,8 @@ export const MODEL_IDS = Object.freeze([
   'eu.anthropic.claude-sonnet-4-20250514-v1:0',
   'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'claude-sonnet-5',
+  'claude-haiku-4-5',
   'gemini-3-flash-preview',
   'gemini-2.5-flash',
   'gemini-3.1-flash-lite',

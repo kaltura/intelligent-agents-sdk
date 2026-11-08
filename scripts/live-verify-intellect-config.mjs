@@ -10,6 +10,8 @@
  *   3  setSkillIds([])                         — empty list, no real Skill needed
  *   4  setThreadStartTools([])                 — empty list, no real Tool needed
  *   5  setModelConfiguration({...})            — a real MODEL_IDS entry, then null to clear
+ *      5b  one converseOnce per MODEL_IDS entry. The ids the docs say answer must answer;
+ *          the others are recorded only (they failed in the live turn run for the docs)
  *   6  setOpeningPhrase('...')                 — then null to clear
  *   7  setAvatarSummaryConfig({...})           — then null to restore defaults
  *   8  setSecrets({CI_SCRATCH_SECRET: fake})   — fake name/value, never a real credential
@@ -43,6 +45,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
+import { MODEL_IDS } from '../src/management/intellect-config.js';
 import { resolveTarget } from './lib/target.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +56,7 @@ const { partnerId } = target;
 const startedAt = new Date().toISOString();
 const runId = `ci-live-verify-intellect-config-${Date.now()}`;
 const RUN_TAG = `ic${Date.now().toString(36)}`;
+const SCRATCH_NAME = `sdk-live-${Math.random().toString(36).slice(2, 8)}`;
 const artifact = { runId, startedAt, partnerId, steps: [] };
 
 function record(step, ok, detail) {
@@ -70,6 +74,14 @@ const kaltura = new Management(target);
 let admin;
 let configId;
 
+// Ctrl-C or a cancelled job still deletes the scratch intellect.
+process.once('SIGINT', async () => {
+  if (configId && admin) {
+    try { await kaltura.intellects.delete(configId, admin, { confirmPermanent: true }); } catch { /* best effort */ }
+  }
+  process.exit(130);
+});
+
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
   record('admin-token-mint', true, { secondsRemaining: admin.secondsRemaining() });
@@ -78,7 +90,7 @@ try {
   const intel = await kaltura.intellects.add({
     type: 'internal',
     status: 2,
-    prompts: [{ key: 'name', label: 'name', headerTemplate: 'Your name is:', type: 'custom', value: `Live-Verify IntellectConfig Probe ${RUN_TAG}` }],
+    prompts: [{ key: 'name', label: 'name', headerTemplate: 'Your name is:', type: 'custom', value: `${SCRATCH_NAME} IntellectConfig Probe ${RUN_TAG}` }],
   }, admin);
   configId = intel.id;
   check('1-intellect-create', !!configId, { configId });
@@ -104,6 +116,34 @@ try {
   check('5-set-model-configuration', modelConfig.applied === true, { applied: modelConfig.applied });
   const modelConfigClear = await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
   check('5-clear-model-configuration', modelConfigClear.applied === true, { applied: modelConfigClear.applied });
+
+  // 5b: one real turn per MODEL_IDS entry. A refused turn is recorded, never thrown,
+  // so later steps still run. Ids in DOCUMENTED_TO_ANSWER must answer, so the run fails
+  // when one stops and the docs go stale. The others are recorded for information only.
+  // Keep DOCUMENTED_TO_ANSWER in step with MODEL_IDS in src/management/intellect-config.js
+  // and the model_configuration row in docs/api/build/intellect.md.
+  const DOCUMENTED_TO_ANSWER = new Set([
+    'claude-sonnet-5', 'claude-haiku-4-5',
+    'us.anthropic.claude-sonnet-5', 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.5-flash',
+    'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash',
+  ]);
+  for (const modelId of MODEL_IDS) {
+    let answered = false;
+    let detail;
+    try {
+      await kaltura.intellectConfig.setModelConfiguration(configId, { model_id: modelId }, admin);
+      const turn = await kaltura.converseOnce(configId, 'Reply with one word: pong', {});
+      answered = typeof turn.text === 'string' && turn.text.trim().length > 0;
+      detail = { modelId, answered, chars: turn.text?.length };
+    } catch (err) {
+      detail = { modelId, answered: false, code: err?.code, message: err?.detail || err?.message };
+    }
+    if (DOCUMENTED_TO_ANSWER.has(modelId)) check(`5b-model-answers-${modelId}`, answered, detail);
+    else record(`5b-model-info-${modelId}`, true, detail);
+  }
+  check('5b-documented-ids-are-in-MODEL_IDS', [...DOCUMENTED_TO_ANSWER].every((id) => MODEL_IDS.includes(id)), { missing: [...DOCUMENTED_TO_ANSWER].filter((id) => !MODEL_IDS.includes(id)) });
+  await kaltura.intellectConfig.setModelConfiguration(configId, null, admin);
 
   // 6: setOpeningPhrase — then null to clear.
   const openingPhrase = await kaltura.intellectConfig.setOpeningPhrase(configId, `Hello from live-verify ${RUN_TAG}!`, admin);
