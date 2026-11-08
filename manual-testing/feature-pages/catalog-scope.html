@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalog scope</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<p><a href="../../">All pages</a></p>
+<h1>Catalog scope</h1>
+<p class="lead">A custom visual tagged with an agent scope shows up only in that scope. The server does the admin calls. The list counts come from the real catalog.</p>
+<section>
+<button id="create">1. Create scoped visual</button>
+<button id="toB">2. Move to scope B</button>
+<button id="clear">3. Clear the scope</button>
+<img id="thumb" class="thumb" alt="Catalog item thumbnail" hidden>
+<table><tbody id="state"></tbody></table>
+<ul class="log" id="log"></ul></section>
+</main>
+<script type="module" src="catalog-scope.js"></script>
+</body>
+</html>

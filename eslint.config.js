@@ -95,6 +95,15 @@ export default [
     },
   },
   {
+    // Pages for the feature-pages harness: plain browser code.
+    files: ['manual-testing/feature-pages/*.js'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: { ...browserGlobals, location: 'readonly' },
+    },
+  },
+  {
     // Node scripts that also make raw HTTP requests (bypassing the SDK's own
     // fetch wrapper to hit backend validation directly), hence the one
     // addition (`fetch`) beyond nodeGlobals — everything else here is plain

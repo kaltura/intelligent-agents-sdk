@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request variables</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<p><a href="../../">All pages</a></p>
+<h1>Request variables</h1>
+<p class="lead">The SDK refuses a reserved key before any network call. An allowed key goes through to the agent.</p>
+<section>
+<button id="bad">Send reserved key (sys__demo)</button>
+<button id="good">Send allowed key</button>
+<table><tbody id="result"></tbody></table>
+<h2>Network calls made by this page</h2>
+<ul class="log" id="calls"></ul></section>
+</main>
+<script type="module" src="request-vars.js"></script>
+</body>
+</html>

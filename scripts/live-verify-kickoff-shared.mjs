@@ -288,7 +288,7 @@ function loadSocketIo() {
 
 /** @type {WeakSet<import('playwright').BrowserContext>} */ const socketIoRouted = new WeakSet();
 /** Serve the socket.io client from the Node side so the page never waits on the CDN. The page's own integrity check still applies. @param {import('playwright').BrowserContext} context */
-async function routeSocketIo(context) {
+export async function routeSocketIo(context) {
   if (socketIoRouted.has(context)) return;
   socketIoRouted.add(context);
   await context.route(SOCKET_IO_CDN, async (route) => {

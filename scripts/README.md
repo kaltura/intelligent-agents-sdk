@@ -90,6 +90,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
 | `live-verify-session-complete.mjs` | The `session_completed` signal and its presence mechanism |
+| `live-verify-feature-pages.mjs` | Starts `manual-testing/feature-pages/serve.mjs` and clicks through every page in a real browser. `LIVE_VERIFY_BROWSER` picks the engine |
 | `live-verify-context-fields.mjs` | `contextId`/`contextType` actually reach the prompt at runtime |
 | `live-verify-request-vars.mjs` | Every documented `request_vars` behavior over `converseOnce` |
 | `live-verify-site-nav.mjs` | The `go_to` contract end to end |
