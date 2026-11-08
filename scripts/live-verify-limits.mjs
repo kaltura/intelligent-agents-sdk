@@ -29,6 +29,9 @@ const created = { rules: [], settings: [] };
 const results = [];
 let admin;
 let n = 0;
+let stopping = 0; // exit code of the signal that stopped the run, 0 while running
+/** @type {Promise<void>} */
+let inflight = Promise.resolve();
 
 const record = (label, ok, extra = '') => {
   results.push([label, ok]);
@@ -38,11 +41,16 @@ const rep = (len, ch = 'a') => ch.repeat(len);
 
 /** Run `create`; pass when the outcome matches `expectOk`. A rejection must be a 400. */
 async function attempt(label, expectOk, create, collect) {
+  if (stopping) return;
+  let release;
+  inflight = new Promise((resolve) => { release = resolve; });
   try {
     collect(await create());
     record(`${label} accepted`, expectOk);
   } catch (e) {
     record(`${label} rejected`, !expectOk && e.status === 400, `(status ${e.status}, ${e.code}: ${String(e.detail).slice(0, 100)})`);
+  } finally {
+    release();
   }
 }
 
@@ -59,13 +67,22 @@ const setting = (label, key, expectOk) => attempt(`insight key ${label}`, expect
   () => kaltura.insightSettings.create({ key, title: `${tag} s`, prompt: 'x', valueType: 'string' }, admin),
   (r) => created.settings.push(r.id));
 
-async function cleanup() {
+let cleanupP;
+async function doCleanup() {
   if (!admin) return;
-  for (const id of created.rules.splice(0)) await kaltura.lifecycle.delete(id, admin, { confirmPermanent: true }).catch((e) => console.log(`cleanup: rule ${id} not deleted (${e.code})`));
-  for (const id of created.settings.splice(0)) await kaltura.insightSettings.delete(id, admin, { confirmPermanent: true }).catch((e) => console.log(`cleanup: setting ${id} not deleted (${e.code})`));
+  for (const id of [...created.rules]) {
+    await kaltura.lifecycle.delete(id, admin, { confirmPermanent: true }).catch((e) => console.log(`cleanup: rule ${id} not deleted (${e.code})`));
+    created.rules.splice(created.rules.indexOf(id), 1);
+  }
+  for (const id of [...created.settings]) {
+    await kaltura.insightSettings.delete(id, admin, { confirmPermanent: true }).catch((e) => console.log(`cleanup: setting ${id} not deleted (${e.code})`));
+    created.settings.splice(created.settings.indexOf(id), 1);
+  }
 }
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => { cleanup().finally(() => process.exit(130)); });
+/** One shared run: a second call, or a second signal, waits for the delete in flight. */
+const cleanup = () => (cleanupP ??= doCleanup());
+for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.on(sig, () => { stopping ||= code; inflight.then(cleanup).finally(() => process.exit(stopping)); });
 }
 
 try {
@@ -93,5 +110,5 @@ try {
   await cleanup();
 }
 const failed = results.filter(([, ok]) => !ok).length;
-console.log(`${results.length - failed} of ${results.length} passed`);
-process.exit(failed ? 1 : 0);
+console.log(`${results.length - failed} of ${results.length} passed${stopping ? ' (interrupted)' : ''}`);
+process.exit(stopping || (failed ? 1 : 0));
