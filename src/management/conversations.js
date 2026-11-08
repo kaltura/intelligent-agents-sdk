@@ -282,7 +282,7 @@ export class Conversations {
    *
    * EMPTY REPLY: a turn that comes back with HTTP 200 and no reply segment (no segments, or only
    * empty final chunks and empty `think` markers) throws `code:'empty_reply'`, with the segments and `threadId` in
-   * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
+   * `error.body`. If you sent `context_id` or `shared_message_id`, check it. `onErrorSegment:'return'` returns the empty
    * result instead. The raw `stream` and `collectConverse` never throw for it. A turn with only
    * tool calls or sources is not empty: it resolves with `text:''`, so check `toolCalls`.
    * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, add_message_in_db?, shared_message_id?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
@@ -307,7 +307,7 @@ export class Conversations {
    * for a thread the token's user does not own, else `stream_error`), and a turn with no reply
    * segment as `empty_reply`, unless the caller set `onErrorSegment:'return'`. Both arrive as
    * HTTP 200, so without this they would look like an empty reply.
-   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, context_id?:string, onErrorSegment?:'throw'|'return'}} opts
+   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, context_id?:string, shared_message_id?:string, onErrorSegment?:'throw'|'return'}} opts
    */
   _throwOnErrorSegment(result, opts) {
     if (opts.onErrorSegment === 'return') return result;
@@ -324,7 +324,9 @@ export class Conversations {
       code: 'empty_reply', instance: '/assistant/converse',
       detail: opts.context_id !== undefined
         ? 'The reply had no segments (HTTP 200). Check context_id.'
-        : "The reply had no segments (HTTP 200). Pass onErrorSegment:'return' to get the empty result instead of this error.",
+        : opts.shared_message_id !== undefined
+          ? 'The reply had no segments (HTTP 200). Check that shared_message_id exists and that its turn was saved.'
+          : "The reply had no segments (HTTP 200). Pass onErrorSegment:'return' to get the empty result instead of this error.",
       body: { segments: result.segments, ...(threadId ? { threadId } : {}) },
     });
   }
