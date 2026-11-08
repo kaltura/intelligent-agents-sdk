@@ -182,7 +182,7 @@ Send `type=Background` for a backdrop image instead.
 
 ## Tag an upload with an agent id (`agentScope`)
 
-Every upload above takes an optional `agentScope`, and `catalog-item/update` takes it too. It is one more form field on `catalog-item/create`, or one more key in the `catalog-item/update` body:
+Every file upload above (`createVoice`, `createVisual`, `createFace`, `createBackground`) takes an optional `agentScope`, and `catalog-item/update` takes it too. It is one more form field on `catalog-item/create`, or one more key in the `catalog-item/update` body:
 
 ```
 agentScope=<agent id>
@@ -195,7 +195,7 @@ agentScope=<agent id>
 | `createVoice`, `createVisual`, `createFace`, `createBackground` | Omit it for an unscoped item. Otherwise a non-blank string. |
 | `update` | Omit it to leave the tag as it is. A non-blank string sets it. `''` clears it. |
 
-Anything else (`null`, a number, a blank string, or `''` on create) throws `validation_error` before any request. The SDK does not check that the id names an existing agent.
+Anything else (`null`, a number, a blank string, or `''` on create) throws `bad_request` before any request. The SDK does not trim the value or check that the id names an existing agent, so it must match the value you list with exactly, including case and spaces.
 
 ```js
 const voice = await mgmt.catalog.createVoice(mp3, { name, description, agentScope: agentId }, adminKs);

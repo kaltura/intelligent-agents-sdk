@@ -42,7 +42,7 @@ for (const [name, run] of creates) {
   test(`${name}: agentScope that is empty, blank, null or not a string is refused before the network`, async () => {
     const { mgmt, ff } = harness();
     for (const bad of ['', '   ', null, 7, true, {}, [AGENT]]) {
-      await assert.rejects(() => run(mgmt, { agentScope: bad }), (e) => e.code === 'validation_error' && /agentScope/.test(e.detail), `value ${JSON.stringify(bad)}`);
+      await assert.rejects(() => run(mgmt, { agentScope: bad }), (e) => e.code === 'bad_request' && /agentScope/.test(e.detail), `value ${JSON.stringify(bad)}`);
     }
     assert.equal(ff.calls.length, 0);
   });
@@ -79,8 +79,8 @@ test('update (multipart): agentScope is sent, and an empty string too', async ()
 test('update: whitespace, null, number and other non-strings are refused before the network', async () => {
   const { mgmt, ff } = harness();
   for (const bad of ['  ', null, 7, false, {}, [AGENT]]) {
-    await assert.rejects(() => mgmt.catalog.update({ itemId: 'i1', agentScope: bad }, ADMIN_KS), (e) => e.code === 'validation_error' && /agentScope/.test(e.detail), `value ${JSON.stringify(bad)}`);
-    await assert.rejects(() => mgmt.catalog.update({ itemId: 'i1', file: file(), agentScope: bad }, ADMIN_KS), (e) => e.code === 'validation_error');
+    await assert.rejects(() => mgmt.catalog.update({ itemId: 'i1', agentScope: bad }, ADMIN_KS), (e) => e.code === 'bad_request' && /agentScope/.test(e.detail), `value ${JSON.stringify(bad)}`);
+    await assert.rejects(() => mgmt.catalog.update({ itemId: 'i1', file: file(), agentScope: bad }, ADMIN_KS), (e) => e.code === 'bad_request');
   }
   assert.equal(ff.calls.length, 0);
 });

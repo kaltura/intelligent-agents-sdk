@@ -33,7 +33,7 @@ import { KalturaError } from '../core/errors.js';
  * @property {string[]} [clothing]
  * @property {boolean} [glasses]
  * @property {string} [consentRef]  Opaque consent reference, echoed on the `_consent` receipt.
- * @property {string} [agentScope]  An agent id. Tags the item with that agent so `list({ agentScope })` can include it. A non-empty string. Omit for an unscoped item. Not access control.
+ * @property {string} [agentScope]  An agent id. Tags the item with that agent so `list({ agentScope })` can include it. A non-blank string. Omit for an unscoped item. Not access control.
  */
 
 export class Catalog {
@@ -94,7 +94,7 @@ export class Catalog {
    * );
    *
    * @param {Blob|File} file
-   * @param {{name:string,description:string,language?:string,consentRef?:string,agentScope?:string}} attrs  `agentScope`: an agent id that tags the item for `list({ agentScope })`. A non-empty string, or omit it. Anything else throws `validation_error` before any request. It is not access control. `language`: a language code, for example `'en'` or `'he'`; defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
+   * @param {{name:string,description:string,language?:string,consentRef?:string,agentScope?:string}} attrs  `agentScope`: an agent id that tags the item for `list({ agentScope })`. A non-blank string, or omit it. Anything else throws `bad_request` before any request. It is not access control. `language`: a language code, for example `'en'` or `'he'`; defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. `consentRef`: an opaque URI/attestation id for the source individual's voice-clone consent (NO FAKES Act / CA AB 1836 / FTC impersonation). Echoed on the result `_consent` receipt + audit; the SDK can't verify it but carries it auditably.
    * @param {string} ks
    */
   async createVoice(file, attrs, ks) {
@@ -228,7 +228,7 @@ export class Catalog {
    * description). `agentScope` is an agent id that tags the item for
    * `list({ agentScope })`: omit it to leave the scope as it is, pass `''` to
    * clear it. Any other value that is not a non-blank string throws
-   * `validation_error` before any request. It is not access control.
+   * `bad_request` before any request. It is not access control.
    * @param {{itemId:string, attributes?:object, adminTags?:string[], file?:Blob|File, agentScope?:string}} opts
    * @param {string} ks
    */
@@ -328,7 +328,7 @@ function assertAgentScope(v, where, allowEmpty = false) {
   if (typeof v === 'string' && (v.trim() !== '' || (allowEmpty && v === ''))) return v;
   const want = allowEmpty ? "a non-blank string (an agent id), or '' to clear the scope" : 'a non-blank string (an agent id)';
   throw new KalturaError({
-    type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'invalid agentScope', code: 'validation_error',
+    type: 'about:blank', title: 'invalid agentScope', code: 'bad_request',
     detail: `${where}: agentScope must be ${want}. Omit it to leave it unset.`,
   });
 }

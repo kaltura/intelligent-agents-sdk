@@ -97,7 +97,9 @@ async function deleteScoped() {
 }
 process.once('SIGINT', async () => {
   await deleteScoped();
-  if (itemId) await kaltura.catalog.delete(itemId, admin, { confirmPermanent: true }).catch(() => {});
+  for (const id of [itemId, strayItemId]) {
+    if (id) await kaltura.catalog.delete(id, admin, { confirmPermanent: true }).catch(() => {});
+  }
   process.exit(130);
 });
 
@@ -197,7 +199,7 @@ try {
     await kaltura.catalog.createVisual(new Blob([PNG_1PX], { type: 'image/png' }), { name: `sdk-live-${RUN_TAG}`, genderPresentation: 'Feminine', agentScope: '' }, admin);
     check('4a-create-empty-scope-refused', false, { message: 'expected a refusal' });
   } catch (err) {
-    check('4a-create-empty-scope-refused', err?.code === 'validation_error', { code: err?.code });
+    check('4a-create-empty-scope-refused', err?.code === 'bad_request', { code: err?.code });
   }
   const scopedItem = await kaltura.catalog.createVisual(portrait, { name: `sdk-live-${RUN_TAG}-scoped`, genderPresentation: 'Feminine', agentScope: scopeA }, admin);
   scopedItemId = scopedItem.itemId;
