@@ -33,7 +33,7 @@ const CELL_TIMEOUT_MS = 30000;
 // `page.evaluate()` and `browser.close()` have no timeout of their own. A WebKitGTK WebProcess that
 // wedges mid-cell answers neither, and the run then sits silent until the job's own limit kills it.
 // So every call that can hang is raced against a deadline, and a wedged browser is replaced.
-const CELL_DEADLINE_MS = CELL_TIMEOUT_MS + 10000;   // above the two waits inside a cell, so a slow cell still reports itself
+const CELL_DEADLINE_MS = CELL_TIMEOUT_MS + 10000;   // above either wait inside a cell, so a slow cell still reports itself
 const HANG_PROBE_MS = 5000;
 const HARD_STOP_MS = 5 * 60 * 1000;   // the whole run; a normal one takes about 90 s
 const BUDGET_MS = 90000;
@@ -122,6 +122,7 @@ function startServer() {
 }
 
 let server, browser;
+let leaked = false;   // an old browser would not close: its process keeps this one alive
 const t0 = Date.now();
 setTimeout(() => { console.error(`[${engineName}] FAIL — run still going after ${HARD_STOP_MS / 1000}s, stopping`); process.exit(1); }, HARD_STOP_MS).unref();
 try {
@@ -154,7 +155,7 @@ try {
   };
   // A cell that wedges the page leaves no way to talk to it: drop the whole browser and start another.
   const relaunch = async () => {
-    await within(browser.close(), HANG_PROBE_MS, 'browser.close()').catch(() => {});
+    await within(browser.close(), HANG_PROBE_MS, 'browser.close()').catch(() => { leaked = true; });
     context = await launch();
     await openHarness();
   };
@@ -182,11 +183,12 @@ try {
     let result = null;
     try {
       result = await within((async () => {
-        await page.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
+        const p = page;   // a late step of an abandoned cell must not act on the page that replaced it
+        await p.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
         // Autoplay cells park on `__gestureWanted`; a real click on #resume is the user gesture.
-        await page.waitForFunction(() => window.__gestureWanted || window.__result, null, { timeout: CELL_TIMEOUT_MS });
-        if (await page.evaluate(() => window.__gestureWanted && !window.__result)) await page.click('#resume');
-        return page.waitForFunction(() => window.__result, null, { timeout: CELL_TIMEOUT_MS }).then((h) => h.jsonValue());
+        await p.waitForFunction(() => window.__gestureWanted || window.__result, null, { timeout: CELL_TIMEOUT_MS });
+        if (await p.evaluate(() => window.__gestureWanted && !window.__result)) await p.click('#resume');
+        return p.waitForFunction(() => window.__result, null, { timeout: CELL_TIMEOUT_MS }).then((h) => h.jsonValue());
       })(), CELL_DEADLINE_MS, `the page (cell ${name})`);
     } catch (e) {
       let why = crashed || page.isClosed() || /crashed/i.test(e.message) ? 'page crashed' : 'cell timed out';
@@ -257,5 +259,9 @@ try {
   const closed = await within(Promise.resolve(browser?.close()), HANG_PROBE_MS, 'browser.close()').then(() => true, () => false);
   server?.close();
   // A browser that will not close keeps this process alive after the verdict is already printed.
-  if (!closed) { console.error(`[${engineName}] the browser did not close, exiting`); process.exit(process.exitCode || 1); }
+  // The verdict stands: leave with the run's own exit code, once the output is flushed.
+  if (!closed || leaked) {
+    console.warn(`[${engineName}] warning: a browser did not close, exiting without it`);
+    process.stderr.write('', () => process.stdout.write('', () => process.exit(process.exitCode ?? 0)));
+  }
 }
