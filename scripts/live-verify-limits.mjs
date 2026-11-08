@@ -81,8 +81,17 @@ async function doCleanup() {
 }
 /** One shared run: a second call, or a second signal, waits for the delete in flight. */
 const cleanup = () => (cleanupP ??= doCleanup());
+let signals = 0;
 for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
-  process.on(sig, () => { stopping ||= code; inflight.then(cleanup).finally(() => process.exit(stopping)); });
+  process.on(sig, () => {
+    stopping ||= code;
+    if (++signals >= 3) {
+      // Escape hatch: tell the operator what is left, then leave without waiting.
+      console.log(`cleanup abandoned. Still to delete: rules [${created.rules.join(', ')}], insight settings [${created.settings.join(', ')}]`);
+      process.exit(stopping);
+    }
+    inflight.then(cleanup).finally(() => process.exit(stopping));
+  });
 }
 
 try {
