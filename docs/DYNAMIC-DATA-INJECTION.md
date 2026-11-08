@@ -89,7 +89,7 @@ const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['pag
 
 ### Reserved `sys__*` variables
 
-Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn and rejected if you try to set them yourself, regardless of the gate. See [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__). The SDK's own pre-flight rejects them (and non-scalar values such as objects and arrays) client-side before anything hits the wire.
+Reserved `sys__*` keys (like `sys__user_id` and `sys__thread_id`) are server-injected on every turn. The SDK rejects any key that starts with lowercase `sys__` and the exact key `secrets`, and non-scalar values such as objects and arrays, client-side before anything hits the wire, regardless of the gate. See [Reserved Template Variables](api/operate.md#reserved-template-variables-sys__).
 
 ### Server-side tools read them too
 

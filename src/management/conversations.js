@@ -47,11 +47,10 @@ const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXIS
 export { SPIRAL_RECOVERY_PREFIX };
 
 /**
- * Reserved `request_vars` keys: the `sys__*` names the brain sets on every
- * turn, and the `secrets` namespace. The SDK rejects a caller-supplied value
- * for any of these — plus the bare `sys__user_obj` name and any
- * `sys__user_obj.` prefix — before any network call (see
- * {@link assertRequestVars}).
+ * The `sys__*` names the brain sets on every turn, plus the `secrets`
+ * namespace. The SDK rejects a caller-supplied value for each of them, and for
+ * every other key that starts with lowercase `sys__`, before any network call
+ * (see {@link assertRequestVars}).
  * @type {readonly string[]}
  */
 export const RESERVED_VARS = Object.freeze([
@@ -60,8 +59,7 @@ export const RESERVED_VARS = Object.freeze([
   'sys__avatar_enabled', 'sys__avatar_share_screen_enabled', 'secrets',
 ]);
 
-const RESERVED_USER_OBJ = 'sys__user_obj';
-const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
+const RESERVED_PREFIX = 'sys__';
 
 // Every converse body key the SDK sends besides userMessage and sse. tools/check-docs.mjs
 // checks this list against the Converse field table in docs/api/operate.md.
@@ -77,9 +75,9 @@ const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
  * (`code:'validation_error'`), BEFORE any wire call:
  *
  *  - a non-object / array payload;
- *  - any {@link RESERVED_VARS} collision (`sys__*` or `secrets`), the bare
- *    `sys__user_obj` name, or a key starting with the reserved
- *    `sys__user_obj.` prefix;
+ *  - any key that starts with lowercase `sys__` (the match is case-sensitive,
+ *    so `Sys__x` passes) or is `secrets`. The error names the key, never the
+ *    value;
  *  - any non-scalar value (only string/number/boolean/null interpolate cleanly;
  *    an object/array would be stringified or dropped server-side).
  *
@@ -98,10 +96,10 @@ export function assertRequestVars(vars, where = 'request_vars') {
     });
   }
   for (const [name, value] of Object.entries(vars)) {
-    if (RESERVED_VARS.includes(name) || name === RESERVED_USER_OBJ || name.startsWith(RESERVED_PREFIX)) {
+    if (name.startsWith(RESERVED_PREFIX) || RESERVED_VARS.includes(name)) {
       throw new KalturaError({
         type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'reserved request_vars key',
-        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, "${RESERVED_USER_OBJ}", and any "${RESERVED_PREFIX}*" key.`,
+        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, and any "${RESERVED_PREFIX}*" key.`,
       });
     }
     if (value !== null && typeof value === 'object') {

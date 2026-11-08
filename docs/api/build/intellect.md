@@ -187,6 +187,31 @@ Each is `"on"` / `"off"` / `"disabled"`:
 
 ---
 
+## List an Agent's Variables
+
+**SDK:** `mgmt.application.getCustomVariables(agentId, ks)`. Needs an admin KS and the agent id, a UUID-shaped string (the `id` that `agents.create` returns). It only reads data.
+
+Use it to see which `{{ name }}` variables an agent uses and where each one comes from. The result is returned as the server sends it:
+
+| Field | Meaning |
+|---|---|
+| `systemVariables[]` | The reserved `sys__*` variables. Each has `name`, `template`, `type`, `description`, `example`, `used`, and sometimes `properties[]`. `used` is `true` when the agent references the variable |
+| `customVariables[]` | Every other variable the agent references. Each has `name`, `template`, `type` (`"unknown"` when it cannot be inferred), `paths[]`, `origins[]` and `sources[]` |
+| `origins[]` | How the variable gets a value: `referenced` (the agent's text reads it, and you can pass it as a [request variable](../operate.md#converse)), or `set_by_tool` (a [`var` tool](tools-and-secrets.md#var-tool) sets it at runtime) |
+| `sources[]` | Where the variable is used: `{documentType, documentId, documentName, field, origin}`. `documentType` is `intellect`, `tool` or `skill`. `documentId` is a number for an intellect and a string for a tool or skill. An intellect source has no `documentName` |
+
+The SDK adds no defaults. A response without one of the arrays comes back without it.
+
+```js
+const { systemVariables, customVariables } = await mgmt.application.getCustomVariables(agentId, adminKs);
+customVariables.map((v) => v.name);              // ['pass_var']
+systemVariables.filter((v) => v.used).length;    // reserved variables the agent reads
+```
+
+A non-string or non-UUID-shaped `agentId` throws `bad_request`, and so does a missing KS, both before any request. The agent id check is on shape only, so the server can still refuse an id with `bad_request`. An unknown agent throws `agent_not_found`. An agent whose intellect was deleted throws `intellect_not_found`, with the original `server_error` in `err.cause`. A dropped connection is resent, like other reads.
+
+---
+
 ## Related docs
 
 | Doc | What it adds |
