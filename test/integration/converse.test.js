@@ -116,6 +116,47 @@ test('assertRequestVars rejects the bare sys__user_obj key (no trailing dot)', (
   assert.throws(() => assertRequestVars({ sys__user_obj: 'anything' }), (e) => e.code === 'validation_error' && /sys__user_obj/.test(e.detail));
 });
 
+test('assertRequestVars rejects every key that starts with lowercase sys__ and names the key, not the value', () => {
+  for (const k of ['sys__x', 'sys__', 'sys__custom_thing', 'sys__user_obj.x']) {
+    assert.throws(
+      () => assertRequestVars({ [k]: 'SECRET-VALUE-123' }, 'request_vars'),
+      (e) => e.code === 'validation_error' && e.detail.includes(`"${k}"`) && !e.detail.includes('SECRET-VALUE-123'),
+      k,
+    );
+  }
+});
+
+test('assertRequestVars sys__ prefix check is case-sensitive and anchored at the start', () => {
+  const ok = { Sys__x: 1, SYS__X: 2, ' sys__x': 3, sys_x: 4, 'a_sys__x': 5, sys_: 6, sys: 7 };
+  assert.deepEqual(assertRequestVars(ok), ok);
+});
+
+test('assertRequestVars accepts names that only look like secrets (only the exact key "secrets" is reserved)', () => {
+  const ok = { 'secrets.x': 'a', secrets_x: 'b', Secrets: 'c', SECRETS: 'd', 'a.secrets': 'e' };
+  assert.deepEqual(assertRequestVars(ok), ok);
+});
+
+test('assertRequestVars does not look inside values (a sys__ key nested in a value fails as non-scalar, not as reserved)', () => {
+  assert.throws(() => assertRequestVars({ profile: { sys__x: 1 } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
+});
+
+test('assertRequestVars rejects non-object input as before', () => {
+  for (const bad of ['sys__x', 5, true]) {
+    assert.throws(() => assertRequestVars(bad), (e) => e.code === 'validation_error' && /expected an object/.test(e.detail));
+  }
+});
+
+test('converse send/stream refuse a custom sys__ key with zero fetch calls', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ body: '{"type":"text","content":"ok"}\n' }) }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.conversations.send({ userMessage: 'x', request_vars: { sys__x: 'v' } }, CONV_KS), (e) => e.code === 'validation_error' && e.detail.includes('"sys__x"'));
+  await assert.rejects(
+    async () => { for await (const _ of m.conversations.stream({ userMessage: 'x', request_vars: { sys__: 'v' } }, CONV_KS)) { /* */ } },
+    (e) => e.code === 'validation_error',
+  );
+  assert.equal(f.calls.length, 0);
+});
+
 test('assertRequestVars rejects a non-scalar (nested object/array) value', () => {
   assert.throws(() => assertRequestVars({ profile: { tier: 'gold' } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
   assert.throws(() => assertRequestVars({ ids: [1, 2] }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
@@ -343,4 +384,78 @@ test('a value JSON cannot print still gives validation_error, not TypeError', as
   await rejectsBeforeRequest({ metadata: { voice_start_time: 5n } }, /metadata\.voice_start_time must be a finite number/);
   const loop = {}; loop.self = loop;
   await rejectsBeforeRequest({ context_id: loop }, /context_id must be a non-empty string/);
+});
+
+// ── add_message_in_db and shared_message_id ──
+
+test('add_message_in_db and shared_message_id are sent verbatim, false included', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', add_message_in_db: false, shared_message_id: 'abc123' }, CONV_KS);
+  await m.conversations.send({ userMessage: 'x', add_message_in_db: true }, CONV_KS);
+  await m.conversations.send({ userMessage: 'x' }, CONV_KS);
+  const [a, b, c] = converseCalls(f).map((x) => x.body);
+  assert.equal(a.add_message_in_db, false);
+  assert.equal(a.shared_message_id, 'abc123');
+  assert.equal(b.add_message_in_db, true);
+  assert.ok(!('shared_message_id' in b));
+  assert.ok(!('add_message_in_db' in c) && !('shared_message_id' in c), 'omitted keys stay out of the body');
+});
+
+test('add_message_in_db must be a boolean', async () => {
+  for (const bad of [0, 1, 'false', 'true', null, {}, []]) await rejectsBeforeRequest({ add_message_in_db: bad }, /add_message_in_db must be true or false/);
+  await rejectsBeforeRequest({ add_message_in_db: null }, /omit the key/);
+});
+
+test('shared_message_id must be a non-empty string', async () => {
+  for (const bad of ['', '  ', 5, null, {}, []]) await rejectsBeforeRequest({ shared_message_id: bad }, /shared_message_id must be a non-empty message id string/);
+});
+
+test('shared_message_id and threadId together are both sent', async () => {
+  const { f, m } = okMgmt();
+  await m.conversations.send({ userMessage: 'x', threadId: 't1', shared_message_id: 'm1' }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  assert.equal(body.threadId, 't1');
+  assert.equal(body.shared_message_id, 'm1');
+});
+
+test('converseOnce forwards add_message_in_db and shared_message_id', async () => {
+  const { f, m } = okMgmt();
+  await m.converseOnce(1222, 'x', { add_message_in_db: false, shared_message_id: 'm1' }, CONV_KS);
+  const body = converseCalls(f)[0].body;
+  assert.equal(body.add_message_in_db, false);
+  assert.equal(body.shared_message_id, 'm1');
+});
+
+test('add_message_in_db:false is sent once: no replay after a dropped connection', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => { throw new TypeError('fetch failed'); } }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.conversations.send({ userMessage: 'x', add_message_in_db: false }, CONV_KS));
+  assert.equal(converseCalls(f).length, 1);
+});
+
+test('add_message_in_db:false skips the spiral recovery turn', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ body: spiralNdjson() }) }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.conversations.send({ userMessage: 'x', recoverFromSpiral: true, add_message_in_db: false }, CONV_KS);
+  assert.equal(r.spiralStopped, true);
+  assert.equal(r.spiralRecovered, undefined);
+  assert.equal(converseCalls(f).length, 1, 'no second turn');
+});
+
+test('recoverFromSpiral nudge continues the fork: no second shared_message_id', async () => {
+  const f = fakeFetch([{
+    match: '/assistant/converse',
+    respond: (req) => (String(req.body.userMessage).startsWith(SPIRAL_RECOVERY_PREFIX)
+      ? { body: '{"type":"text","content":"The answer is 42.","threadId":"t-spiral"}\n' }
+      : { body: spiralNdjson() }),
+  }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.conversations.send({ userMessage: 'x', shared_message_id: 'm1', recoverFromSpiral: true }, CONV_KS);
+  assert.equal(r.spiralRecovered, true);
+  const calls = converseCalls(f);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].body.shared_message_id, 'm1');
+  assert.equal(calls[0].body.threadId, undefined);
+  assert.equal(calls[1].body.threadId, 't-spiral');
+  assert.equal(calls[1].body.shared_message_id, undefined, 'the nudge must not fork a second thread');
 });

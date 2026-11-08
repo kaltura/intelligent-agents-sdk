@@ -47,11 +47,10 @@ const isDuplicateCategoryEntry = (e) => e?.code === 'CATEGORY_ENTRY_ALREADY_EXIS
 export { SPIRAL_RECOVERY_PREFIX };
 
 /**
- * Reserved `request_vars` keys: the `sys__*` names the brain sets on every
- * turn, and the `secrets` namespace. The SDK rejects a caller-supplied value
- * for any of these — plus the bare `sys__user_obj` name and any
- * `sys__user_obj.` prefix — before any network call (see
- * {@link assertRequestVars}).
+ * The `sys__*` names the brain sets on every turn, plus the `secrets`
+ * namespace. The SDK rejects a caller-supplied value for each of them, and for
+ * every other key that starts with lowercase `sys__`, before any network call
+ * (see {@link assertRequestVars}).
  * @type {readonly string[]}
  */
 export const RESERVED_VARS = Object.freeze([
@@ -60,13 +59,12 @@ export const RESERVED_VARS = Object.freeze([
   'sys__avatar_enabled', 'sys__avatar_share_screen_enabled', 'secrets',
 ]);
 
-const RESERVED_USER_OBJ = 'sys__user_obj';
-const RESERVED_PREFIX = `${RESERVED_USER_OBJ}.`;
+const RESERVED_PREFIX = 'sys__';
 
 // Every converse body key the SDK sends besides userMessage and sse. tools/check-docs.mjs
 // checks this list against the Converse field table in docs/api/operate.md.
 const CONVERSE_FIELDS = Object.freeze(['threadId', 'model_type', 'force_experience', 'request_vars', 'capabilities',
-  'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata']);
+  'context_id', 'context_type', 'preload_entry_ids', 'exclude_entry_ids', 'metadata', 'add_message_in_db', 'shared_message_id']);
 const CONTEXT_TYPES = Object.freeze(['entry', 'category', 'ancestor_category', 'global']);
 const ENTRY_ID = /^\d_[0-9a-z]{8}$/;
 const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
@@ -77,9 +75,9 @@ const VOICE_KEYS = Object.freeze(['voice_start_time', 'voice_end_time']);
  * (`code:'validation_error'`), BEFORE any wire call:
  *
  *  - a non-object / array payload;
- *  - any {@link RESERVED_VARS} collision (`sys__*` or `secrets`), the bare
- *    `sys__user_obj` name, or a key starting with the reserved
- *    `sys__user_obj.` prefix;
+ *  - any key that starts with lowercase `sys__` (the match is case-sensitive,
+ *    so `Sys__x` passes) or is `secrets`. The error names the key, never the
+ *    value;
  *  - any non-scalar value (only string/number/boolean/null interpolate cleanly;
  *    an object/array would be stringified or dropped server-side).
  *
@@ -98,10 +96,10 @@ export function assertRequestVars(vars, where = 'request_vars') {
     });
   }
   for (const [name, value] of Object.entries(vars)) {
-    if (RESERVED_VARS.includes(name) || name === RESERVED_USER_OBJ || name.startsWith(RESERVED_PREFIX)) {
+    if (name.startsWith(RESERVED_PREFIX) || RESERVED_VARS.includes(name)) {
       throw new KalturaError({
         type: 'https://docs.kaltura.com/agentic/errors/validation_error', title: 'reserved request_vars key',
-        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, "${RESERVED_USER_OBJ}", and any "${RESERVED_PREFIX}*" key.`,
+        code: 'validation_error', detail: `${where}: "${name}" is reserved (server-managed). Reserved keys: ${RESERVED_VARS.join(', ')}, and any "${RESERVED_PREFIX}*" key.`,
       });
     }
     if (value !== null && typeof value === 'object') {
@@ -127,7 +125,7 @@ const failValidation = (title, detail) => { throw new KalturaError({ type: 'http
 
 /**
  * Check the typed converse options (`context_id`, `context_type`, `preload_entry_ids`,
- * `exclude_entry_ids`, `metadata`) before any request. `undefined` means omitted; `null`
+ * `exclude_entry_ids`, `metadata`, `add_message_in_db`, `shared_message_id`) before any request. `undefined` means omitted; `null`
  * is not a value for these keys. Throws `validation_error`; returns nothing.
  * @param {Record<string, any>} opts @param {string} where
  */
@@ -144,6 +142,9 @@ function assertConverseOptions(opts, where) {
     const i = list.findIndex((e) => typeof e !== 'string' || !ENTRY_ID.test(e));
     if (i >= 0) bad('invalid entry id list', `${key} must be an array of entry ids like ["0_abcd1234"] (item ${i} is ${shown(list[i])}).`);
   }
+  const { add_message_in_db: save, shared_message_id: shared } = opts;
+  if (save !== undefined && typeof save !== 'boolean') bad('invalid add_message_in_db', `add_message_in_db must be true or false (got ${save === null ? 'null, omit the key instead' : shown(save)}).`);
+  if (shared !== undefined && (typeof shared !== 'string' || shared.trim() === '')) bad('invalid shared_message_id', `shared_message_id must be a non-empty message id string (got ${shown(shared)}).`);
   if (md === undefined) return;
   if (md === null || typeof md !== 'object' || Array.isArray(md)) bad('invalid metadata', `metadata must be an object like { voice_start_time: 1.5, voice_end_time: 3 } (got ${md === null ? 'null, omit the key instead' : Array.isArray(md) ? 'array' : typeof md}).`);
   for (const [k, v] of Object.entries(md)) {
@@ -168,7 +169,7 @@ export class Conversations {
 
   /**
    * Send a message and stream the response as an async iterator of segments.
-   * WRITE — appends to thread memory. Needs a non-admin token: a
+   * WRITE — appends to thread memory (unless `add_message_in_db` is `false`). Needs a non-admin token: a
    * CONVERSATION or AGENT token. Mint it with an agent id (`agentId` on
    * either) so the thread carries the real `agent_id` for lifecycle-rule
    * matching. HTTP converse is HEADLESS TEXT ONLY: it never
@@ -198,7 +199,8 @@ export class Conversations {
    * );
    * console.log(reply.text);
    *
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, signal?}
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, add_message_in_db?, shared_message_id?, signal?}
+   *   `add_message_in_db` is a boolean. `false` runs the turn without storing it, so the thread keeps its messages. The SDK sends the request once and never replays it. `shared_message_id` is a non-empty message id string that starts a new thread from that message. A bad value throws `validation_error` before the converse request.
    *   `context_type` is one of `entry|category|ancestor_category|global`, `context_id` a non-empty string (an entry id like `0_abcd1234` when `context_type` is `entry`),
    *   `preload_entry_ids`/`exclude_entry_ids` arrays of entry ids, `metadata` `{voice_start_time?, voice_end_time?}` finite numbers. A bad value throws `validation_error` before the converse request; any other key is not sent.
    *   `force_experience` must be one of EXPERIENCES (markdown|summarization|flashcards|avatar_only); anything else throws `validation_error` before any request is sent.
@@ -264,7 +266,7 @@ export class Conversations {
    * words, no tool calls" instruction, and returns THAT result with
    * `spiralRecovered:true` added (`firstAttempt` carries the discarded empty
    * attempt's `toolCalls`/`spiralStopped` for diagnostics). Never retries more
-   * than once. If the nudge turn is itself another spiral, that result is returned
+   * than once, and never when `add_message_in_db` is `false`. If the nudge turn is itself another spiral, that result is returned
    * as-is with `spiralRecovered:false`; a nudge turn with no segments throws `empty_reply`
    * (see EMPTY REPLY below). Off by default: without the flag,
    * `spiralStopped` is returned as-is and no follow-up turn is sent.
@@ -278,10 +280,10 @@ export class Conversations {
    *
    * EMPTY REPLY: a turn that comes back with HTTP 200 and no reply segment (no segments, or only
    * empty final chunks and empty `think` markers) throws `code:'empty_reply'`, with the segments and `threadId` in
-   * `error.body`. If you sent `context_id`, check it. `onErrorSegment:'return'` returns the empty
+   * `error.body`. If you sent `context_id` or `shared_message_id`, check it. `onErrorSegment:'return'` returns the empty
    * result instead. The raw `stream` and `collectConverse` never throw for it. A turn with only
    * tool calls or sources is not empty: it resolves with `text:''`, so check `toolCalls`.
-   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
+   * @param {object} opts {userMessage, threadId?, sse?, model_type?, force_experience?, request_vars?, capabilities?, context_id?, context_type?, preload_entry_ids?, exclude_entry_ids?, metadata?, add_message_in_db?, shared_message_id?, recoverFromSpiral?, onErrorSegment?: 'throw'|'return'} (option rules: see {@link stream})
    * @param {import('./client.js').KsLike} ks conversation or agent token
    * @returns {Promise<{text:string, threadId:string, messageId:string, segments:object[], toolCalls:object[], experiences:Record<string,object[]>, experiencesList:object[], kindCounts:object, errors:object[], spiralStopped:boolean, truncated:boolean, toolCallsInvalid:object[], oauthRequired:object[], spiralRecovered?:boolean, firstAttempt?:object, _meta:object}>}
    */
@@ -290,9 +292,10 @@ export class Conversations {
       throw new KalturaError({ type: 'about:blank', title: 'bad onErrorSegment', code: 'bad_request', detail: `conversations.send onErrorSegment must be 'throw' or 'return', got ${JSON.stringify(opts.onErrorSegment)}.` });
     }
     const first = this._throwOnErrorSegment(await collectConverse(this.stream(opts, ks)), opts);
-    if (!opts.recoverFromSpiral || !first.spiralStopped || first.text) return first;
+    if (!opts.recoverFromSpiral || opts.add_message_in_db === false || !first.spiralStopped || first.text) return first;
     const nudgeOpts = { ...opts, threadId: first.threadId || opts.threadId, userMessage: `${SPIRAL_RECOVERY_PREFIX}${opts.userMessage}` };
     delete nudgeOpts.recoverFromSpiral;
+    if (first.threadId) delete nudgeOpts.shared_message_id; // the fork exists now; the nudge continues it
     const retry = this._throwOnErrorSegment(await collectConverse(this.stream(nudgeOpts, ks)), nudgeOpts);
     return { ...retry, spiralRecovered: !(retry.spiralStopped && !retry.text), firstAttempt: { toolCalls: first.toolCalls, spiralStopped: first.spiralStopped } };
   }
@@ -302,7 +305,7 @@ export class Conversations {
    * for a thread the token's user does not own, else `stream_error`), and a turn with no reply
    * segment as `empty_reply`, unless the caller set `onErrorSegment:'return'`. Both arrive as
    * HTTP 200, so without this they would look like an empty reply.
-   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, context_id?:string, onErrorSegment?:'throw'|'return'}} opts
+   * @param {Awaited<ReturnType<typeof collectConverse>>} result @param {{threadId?:string, context_id?:string, shared_message_id?:string, onErrorSegment?:'throw'|'return'}} opts
    */
   _throwOnErrorSegment(result, opts) {
     if (opts.onErrorSegment === 'return') return result;
@@ -319,7 +322,9 @@ export class Conversations {
       code: 'empty_reply', instance: '/assistant/converse',
       detail: opts.context_id !== undefined
         ? 'The reply had no segments (HTTP 200). Check context_id.'
-        : "The reply had no segments (HTTP 200). Pass onErrorSegment:'return' to get the empty result instead of this error.",
+        : opts.shared_message_id !== undefined
+          ? 'The reply had no segments (HTTP 200). Check that shared_message_id exists and that its turn was saved.'
+          : "The reply had no segments (HTTP 200). Pass onErrorSegment:'return' to get the empty result instead of this error.",
       body: { segments: result.segments, ...(threadId ? { threadId } : {}) },
     });
   }

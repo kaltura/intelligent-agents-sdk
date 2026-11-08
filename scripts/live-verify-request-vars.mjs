@@ -26,6 +26,8 @@
  *      block (the exact channel `setDynamicPrompt` uses) — the model finds
  *      one needle item among hundreds
  *   G  fresh thread → all vars gone (per-thread scope, not per-config)
+ *   H  a custom key that starts with `sys__` is refused by the SDK before any
+ *      request (converse and push, zero fetch calls). `Sys__` (other case) is not refused
  *
  * The prompts are linted with `lintPrompts` (gate + placeholder cross-check)
  * before provisioning, so the script also exercises those guardrails.
@@ -106,7 +108,8 @@ const prompts = [
   ].join('\n')),
 ];
 
-const kaltura = new Management(target);
+let fetchCount = 0;
+const kaltura = new Management({ ...target, fetch: (...args) => { fetchCount += 1; return target.fetch(...args); } });
 let admin;
 let intellectId;
 const toolIds = [];
@@ -226,6 +229,21 @@ try {
   // G: fresh thread — everything gone (per-thread scope).
   const g = await kaltura.converseOnce(intellectId, askCounter, {});
   check('G-fresh-thread-empty', /EMPTY/i.test(g.text) && !/41|55/.test(g.text), { text: snippet(g.text), threadId: g.threadId });
+
+  // H: the SDK refuses any lowercase sys__ key offline. The check is case-sensitive.
+  const refused = async (run) => {
+    const before = fetchCount;
+    const err = await run().then(() => null, (e) => e);
+    return { code: err?.code, mentionsKey: /"sys__custom"/.test(err?.detail ?? ''), fetchCalls: fetchCount - before };
+  };
+  // Mint the conversation token first: converseOnce would count that mint as a fetch.
+  const convToken = await kaltura.sessions.createConversationToken({ configId: intellectId });
+  const hConverse = await refused(() => kaltura.conversations.send({ userMessage: 'hi', request_vars: { sys__custom: 'x' } }, convToken));
+  check('H-converse-sys-prefix-refused-offline', hConverse.code === 'validation_error' && hConverse.mentionsKey && hConverse.fetchCalls === 0, hConverse);
+  const hPush = await refused(() => kaltura.threads.push({ id: g.threadId, content: 'hi', request_vars: { sys__custom: 'x' } }, admin));
+  check('H-push-sys-prefix-refused-offline', hPush.code === 'validation_error' && hPush.mentionsKey && hPush.fetchCalls === 0, hPush);
+  const hCase = await kaltura.converseOnce(intellectId, askCounter, { request_vars: { Sys__custom: 'x', counter: '77' } });
+  check('H-other-case-not-refused', /77/.test(hCase.text), { text: snippet(hCase.text) });
 } catch (err) {
   failed = true;
   record('live-verify-request-vars', false, { message: err?.detail || err?.message || String(err), code: err?.code });

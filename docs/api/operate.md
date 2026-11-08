@@ -18,11 +18,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 ```
 
 ```json
-{
-  "userMessage": "How do I fix video buffering?",
-  "threadId": null,
-  "sse": false
-}
+{ "userMessage": "How do I fix video buffering?", "threadId": null, "sse": false }
 ```
 
 | Field | Notes |
@@ -32,15 +28,17 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. `fast` or `smart`, lowercase. Omit it to use the default, `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects a client-supplied value for them. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects any key that starts with `sys__`. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 | `context_id` | Optional. The id of the category or entry the turn is about, as a string. With `context_type: 'entry'` it must look like `0_abcd1234`. |
 | `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
 | `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
 | `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
 | `metadata` | Optional. `{ voice_start_time?, voice_end_time? }`. Each value you send must be a finite number. Saved with the user's message. |
+| `add_message_in_db` | Optional. Boolean. `false` answers the turn without storing it: the thread keeps the same messages. The returned `messageId` does not exist afterwards (`messages.get` gives `not_found`), so do not store it. With a `threadId`, the reply carries that same thread id. Without one, the returned `threadId` does not exist either (`threads.get` gives `not_found`). The SDK sends the request once, and `recoverFromSpiral` sends no follow-up turn for it. |
+| `shared_message_id` | Optional. Non-empty message id string. Starts a new thread seeded from that message. The reply carries the new `threadId` and the source thread stays unchanged. `recoverFromSpiral` continues on the new thread. Send it without `threadId`: with both, the turn starts a new thread and the given thread is unchanged. An id that does not exist, or the id of a turn sent with `add_message_in_db: false`, gives an empty reply with no thread: `send` throws `empty_reply`. Forking another user's message can also fail with `thread_access_denied`. |
 
-The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
+The SDK checks `context_type`, `context_id`, both entry id lists, `metadata`, `add_message_in_db` and `shared_message_id` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
@@ -63,6 +61,10 @@ Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for fee
 
 **Token-kind check timing.** `conversations.send(...)` and `converseOnce(...)` check the token kind before they return. `conversations.stream(...)` is an async generator, so its check runs on the first iteration. Iterate it, or use `send`, to get the check up front.
 
+### Size limits
+
+Over a limit, the server answers 413 and the SDK throws `payload_too_large`. The SDK does not check these limits before it sends. `converse` `userMessage`, `threads.push` `content` and `system_message`: 4000 characters each, and `err.detail` has no number. `threads.push` `request_vars`: 200 keys, 128 characters per key, 100,000 characters per value once serialized (a 99,998-character string passes, 99,999 fails), and `err.detail` names the limit. `converse` can also end a turn with no text and no HTTP error. Keep `request_vars` inside these limits, and use `conversations.send` or `converseOnce`, which throw `empty_reply` on an empty turn.
+
 ### Refusals that arrive with HTTP 200
 
 The server reports some refusals in the stream, not in the HTTP status. The status is 200 and the body holds one `"error"` segment. The common case is a `threadId` that belongs to a different user: the segment reads `No permission for thread`, nothing is written, and the turn has no text.
@@ -79,7 +81,7 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
-| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls or sources is not empty: it resolves with `text: ''`, so check `toolCalls`. | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
+| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls, sources or a widget is not empty: it resolves with `text: ''`, so check `toolCalls` and `experiencesList`. A widget (flashcards, followups) can replace the spoken text while `kaltura_genie_experiences` is on. Turn it off for agents that must answer in text. | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
@@ -100,7 +102,7 @@ The Kaltura API (the media calls such as categories, entries and uploads) also a
 
 The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in the `instructions` of a skill attached with mode `'preloaded'` (see [§ Skills](management-operations.md#skills)), regardless of `allow_client_variables`.
 
-Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
+Before any network call, the SDK's own `request_vars` pre-flight guard throws `validation_error` for `secrets` and for any key that starts with lowercase `sys__`, whether or not the table below lists it. The match is case-sensitive: `Sys__x`, `SYS__X` and `sys_x` pass. The error names the key, never the value. Every entry point shares the check: `conversations.send` and `stream`, `threads.push`, and the `requestVars` option and `updateRequestVars` of the session classes (see `request_vars` above):
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
