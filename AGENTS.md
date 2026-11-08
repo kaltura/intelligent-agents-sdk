@@ -19,7 +19,7 @@ Guide for people and coding agents working on the SDK itself. To build an app wi
 | `npm run verify` | Constitution rule checks, then the test suite (`scripts/agent_verify.mjs`) |
 | `npm run harness:constitution` | Constitution checks that a rule scan cannot express |
 | `npm run circular` | Circular-import check over `src/` |
-| `npm run docs:gate` | Docs drift, secrets and GFM checks (`tools/check-docs.mjs`) |
+| `npm run docs:gate` | Docs drift, secrets and GFM checks (`tools/check-docs.mjs`). Runs the full test suite too. Set `DOCS_GATE_SKIP_TESTS=1` to skip it, as CI does (about 3 s) |
 
 Run all of them before a PR.
 
