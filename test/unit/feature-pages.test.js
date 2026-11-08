@@ -1,11 +1,14 @@
 import { test } from 'node:test';
+import { createServer } from 'node:http';
+import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname, join } from 'node:path';
 import {
-  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route,
+  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route, pickTarget, once, createHandler, installCrashGuards,
 } from '../../manual-testing/feature-pages/serve.mjs';
+import { leakCounts } from '../../scripts/lib/leak-scan.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const pagesDir = join(root, 'manual-testing/feature-pages');
@@ -140,7 +143,7 @@ test('every page and script exists, and the page list matches the files', () => 
 test('pages: no inline script, inline style or event attributes', () => {
   for (const f of pageFiles.filter((x) => x.endsWith('.html'))) {
     const html = readFileSync(f, 'utf8');
-    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
       assert.match(m[1], /\bsrc="/, `${f}: script without src`);
       assert.equal(m[2].trim(), '', `${f}: inline script body`);
       const src = /src="([^"]+)"/.exec(m[1])?.[1] ?? '';
@@ -160,15 +163,19 @@ test('pages: no admin secret handling in page code', () => {
 
 // The words are stored reversed so this file does not contain them itself.
 const BANNED = ['aq', '2qvn', 'esaeler?-erp', 'ateb', 'gnimocpu', 'noos gnimoc'].map((w) => [...w].reverse().join(''));
-const BANNED_RE = new RegExp(`\\b(?:${BANNED.join('|')})\\b`, 'i');
+// An underscore or a digit next to a word does not hide it: ENV_NAME_2_X must still match.
+const BANNED_RE = new RegExp(`(?<![A-Za-z])(?:${BANNED.join('|')})(?![A-Za-z])`, 'i');
 const scanned = [
   ...pageFiles,
   join(root, 'scripts/live-verify-feature-pages.mjs'),
+  join(root, 'scripts/lib/leak-scan.mjs'),
   fileURLToPath(import.meta.url),
 ];
 
 test('banned words and em dashes are absent from the harness, pages, README and this test', () => {
   assert.ok(scanned.length > 15);
+  assert.ok(BANNED_RE.test(`${BANNED[1].toUpperCase()}_ADMIN_SECRET_1`), 'the scan must see a banned word next to an underscore and a digit');
+  assert.ok(!BANNED_RE.test('quality'), 'it must not match inside a longer word');
   for (const f of scanned) {
     const lines = readFileSync(f, 'utf8').split('\n');
     lines.forEach((line, i) => {
@@ -207,10 +214,12 @@ const okResult = { configId: 7, agentId: 'a1', widgetId: 'w1', avatarId: 'v1' };
 
 test('createAgent: retries once after a failed provision and removes the failed attempt first', async () => {
   const k = fakeKaltura([provisionError({ configId: 5, avatarId: 'old' }), okResult]);
-  const ids = await createAgent(k, async () => ({ ks: 'x' }), 'abc123', undefined, 0);
+  const seen = [];
+  const ids = await createAgent(k, async () => ({ ks: 'x' }), 'abc123', (x) => seen.push(x), 0);
   assert.equal(ids.agentId, 'a1');
   assert.equal(k.calls.provision, 2);
   assert.deepEqual(k.calls.deleted, ['avatar:old', 'intellect:5']);
+  assert.deepEqual(seen, [{ configId: 5, avatarId: 'old' }, undefined, ids], 'ids are reported before the failed attempt is removed, cleared after, then set');
 });
 
 test('createAgent: a second failure is thrown and its ids reach onCreated', async () => {
@@ -225,4 +234,133 @@ test('createAgent: an error that is not a provision failure is not retried', asy
   const k = fakeKaltura([Object.assign(new Error('bad'), { code: 'forbidden' })]);
   await assert.rejects(createAgent(k, async () => ({ ks: 'x' }), 'abc123', undefined, 0), { code: 'forbidden' });
   assert.equal(k.calls.provision, 1);
+});
+
+test('createAgent: ids of a failed attempt are reported before cleanup starts and named when cleanup fails', async () => {
+  const k = fakeKaltura([provisionError({ configId: 5, avatarId: 'old' }), okResult]);
+  k.avatars.get = async () => ({ id: 'old' });
+  const seen = [];
+  await assert.rejects(createAgent(k, async () => ({ ks: 'x' }), 'abc123', (x) => seen.push(x), 0), /avatar old: still present/);
+  assert.deepEqual(seen, [{ configId: 5, avatarId: 'old' }]);
+  assert.equal(k.calls.provision, 1);
+});
+
+test('pickTarget: AGENTIC credentials win, then NVP1 credentials, then prod', () => {
+  assert.equal(pickTarget({ AGENTIC_PARTNER_ID: '1', AGENTIC_ADMIN_SECRET: 's', NVP1_AGENTIC_PARTNER_ID: '2', NVP1_AGENTIC_ADMIN_SECRET: 't' }), 'prod');
+  assert.equal(pickTarget({ NVP1_AGENTIC_PARTNER_ID: '2', NVP1_AGENTIC_ADMIN_SECRET: 't' }), 'nvp1');
+  assert.equal(pickTarget({ NVP1_AGENTIC_PARTNER_ID: '2' }), 'prod');
+  assert.equal(pickTarget({}), 'prod');
+});
+
+test('once: parallel calls share one run, and a failed run can be tried again', async () => {
+  let runs = 0; let fail = true;
+  const f = once(async () => { runs++; await new Promise((r) => setTimeout(r, 5)); if (fail) throw new Error('x'); return runs; });
+  const [a, b] = await Promise.allSettled([f(), f()]);
+  assert.equal(runs, 1);
+  assert.equal(a.status, 'rejected');
+  assert.equal(b.status, 'rejected');
+  fail = false;
+  const [c, d] = await Promise.all([f(), f()]);
+  assert.equal(runs, 2);
+  assert.equal(c, d);
+  assert.equal(await f(), c);
+  assert.equal(runs, 2);
+  await f.settled();
+});
+
+/** Serve createHandler on a free local port for one test. */
+async function withServer(api, fn) {
+  const logs = [];
+  const handler = createHandler({ api, token: TOKEN, pages: [...DEFAULT_PAGES], csp: buildCsp([]), title: 'Feature pages', log: (m) => logs.push(m) });
+  const server = createServer(handler);
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}/${TOKEN}`;
+  try { return await fn(base, logs); } finally { server.closeAllConnections(); await new Promise((ok) => server.close(ok)); }
+}
+
+const circular = () => { const o = {}; o.self = o; return o; };
+
+test('createHandler: inherited names are not endpoints, GET and POST, and the server stays up', async () => {
+  const api = { config: async () => ({ ok: true }), 'catalog-init': async () => ({ ok: true }) };
+  await withServer(api, async (base) => {
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+      for (const method of ['GET', 'POST']) {
+        const res = await fetch(`${base}/api/${name}`, { method, ...(method === 'POST' ? { body: '{}', headers: { 'content-type': 'application/json' } } : {}) });
+        assert.equal(res.status, 404, `${method} ${name}`);
+      }
+    }
+    const ok = await fetch(`${base}/api/config`);
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { ok: true });
+  });
+});
+
+test('createHandler: a reply that cannot be turned into JSON is a clean 500, not a crash', async () => {
+  const api = { config: async () => circular(), variables: async () => ({ ok: true }) };
+  await withServer(api, async (base) => {
+    const bad = await fetch(`${base}/api/config`);
+    assert.equal(bad.status, 500);
+    assert.equal((await bad.json()).code, null);
+    assert.equal((await fetch(`${base}/api/variables`)).status, 200, 'the server still answers');
+  });
+});
+
+test('createHandler: handler errors reach the log, never the browser', async () => {
+  const api = { config: async () => { throw Object.assign(new Error('internal path /srv/x and detail'), { code: 'some_code', stack: 'at secret.js:1' }); }, variables: async () => { throw new Error('plain'); } };
+  await withServer(api, async (base, logs) => {
+    const res = await fetch(`${base}/api/config`);
+    const text = await res.text();
+    assert.equal(res.status, 500);
+    assert.deepEqual(JSON.parse(text), { error: 'The request failed. The server log has the detail.', code: 'some_code' });
+    assert.ok(!/internal path|secret\.js/.test(text));
+    assert.ok(logs.some((l) => l.includes('internal path /srv/x')));
+    const plain = await (await fetch(`${base}/api/variables`)).json();
+    assert.equal(plain.code, null);
+    assert.ok(!JSON.stringify(plain).includes('plain'));
+  });
+});
+
+test('createHandler: wrong method, bad body and missing files', async () => {
+  const api = { 'catalog-init': async () => ({ ok: true }), config: async () => ({}) };
+  await withServer(api, async (base) => {
+    assert.equal((await fetch(`${base}/api/config`, { method: 'POST', body: '{}' })).status, 405);
+    assert.equal((await fetch(`${base}/api/catalog-init`)).status, 405);
+    assert.equal((await fetch(`${base}/api/catalog-init`, { method: 'POST', body: '{not json' })).status, 400);
+    assert.equal((await fetch(`${base}/api/catalog-init`, { method: 'POST', body: 'x'.repeat(20_000) })).status, 400);
+    assert.equal((await fetch(`${base}/src/nope.js`)).status, 404);
+    assert.equal((await fetch(`${base}/src/management/does-not-exist.js`)).status, 404);
+    assert.equal((await fetch(`${base}/manual-testing/feature-pages/common.js`)).status, 200);
+    const index = await fetch(`${base}/`);
+    assert.equal(index.status, 200);
+    assert.equal(index.headers.get('content-security-policy'), buildCsp([]));
+  });
+});
+
+test('createHandler: two parallel catalog-init calls make one item', async () => {
+  let made = 0;
+  const init = once(async () => { made++; await new Promise((r) => setTimeout(r, 20)); return { itemId: 'i1' }; });
+  await withServer({ 'catalog-init': () => init() }, async (base) => {
+    const post = () => fetch(`${base}/api/catalog-init`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } }).then((r) => r.json());
+    const [a, b] = await Promise.all([post(), post()]);
+    assert.equal(made, 1);
+    assert.deepEqual(a, b);
+  });
+});
+
+test('installCrashGuards: an uncaught error or a rejected promise runs teardown instead of killing the process', () => {
+  const proc = new EventEmitter();
+  const calls = []; const logs = [];
+  installCrashGuards(proc, (code) => calls.push(code), (m) => logs.push(m));
+  proc.emit('uncaughtException', new Error('boom'));
+  proc.emit('unhandledRejection', new Error('late'));
+  assert.deepEqual(calls, [1, 1]);
+  assert.match(logs[0], /uncaught exception: boom/);
+  assert.match(logs[1], /unhandled rejection: late/);
+});
+
+test('leakCounts: finds any ADMIN_SECRET value and session tokens, and returns counts only', () => {
+  const env = { SOME_ADMIN_SECRET_2: 'twelve-chars!', OTHER: 'twelve-chars!', SHORT_ADMIN_SECRET: 'abc' };
+  const r = leakCounts(['ok text', 'has twelve-chars! inside', 'token djJ8abcdefghijkl and djJ8short'], env);
+  assert.deepEqual(r, { secretHits: 1, ksHits: 1 });
+  assert.deepEqual(leakCounts(['clean'], env), { secretHits: 0, ksHits: 0 });
 });

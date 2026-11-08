@@ -8,7 +8,7 @@ const kaltura = new Management({ partnerId: cfg.partnerId, genieUrl: cfg.genieUr
 async function attempt(requestVars) {
   const before = calls.length;
   try {
-    const turn = await kaltura.converseOnce(cfg.configId, `What is the favourite colour? (${Date.now()})`, { request_vars: requestVars }, cfg.conversationKs);
+    const turn = await kaltura.converseOnce(cfg.configId, `Reply with only the favourite colour, as one word. (${Date.now()})`, { request_vars: requestVars }, cfg.conversationKs);
     fillRows('result', [['outcome', 'accepted'], ['reply', turn.text], ['network calls', calls.length - before]]);
   } catch (err) {
     fillRows('result', [['outcome', 'refused'], ['code', err?.code], ['detail', err?.detail || err?.message], ['network calls', calls.length - before]]);

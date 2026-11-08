@@ -7,11 +7,11 @@ Small pages that show recent SDK behavior in a real browser, on a throwaway agen
 ## Start
 
 ```bash
-export NVP1_AGENTIC_PARTNER_ID=... NVP1_AGENTIC_ADMIN_SECRET=...   # or AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET
+export AGENTIC_PARTNER_ID=... AGENTIC_ADMIN_SECRET=...
 node manual-testing/feature-pages/serve.mjs --lan
 ```
 
-It creates one agent, prints an `Open:` URL and waits. Ctrl+C, or the time limit (`--ttl-minutes`, default 60), deletes the agent, its threads and the catalog item, then checks they are gone. `--env-file PATH` (or `ENV_FILE`) loads a `.env` you name. `--port N` fixes the port. Without `--lan` it listens on 127.0.0.1 only.
+It creates one agent, prints an `Open:` URL and waits. Ctrl+C, or the time limit (`--ttl-minutes`, default 60), deletes the agent, its threads and the catalog item, then checks they are gone. `--env-file PATH` (or `ENV_FILE`) loads a `.env` you name. A `.env` that has the `NVP1_*` variables (credentials and URLs) works in place of the two exports. `--port N` fixes the port. Without `--lan` it listens on 127.0.0.1 only. With `--lan` it is plain HTTP on every interface, so anyone on the network can read the traffic.
 
 ## Pages
 
@@ -32,11 +32,11 @@ It needs a Limited Availability environment and is for Kaltura employees and cer
 TARGET=<name> node manual-testing/feature-pages/serve.mjs --emotions
 ```
 
-`TARGET=<name> npm run live-verify:feature-pages` drives it the same way. Without `TARGET` the script never touches it.
+`TARGET=<name> npm run live-verify:feature-pages -- --emotions` drives it the same way. It refuses to run when `CI` is set, and without `--emotions` the script never touches it.
 
 ## Safety
 
-- The admin secret and admin tokens stay in `serve.mjs`. A page gets one conversation token and the base URLs.
+- The admin secret and admin tokens stay in `serve.mjs`. A page gets a conversation token, an avatar token, the partner id and the base URLs.
 - Every URL starts with a random 128-bit path. Anyone with the URL can use the agent until you stop the server, so share it only on a network you trust.
 - Pages send a strict Content-Security-Policy. All page code is in external files.
 - Screenshots and the server log go to `out/` (git-ignored). Pages never show tokens, and the log is redacted.

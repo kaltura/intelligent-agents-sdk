@@ -3,7 +3,7 @@
 /** @param {string} id */
 export const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
-/** @returns {Promise<any>} The page config: tokens and base URLs, no secrets beyond one conversation token. */
+/** @returns {Promise<any>} The page config: a conversation token, an avatar token, the partner id and the base URLs. No admin secret or admin token. */
 export async function getConfig() {
   const res = await fetch(new URL('../../api/config', location.href));
   if (!res.ok) throw new Error(`config failed: HTTP ${res.status}`);
@@ -18,7 +18,7 @@ export async function getConfig() {
 export async function api(name, body) {
   const res = await fetch(new URL(`../../api/${name}`, location.href), body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`${data.error || `HTTP ${res.status}`}${data.code ? ` (${data.code})` : ''}`);
   return data;
 }
 

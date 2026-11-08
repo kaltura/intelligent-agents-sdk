@@ -15,8 +15,10 @@ async function refresh() {
   if (st.thumbnail) { if (img.getAttribute('src') !== st.thumbnail) img.setAttribute('src', st.thumbnail); img.hidden = false; }
   document.body.dataset.scope = label(st.scope);
 }
+const buttons = [...document.querySelectorAll('button')];
 async function run(label, fn) {
-  try { await fn(); await refresh(); logLine('log', `${label}: done`, 'ok'); } catch (err) { logLine('log', `${label}: ${describe(err)}`, 'bad'); }
+  for (const b of buttons) b.disabled = true;
+  try { await fn(); await refresh(); logLine('log', `${label}: done`, 'ok'); } catch (err) { logLine('log', `${label}: ${describe(err)}`, 'bad'); } finally { for (const b of buttons) b.disabled = false; }
   document.body.dataset.step = label;
 }
 $('create').addEventListener('click', () => run('create', () => api('catalog-init', {})));

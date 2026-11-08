@@ -22,10 +22,17 @@ $('refuse').addEventListener('click', async () => {
   document.body.dataset.refused = 'true';
 });
 
+const NOTICE_PREFIX = '[KalturaAvatarSession] submitStructuredDataForm';
 $('notice').addEventListener('click', async () => {
+  const button = /** @type {HTMLButtonElement} */ ($('notice'));
+  button.disabled = true;
   const warnings = [];
   const original = console.warn;
-  console.warn = (...a) => { warnings.push(a.map(String).join(' ')); };
+  console.warn = (...a) => {
+    const line = a.map(String).join(' ');
+    if (line.startsWith(NOTICE_PREFIX)) warnings.push(line);
+    else original.apply(console, a);
+  };
   const session = new KalturaAvatarSession({ ...base(), token: cfg.avatarToken });
   try {
     await session.connect();
@@ -36,6 +43,7 @@ $('notice').addEventListener('click', async () => {
     fillRows('warn', [['connected', 'no'], ['error', describe(err)], ['notices', warnings.length]]);
   } finally {
     console.warn = original;
+    button.disabled = false;
     try { await session.disconnect(); } catch { /* already closed */ }
   }
   document.body.dataset.noticeDone = 'true';

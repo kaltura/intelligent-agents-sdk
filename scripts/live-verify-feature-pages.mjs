@@ -7,8 +7,9 @@
  *
  * Engine: LIVE_VERIFY_BROWSER=chromium|firefox|webkit (default chromium).
  * Credentials: same as serve.mjs (NVP1_* or AGENTIC_* variables, optional ENV_FILE).
- * The emotions page runs only when TARGET is set, and then it is the only page. It needs a
- * Limited Availability environment, for employees and certified partners only.
+ * The emotions page runs only with --emotions and TARGET set, and then it is the only page.
+ * It needs a Limited Availability environment, for employees and certified partners only, and
+ * it refuses to run when CI is set.
  * See manual-testing/feature-pages/README.md.
  *
  * Screenshots and the server log go to manual-testing/feature-pages/out/ (git-ignored).
@@ -16,6 +17,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { leakCounts } from './lib/leak-scan.mjs';
 import { launchBrowser, warmFirefoxMedia, routeSocketIo, contextOptions, repoRoot, redact } from './live-verify-kickoff-shared.mjs';
 
 const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
@@ -23,14 +25,25 @@ if (!['chromium', 'firefox', 'webkit'].includes(engineName)) {
   console.error(`Unknown LIVE_VERIFY_BROWSER "${engineName}". Use chromium, firefox or webkit.`);
   process.exit(1);
 }
-const emotions = Boolean(process.env.TARGET);
+const emotions = process.argv.includes('--emotions');
+if (emotions && process.env.CI) {
+  console.error('--emotions is not for CI. It needs a Limited Availability environment.');
+  process.exit(1);
+}
+if (emotions && !process.env.TARGET) {
+  console.error('--emotions needs TARGET set to the name of a Limited Availability environment.');
+  process.exit(1);
+}
 const outDir = resolve(repoRoot, 'manual-testing/feature-pages/out');
 mkdirSync(outDir, { recursive: true });
 
 let failed = false;
+/** What this script printed, before redaction. The leak scan reads it. */
+const printedRaw = [];
 /** @param {string} step @param {boolean} ok @param {unknown} [detail] */
 function check(step, ok, detail) {
   if (!ok) failed = true;
+  printedRaw.push(`${step} ${detail === undefined ? '' : JSON.stringify(detail)}`);
   console.log(`[${ok ? 'ok' : 'FAIL'}] ${step}${detail === undefined ? '' : ` ${redact(JSON.stringify(detail))}`}`);
 }
 
@@ -62,33 +75,31 @@ function startServer() {
 /** @param {string} text @param {string} label @returns {string|undefined} the value in a two-column table row */
 const cell = (text, label) => text.split('\n').map((l) => l.split('\t')).find((p) => p[0] === label)?.[1];
 
-async function main() {
-  let server;
-  try {
-    server = await startServer();
-  } catch (err) {
-    check('server-start', false, String(err?.message || err));
-    process.exit(1);
-  }
-  const base = server.url;
-  const browser = await launchBrowser({ browser: engineName });
+/** Click through the pages of the server at `base`. Never throws. @param {string} base */
+async function drive(base) {
+  let browser;
   const problems = [];
   try {
+    browser = await launchBrowser({ browser: engineName });
     const warmMs = await warmFirefoxMedia(browser);
     if (warmMs) console.log(`[info] firefox media warm-up ${warmMs} ms`);
     const context = await browser.newContext(contextOptions());
     await routeSocketIo(context);
     const page = await context.newPage();
     page.on('pageerror', (e) => problems.push(`pageerror: ${e?.message || e}`));
-    // Playwright injects a style element while it takes a screenshot. WebKit reports the page's CSP refusing it. That is not a page error.
-    let shooting = false;
-    page.on('console', (m) => { if (m.type() === 'error' && !shooting) problems.push(`console.error: ${m.text()}`); });
+    // Playwright injects a style element while it takes a screenshot, and the page's CSP refuses it. Every engine words that message with "style-src". It is not a page error, so it is counted and not failed on.
+    let ignored = 0;
+    page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      if (/style-src/i.test(m.text())) { ignored++; return; }
+      problems.push(`console.error: ${m.text()}`);
+    });
 
     const open = async (name) => {
       await page.goto(`${base}manual-testing/feature-pages/${name}.html`);
       await page.waitForSelector('body[data-ready="true"]', { timeout: 20_000 });
     };
-    const shot = async (name) => { shooting = true; try { await page.screenshot({ path: join(outDir, `${engineName}-${name}.png`), fullPage: true }); } finally { shooting = false; } };
+    const shot = async (name) => { await page.screenshot({ path: join(outDir, `${engineName}-${name}.png`), fullPage: true }); };
     const text = (sel) => page.locator(sel).innerText();
     const waitData = (key, value, timeout = 90_000) => page.waitForFunction(([k, v]) => document.body.dataset[k] === v, [key, value], { timeout });
     const stepClick = async (sel, step) => { await page.click(sel); await waitData('step', step); };
@@ -119,7 +130,7 @@ async function main() {
       await page.click('#good');
       await waitData('done', '2');
       const accepted = await text('#result');
-      check('request-vars-allowed-key-reaches-agent', cell(accepted, 'outcome') === 'accepted' && cell(accepted, 'network calls') === '1' && (cell(accepted, 'reply') || '').length > 0, { reply: (cell(accepted, 'reply') || '').slice(0, 80) });
+      check('request-vars-allowed-key-reaches-agent', cell(accepted, 'outcome') === 'accepted' && cell(accepted, 'network calls') === '1' && /teal/i.test(cell(accepted, 'reply') || ''), { reply: (cell(accepted, 'reply') || '').slice(0, 80) });
       await shot('request-vars');
 
       // side-question
@@ -174,26 +185,39 @@ async function main() {
       await shot('emotions-off');
     }
     check('no-page-errors', problems.length === 0, problems.slice(0, 5));
+    if (ignored) console.log(`[info] ignored ${ignored} style-src policy message(s) from screenshots`);
     await context.close();
   } catch (err) {
     check('run', false, String(/** @type {any} */ (err)?.message || err));
   } finally {
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
   }
+}
 
-  const { code, log } = await server.stop();
+async function main() {
+  let server;
+  try {
+    server = await startServer();
+  } catch (err) {
+    check('server-start', false, String(/** @type {any} */ (err)?.message || err));
+    process.exit(1);
+  }
+  /** @type {{code:number|null, log:string}} */
+  let stopped;
+  try {
+    await drive(server.url);
+  } catch (err) {
+    check('run', false, String(/** @type {any} */ (err)?.message || err));
+  } finally {
+    stopped = await server.stop();
+  }
+  const { code, log } = stopped;
   writeFileSync(join(outDir, `${engineName}-serve.log`), redact(log));
   check('server-teardown-verified', code === 0 && /teardown verified/.test(log), { exit: code });
 
-  // Leak scan: counts only.
-  const secrets = ['NVP1_AGENTIC_ADMIN_SECRET', 'AGENTIC_ADMIN_SECRET', 'NVQ2_ADMIN_SECRET_1'].map((k) => process.env[k]).filter((v) => v && v.length > 8);
-  let secretHits = 0; let ksHits = 0;
-  for (const f of readdirSync(outDir)) {
-    if (!/\.(log|txt|json)$/.test(f)) continue;
-    const body = readFileSync(join(outDir, f), 'utf8');
-    secretHits += secrets.filter((s) => body.includes(/** @type {string} */ (s))).length;
-    ksHits += (body.match(/djJ8[A-Za-z0-9_=+/-]{8,}/g) || []).length;
-  }
+  // Leak scan: counts only. It reads the raw server log and raw script output, and every text file in out/.
+  const files = readdirSync(outDir).filter((f) => /\.(log|txt|json)$/.test(f)).map((f) => readFileSync(join(outDir, f), 'utf8'));
+  const { secretHits, ksHits } = leakCounts([log, printedRaw.join('\n'), ...files], process.env);
   check('no-secret-or-ks-in-logs', secretHits === 0 && ksHits === 0, { secretHits, ksHits });
   process.exit(failed ? 1 : 0);
 }

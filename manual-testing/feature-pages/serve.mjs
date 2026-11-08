@@ -7,13 +7,14 @@
  *   node manual-testing/feature-pages/serve.mjs [--lan] [--port N] [--ttl-minutes N] [--env-file PATH]
  *   TARGET=<name> node manual-testing/feature-pages/serve.mjs --emotions
  *
- * The admin secret and every admin token stay in this process. A page gets one
- * conversation token from `/<secret>/api/config` and nothing else. Admin work
- * (catalog, variables, cleanup) happens here, behind small JSON endpoints.
+ * The admin secret and every admin token stay in this process. A page gets a
+ * conversation token, an avatar token, the partner id and the base URLs from
+ * `/<secret>/api/config`, and nothing else. Admin work (catalog, variables,
+ * cleanup) happens here, behind small JSON endpoints.
  */
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve, dirname, extname, join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { networkInterfaces } from 'node:os';
@@ -149,23 +150,38 @@ function lanAddress() {
   return '127.0.0.1';
 }
 
+/**
+ * Which target the default run uses. Call it after every env file is loaded.
+ * `AGENTIC_*` credentials mean production with the SDK's built-in URLs. Otherwise `NVP1_*`
+ * credentials mean production with the URLs from the same file.
+ * @param {Record<string, string|undefined>} env
+ */
+export function pickTarget(env) {
+  if (env.AGENTIC_PARTNER_ID && env.AGENTIC_ADMIN_SECRET) return 'prod';
+  if (env.NVP1_AGENTIC_PARTNER_ID && env.NVP1_AGENTIC_ADMIN_SECRET) return 'nvp1';
+  return 'prod';
+}
+
 /** @param {Record<string, string|undefined>} env @param {{envFile?:string, emotions:boolean, target?:string}} args */
 function resolveEnvironment(env, args) {
   if (args.envFile && !loadEnvFile(resolve(args.envFile))) throw new Error('Could not read the file given to --env-file.');
+  loadEnvFile(resolve(repoRoot, '.env'));
+  loadEnvFile(resolve(repoRoot, '../.env'));
   if (args.emotions) return resolveTarget(/** @type {string} */ (args.target));
-  return resolveTarget(env.NVP1_AGENTIC_PARTNER_ID ? 'nvp1' : 'prod');
+  return resolveTarget(pickTarget(env));
 }
 
-/** Delete what a failed provision left behind and check it is gone. Throws if something stays. */
+/** Delete what a failed provision left behind and check it is gone. Throws, naming the ids, if something stays. */
 async function dropPartial(kaltura, ks, partial) {
   const left = [];
-  const del = async (what, remove, get) => {
-    try { await remove(); } catch (err) { if (!isNotFound(err)) left.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message))}`); }
-    try { await get(); left.push(`${what}: still present`); } catch (err) { if (!isNotFound(err)) left.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message))}`); }
+  const why = (err) => redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message));
+  const del = async (what, id, remove, get) => {
+    try { await remove(); } catch (err) { if (!isNotFound(err)) left.push(`${what} ${id}: ${why(err)}`); }
+    try { await get(); left.push(`${what} ${id}: still present`); } catch (err) { if (!isNotFound(err)) left.push(`${what} ${id}: ${why(err)}`); }
   };
-  if (partial.agentId) await del('agent', () => kaltura.agents.delete(partial.agentId, ks, { confirmPermanent: true }), () => kaltura.agents.get(partial.agentId, ks));
-  if (partial.avatarId) await del('avatar', () => kaltura.avatars.delete(partial.avatarId, ks, { confirmPermanent: true }), () => kaltura.avatars.get(partial.avatarId, ks));
-  if (partial.configId) await del('intellect', () => kaltura.intellects.delete(partial.configId, ks, { confirmPermanent: true }), () => kaltura.intellects.get(partial.configId, ks));
+  if (partial.agentId) await del('agent', partial.agentId, () => kaltura.agents.delete(partial.agentId, ks, { confirmPermanent: true }), () => kaltura.agents.get(partial.agentId, ks));
+  if (partial.avatarId) await del('avatar', partial.avatarId, () => kaltura.avatars.delete(partial.avatarId, ks, { confirmPermanent: true }), () => kaltura.avatars.get(partial.avatarId, ks));
+  if (partial.configId) await del('intellect', partial.configId, () => kaltura.intellects.delete(partial.configId, ks, { confirmPermanent: true }), () => kaltura.intellects.get(partial.configId, ks));
   if (left.length) throw new Error(`could not remove a failed attempt: ${left.join('; ')}`);
 }
 
@@ -175,7 +191,7 @@ function isNotFound(e) { return e?.status === 404 || /(^|_)not_found$/.test(Stri
 /**
  * Create the throwaway agent. Its prompt has one custom variable and it allows request variables.
  * A step that fails is tried once more after a short wait, because the backend can fail a step now and then. The failed attempt is removed first.
- * @param {import('../../src/management/index.js').Management} kaltura @param {(ttl?:number)=>Promise<any>} admin @param {string} runId @param {(ids:any)=>void} [onCreated] Called as soon as ids exist, so teardown can clean a partial run. @param {number} [backoffMs] Wait before the second try.
+ * @param {import('../../src/management/index.js').Management} kaltura @param {(ttl?:number)=>Promise<any>} admin @param {string} runId @param {(ids:any)=>void} [onCreated] Called as soon as ids exist, so teardown can clean a partial run. Called with undefined once a failed attempt is removed. @param {number} [backoffMs] Wait before the second try.
  */
 export async function createAgent(kaltura, admin, runId, onCreated, backoffMs = 3000) {
   const ks = await admin();
@@ -188,12 +204,10 @@ export async function createAgent(kaltura, admin, runId, onCreated, backoffMs = 
     } catch (err) {
       const e = /** @type {any} */ (err);
       const partial = e?.body?.createdSoFar;
-      if (attempt === 2 || e?.code !== 'provision_failed') {
-        if (partial) onCreated?.(partial);
-        throw err;
-      }
+      if (partial) onCreated?.(partial);
+      if (attempt === 2 || e?.code !== 'provision_failed') throw err;
       console.log(redact(`provision failed at step "${e?.body?.failedStep}", trying once more`));
-      if (partial) await dropPartial(kaltura, ks, partial);
+      if (partial) { await dropPartial(kaltura, ks, partial); onCreated?.(undefined); }
       await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
@@ -223,6 +237,93 @@ async function readJson(req) {
   return text ? JSON.parse(text) : {};
 }
 
+/** Endpoints that change state and so accept POST only. Every other endpoint is GET only. */
+const POST_ENDPOINTS = new Set(['catalog-init', 'catalog-scope']);
+
+/**
+ * Wrap an async function so parallel and repeated calls share one run. A failed run is forgotten, so the next call tries again.
+ * `settled()` resolves when the current run ends, whatever its outcome.
+ * @template T @param {() => Promise<T>} fn
+ */
+export function once(fn) {
+  /** @type {Promise<T>|undefined} */
+  let p;
+  const call = () => {
+    p ??= fn().catch((err) => { p = undefined; throw err; });
+    return p;
+  };
+  return Object.assign(call, { settled: async () => { try { await p; } catch { /* the caller of fn saw it */ } } });
+}
+
+/**
+ * The request listener. Pure of process state, so it can be tested with a fake api.
+ * Every reply is built before its header is written, and no error text from a handler reaches the browser.
+ * @param {{api:Record<string,(req:any, body:any)=>Promise<unknown>>, token:string, pages:string[], csp:string, title:string, log:(m:string)=>void}} ctx
+ * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>}
+ */
+export function createHandler({ api, token, pages, csp, title, log }) {
+  const sendJson = (/** @type {import('node:http').ServerResponse} */ res, /** @type {number} */ status, /** @type {unknown} */ body) => {
+    let text;
+    try { text = JSON.stringify(body) ?? 'null'; } catch { status = 500; text = JSON.stringify({ error: 'The server could not build this answer.', code: null }); }
+    res.writeHead(status, { 'content-type': MIME['.json'], ...securityHeaders(csp) });
+    res.end(text);
+  };
+  const plain = (/** @type {import('node:http').ServerResponse} */ res, /** @type {number} */ status, /** @type {string} */ text) => {
+    if (res.headersSent) { res.destroy(); return; }
+    res.writeHead(status, securityHeaders(csp));
+    res.end(text);
+  };
+  return async (req, res) => {
+    try {
+      const url = new URL(req.url || '/', 'http://x');
+      const r = route(url.pathname, token, pages);
+      if (r.kind === 'none') { plain(res, 404, 'Not found'); return; }
+      if (r.kind === 'index') {
+        res.writeHead(200, { 'content-type': MIME['.html'], ...securityHeaders(csp) });
+        res.end(indexHtml(pages, title));
+        return;
+      }
+      if (r.kind === 'api') {
+        if (!Object.hasOwn(api, r.name)) { sendJson(res, 404, { error: 'unknown endpoint', code: null }); return; }
+        const wantPost = POST_ENDPOINTS.has(r.name);
+        if (req.method !== (wantPost ? 'POST' : 'GET')) { sendJson(res, 405, { error: wantPost ? 'POST only' : 'GET only', code: null }); return; }
+        let body = {};
+        if (wantPost) {
+          try { body = await readJson(req); } catch { sendJson(res, 400, { error: 'The request body is not valid.', code: null }); return; }
+        }
+        try {
+          sendJson(res, 200, await api[r.name](req, body));
+        } catch (err) {
+          const e = /** @type {any} */ (err);
+          log(`api ${r.name} failed: ${String(e?.code ?? '')} ${String(e?.detail || e?.message || e).slice(0, 300)}`);
+          sendJson(res, 500, { error: 'The request failed. The server log has the detail.', code: typeof e?.code === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(e.code) ? e.code : null });
+        }
+        return;
+      }
+      const file = r.file;
+      const inside = r.kind === 'src' ? file.startsWith(join(repoRoot, 'src') + sep) : true;
+      let data;
+      try { data = inside ? readFileSync(file) : undefined; } catch { data = undefined; }
+      if (!data) { plain(res, 404, 'Not found'); return; }
+      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', ...securityHeaders(csp) });
+      res.end(data);
+    } catch (err) {
+      log(`request error: ${String(/** @type {any} */ (err)?.message || err)}`);
+      plain(res, 500, 'Server error');
+    }
+  };
+}
+
+/**
+ * A crash must not skip cleanup. On an uncaught error or a rejected promise, run `shutdown` (which tears down) instead of dying.
+ * @param {{on:(event:string, fn:(err:unknown)=>void)=>unknown}} proc @param {(code:number)=>unknown} shutdown @param {(m:string)=>void} log
+ */
+export function installCrashGuards(proc, shutdown, log) {
+  for (const [event, label] of [['uncaughtException', 'uncaught exception'], ['unhandledRejection', 'unhandled rejection']]) {
+    proc.on(event, (err) => { log(`${label}: ${String(/** @type {any} */ (err)?.message || err)}`); shutdown(1); });
+  }
+}
+
 async function main() {
   let args;
   try { args = parseArgs(process.argv.slice(2), process.env); } catch (err) { console.error(/** @type {Error} */ (err).message); process.exit(1); }
@@ -234,7 +335,7 @@ async function main() {
   const runId = randomBytes(3).toString('hex');
   const userId = `${RUN_PREFIX}-user`;
 
-  /** @type {{configId:number, agentId:string, widgetId:string, avatarId?:string}|undefined} */
+  /** @type {{configId?:number, agentId?:string, widgetId?:string, avatarId?:string}|undefined} */
   let ids;
   /** @type {{itemId:string, scopeA:string, scopeB:string}|undefined} */
   let catalog;
@@ -243,45 +344,60 @@ async function main() {
   /** @type {import('node:http').Server|undefined} */
   let server = undefined;
   let stopping = false;
+  let extraSignals = 0;
 
   const log = (/** @type {string} */ m) => console.log(redact(m));
+  /** The ids of everything this run made. They are not secrets, and the operator needs them to clean up by hand. */
+  const idText = () => [
+    ids?.agentId && `agent ${ids.agentId}`,
+    ids?.configId && `intellect ${ids.configId}`,
+    ids?.avatarId && `avatar ${ids.avatarId}`,
+    catalog?.itemId && `catalog item ${catalog.itemId}`,
+  ].filter(Boolean).join(', ') || 'no ids recorded';
+  const logIds = (/** @type {string} */ m) => console.log(`${redact(m)} [${idText()}]`);
+
+  const catalogInit = once(async () => {
+    const ks = await admin(120);
+    const scopeA = randomUUID(); const scopeB = randomUUID();
+    const item = await kaltura.catalog.createVisual(fixtureBlob(), { name: `${RUN_PREFIX}-${runId} ${Date.now().toString(36)}`, genderPresentation: 'Feminine', agentScope: scopeA }, ks);
+    catalog = { itemId: item.itemId, scopeA, scopeB };
+    return { itemId: item.itemId, scopeA, scopeB };
+  });
 
   async function teardown() {
     const problems = [];
+    await catalogInit.settled();
     const ks = await admin().catch(() => undefined);
-    if (!ks) { log('teardown: could not mint an admin token'); return 1; }
+    if (!ks) { logIds('teardown: could not mint an admin token, so nothing was removed. Still present'); return 1; }
     const step = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ fn) => { try { await fn(); } catch (err) { problems.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message || err))}`); } };
-    if (ids) {
+    const agentId = ids?.agentId; const avatarId = ids?.avatarId; const configId = ids?.configId;
+    if (agentId) {
       await step('threads', async () => {
-        const threads = await kaltura.threads.list(ks, { filter: { agentIdEquals: ids.agentId } }).all();
+        const threads = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
         if (threads.length) await kaltura.threads.delete(threads.map((t) => t.id), ks, { confirmPermanent: true });
       });
     }
     if (catalog) await step('catalog item', () => kaltura.catalog.delete(catalog.itemId, ks, { confirmPermanent: true }));
-    if (ids) {
-      await step('agent', () => kaltura.agents.delete(ids.agentId, ks, { confirmPermanent: true }));
-      if (ids.avatarId) await step('avatar', () => kaltura.avatars.delete(/** @type {string} */ (ids.avatarId), ks, { confirmPermanent: true }));
-      await step('intellect', () => kaltura.intellects.delete(ids.configId, ks, { confirmPermanent: true }));
-    }
+    if (agentId) await step('agent', () => kaltura.agents.delete(agentId, ks, { confirmPermanent: true }));
+    if (avatarId) await step('avatar', () => kaltura.avatars.delete(avatarId, ks, { confirmPermanent: true }));
+    if (configId) await step('intellect', () => kaltura.intellects.delete(configId, ks, { confirmPermanent: true }));
     const gone = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ get) => {
       try { await get(); problems.push(`${what}: still present`); } catch (err) {
         const e = /** @type {any} */ (err);
         if (!isNotFound(e)) problems.push(`${what}: ${redact(String(e?.code || e?.message))}`);
       }
     };
-    if (ids) {
-      await gone('agent', () => kaltura.agents.get(ids.agentId, ks));
-      if (ids.avatarId) await gone('avatar', () => kaltura.avatars.get(/** @type {string} */ (ids.avatarId), ks));
-      await gone('intellect', () => kaltura.intellects.get(ids.configId, ks));
-    }
+    if (agentId) await gone('agent', () => kaltura.agents.get(agentId, ks));
+    if (avatarId) await gone('avatar', () => kaltura.avatars.get(avatarId, ks));
+    if (configId) await gone('intellect', () => kaltura.intellects.get(configId, ks));
     if (catalog) await gone('catalog item', () => kaltura.catalog.get(catalog.itemId, ks));
-    if (ids) {
+    if (agentId) {
       await step('thread check', async () => {
-        const left = await kaltura.threads.list(ks, { filter: { agentIdEquals: ids.agentId } }).all();
+        const left = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
         if (left.length) problems.push(`threads: ${left.length} left`);
       });
     }
-    if (problems.length) { for (const p of problems) log(`teardown problem: ${p}`); return 1; }
+    if (problems.length) { for (const p of problems) logIds(`teardown problem: ${p}`); return 1; }
     log('teardown verified: agent, avatar, intellect, catalog item and threads are gone');
     return 0;
   }
@@ -291,32 +407,35 @@ async function main() {
     stopping = true;
     server?.close();
     server?.closeAllConnections?.();
-    const bad = await teardown().catch((err) => { log(`teardown failed: ${String(err?.message || err)}`); return 1; });
+    const bad = await teardown().catch((err) => { logIds(`teardown failed: ${String(err?.message || err)}`); return 1; });
     process.exit(code || bad);
   }
-  process.once('SIGINT', () => shutdown(0));
-  process.once('SIGTERM', () => shutdown(0));
+  const onSignal = (/** @type {string} */ name) => () => {
+    if (!stopping) { log(`${name} received, stopping`); shutdown(0); return; }
+    extraSignals++;
+    if (extraSignals === 1) { log('teardown running, press again to abort'); return; }
+    logIds('teardown aborted. Check these by hand');
+    process.exit(1);
+  };
+  for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(name, onSignal(name));
+  installCrashGuards(process, shutdown, log);
 
   try {
     log(`target ${target.name}; creating the throwaway agent`);
     await createAgent(kaltura, admin, runId, (made) => { ids = made; });
-    conv = await kaltura.sessions.createConversationToken({ configId: ids.configId, agentId: ids.agentId, userId, ttlSeconds: 3600 });
+    conv = await kaltura.sessions.createConversationToken({ configId: ids.configId, agentId: ids.agentId, userId, ttlSeconds: args.ttlMinutes * 60 });
     if (!args.emotions) {
       const widget = await kaltura.sessions.createWidgetToken({ widgetId: ids.widgetId });
       init = await kaltura.application.appInit(widget.ks);
     }
   } catch (err) {
     const failed = /** @type {any} */ (err);
-    log(`setup failed: ${String(failed?.code || failed?.message || err)}${failed?.body?.failedStep ? ` at ${failed.body.failedStep}` : ''}`);
+    logIds(`setup failed: ${String(failed?.code || failed?.message || err)}${failed?.body?.failedStep ? ` at ${failed.body.failedStep}` : ''}. Removing what was made`);
     await shutdown(1);
     return;
   }
 
   const csp = buildCsp(connectOrigins([target.genieUrl, init?.conversationManagerUrl, init?.srsBaseUrl]));
-  const sendJson = (/** @type {import('node:http').ServerResponse} */ res, /** @type {number} */ status, /** @type {unknown} */ body) => {
-    res.writeHead(status, { 'content-type': MIME['.json'], ...securityHeaders(csp) });
-    res.end(JSON.stringify(body));
-  };
 
   /** @type {Record<string, (req:any, body:any)=>Promise<unknown>>} */
   const api = {
@@ -334,14 +453,7 @@ async function main() {
       turnServerUrl: init?.turnServerUrl ?? null,
     }),
     variables: async () => kaltura.application.getCustomVariables(/** @type {any} */ (ids).agentId, await admin(120)),
-    'catalog-init': async () => {
-      if (catalog) return { itemId: catalog.itemId, scopeA: catalog.scopeA, scopeB: catalog.scopeB };
-      const ks = await admin(120);
-      const scopeA = randomUUID(); const scopeB = randomUUID();
-      const item = await kaltura.catalog.createVisual(fixtureBlob(), { name: `${RUN_PREFIX}-${runId} ${Date.now().toString(36)}`, genderPresentation: 'Feminine', agentScope: scopeA }, ks);
-      catalog = { itemId: item.itemId, scopeA, scopeB };
-      return { itemId: item.itemId, scopeA, scopeB };
-    },
+    'catalog-init': () => catalogInit(),
     'catalog-state': async () => {
       if (!catalog) return { ready: false };
       const ks = await admin(120);
@@ -362,38 +474,7 @@ async function main() {
     },
   };
 
-  server = createServer(async (req, res) => {
-    try {
-      const url = new URL(req.url || '/', 'http://x');
-      const r = route(url.pathname, token, pages);
-      if (r.kind === 'none') { res.writeHead(404, securityHeaders(csp)); res.end('Not found'); return; }
-      if (r.kind === 'index') {
-        res.writeHead(200, { 'content-type': MIME['.html'], ...securityHeaders(csp) });
-        res.end(indexHtml(pages, args.emotions ? 'Feature pages (Limited Availability)' : 'Feature pages'));
-        return;
-      }
-      if (r.kind === 'api') {
-        const fn = api[r.name];
-        if (!fn) { sendJson(res, 404, { error: 'unknown endpoint' }); return; }
-        if (r.name === 'catalog-init' || r.name === 'catalog-scope') { if (req.method !== 'POST') { sendJson(res, 405, { error: 'POST only' }); return; } }
-        else if (req.method !== 'GET') { sendJson(res, 405, { error: 'GET only' }); return; }
-        const body = req.method === 'POST' ? await readJson(req) : {};
-        try { sendJson(res, 200, await fn(req, body)); } catch (err) {
-          const e = /** @type {any} */ (err);
-          sendJson(res, 500, { error: redact(String(e?.detail || e?.message || e)).slice(0, 300), code: e?.code ?? null });
-        }
-        return;
-      }
-      const file = r.file;
-      const inside = r.kind === 'src' ? file.startsWith(join(repoRoot, 'src') + sep) : true;
-      if (!inside || !existsSync(file)) { res.writeHead(404, securityHeaders(csp)); res.end('Not found'); return; }
-      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', ...securityHeaders(csp) });
-      res.end(readFileSync(file));
-    } catch (err) {
-      res.writeHead(500, securityHeaders(csp)); res.end('Server error');
-      log(`request error: ${String(/** @type {any} */ (err)?.message || err)}`);
-    }
-  });
+  server = createServer(createHandler({ api, token, pages, csp, title: args.emotions ? 'Feature pages (Limited Availability)' : 'Feature pages', log }));
 
   await new Promise((ok) => server.listen(args.port, args.lan ? '0.0.0.0' : '127.0.0.1', () => ok(undefined)));
   const port = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
