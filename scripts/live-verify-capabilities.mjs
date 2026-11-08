@@ -48,13 +48,14 @@ let varsIntellectId;
 let varsAgentId;
 let failed = false;
 
-// Deletes the scratch agent and intellect. Safe to call twice (ids are cleared
-// after use), so both the `finally` block and the signal handlers can run it.
-async function cleanupVars() {
+// Deletes the scratch agent and intellect. All callers (the `finally` block and
+// the signal handlers) share one promise, so the deletes run once and a second
+// signal waits for them instead of cutting them off.
+let cleanupP;
+const cleanupVars = () => (cleanupP ??= doCleanupVars());
+async function doCleanupVars() {
   const agentToDelete = varsAgentId;
   const intellectToDelete = varsIntellectId;
-  varsAgentId = undefined;
-  varsIntellectId = undefined;
   if (!admin) return;
   if (agentToDelete) {
     try {
@@ -77,7 +78,7 @@ async function cleanupVars() {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => {
+  process.on(signal, () => {
     console.error(`${signal} received, deleting scratch agent and intellect`);
     cleanupVars().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
   });

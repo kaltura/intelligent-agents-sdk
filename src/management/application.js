@@ -91,7 +91,8 @@ export class Application {
    * `used` says whether the agent references that variable.
    * `customVariables[]` items: `{name, template, type, paths[], origins[], sources[]}`.
    * `type` is `"unknown"` when it cannot be inferred. `origins[]` says where a
-   * value comes from (`"referenced"`, or set at runtime by a tool).
+   * value comes from (`"referenced"`, or `"set_by_tool"` for a value a `var` tool
+   * sets at runtime).
    * `sources[]` items: `{documentType, documentId, documentName?, field, origin}`.
    * `documentId` is a number for an intellect source and a string for the others.
    * An unknown agent id throws `agent_not_found`.
