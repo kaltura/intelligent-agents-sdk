@@ -10,6 +10,7 @@ import {
   DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route, pickTarget, once, createHandler, installCrashGuards, emotionsTarget, loadEnvironmentFiles, createTeardown,
 } from '../../manual-testing/feature-pages/serve.mjs';
 import { leakCounts } from '../../scripts/lib/leak-scan.mjs';
+import { startServer, absoluteEnvFile } from '../../scripts/lib/start-server.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const pagesDir = join(root, 'manual-testing/feature-pages');
@@ -188,6 +189,7 @@ const scanned = [
   ...pageFiles,
   join(root, 'scripts/live-verify-feature-pages.mjs'),
   join(root, 'scripts/lib/leak-scan.mjs'),
+  join(root, 'scripts/lib/start-server.mjs'),
   fileURLToPath(import.meta.url),
 ];
 
@@ -441,4 +443,37 @@ test('createTeardown: a partial run without an agent id never lists threads with
   assert.equal(await teardown(), 0);
   assert.equal(listed, 0);
   assert.deepEqual(k.order, ['intellect:9']);
+});
+
+test('absoluteEnvFile: a relative ENV_FILE becomes absolute against the given folder. Unset stays unset', () => {
+  const env = { ENV_FILE: 'secrets/.env' };
+  assert.equal(absoluteEnvFile(env, '/work/here'), env);
+  assert.equal(env.ENV_FILE, '/work/here/secrets/.env');
+  assert.equal(absoluteEnvFile({ ENV_FILE: '/abs/.env' }, '/work/here').ENV_FILE, '/abs/.env');
+  assert.equal('ENV_FILE' in absoluteEnvFile({}, '/work/here'), false);
+});
+
+test('startServer: resolves with the URL from the Open line', async () => {
+  const code = "console.log('Open: http://127.0.0.1:1/x/'); setInterval(() => {}, 1000)";
+  const s = await startServer({ command: process.execPath, args: ['-e', code], cwd: tmpdir(), env: process.env, pollMs: 20 });
+  assert.equal(s.url, 'http://127.0.0.1:1/x/');
+  assert.match((await s.stop()).log, /Open: /);
+});
+
+test('startServer: a child that exits early is reported with its log', async () => {
+  await assert.rejects(
+    startServer({ command: process.execPath, args: ['-e', "console.log('boom'); process.exit(3)"], cwd: tmpdir(), env: process.env, pollMs: 20 }),
+    /server exited early:\nboom/,
+  );
+});
+
+test('startServer: on the URL timeout the timeout message wins, and a late Open line is ignored', async () => {
+  // On SIGTERM the child prints an Open line and exits a little later, like a server that was almost ready.
+  const code = "process.on('SIGTERM', () => { console.log('Open: http://late/'); setTimeout(() => process.exit(0), 150); }); setInterval(() => {}, 1000)";
+  const started = Date.now();
+  await assert.rejects(
+    startServer({ command: process.execPath, args: ['-e', code], cwd: tmpdir(), env: process.env, urlTimeoutMs: 200, pollMs: 20 }),
+    (err) => /did not print a URL in time, so it was stopped/.test(err.message) && !/exited early/.test(err.message),
+  );
+  assert.ok(Date.now() - started < 5000);
 });

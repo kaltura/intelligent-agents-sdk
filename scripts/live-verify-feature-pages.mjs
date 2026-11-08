@@ -14,10 +14,10 @@
  *
  * Screenshots and the server log go to manual-testing/feature-pages/out/ (git-ignored).
  */
-import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { leakCounts } from './lib/leak-scan.mjs';
+import { startServer, absoluteEnvFile } from './lib/start-server.mjs';
 import { loadEnvironmentFiles } from '../manual-testing/feature-pages/serve.mjs';
 import { launchBrowser, warmFirefoxMedia, routeSocketIo, contextOptions, repoRoot, redact } from './live-verify-kickoff-shared.mjs';
 
@@ -27,6 +27,8 @@ if (!['chromium', 'firefox', 'webkit'].includes(engineName)) {
   process.exit(1);
 }
 // The same env files serve.mjs reads. The leak scan needs the secret values too, so the parent loads them.
+// A relative ENV_FILE becomes absolute first, so the child reads the same file.
+absoluteEnvFile(process.env);
 try { loadEnvironmentFiles(process.env.ENV_FILE); } catch (err) {
   console.error(/** @type {Error} */ (err).message);
   process.exit(1);
@@ -53,29 +55,10 @@ function check(step, ok, detail) {
   console.log(`[${ok ? 'ok' : 'FAIL'}] ${step}${detail === undefined ? '' : ` ${redact(JSON.stringify(detail))}`}`);
 }
 
-/** Start serve.mjs and wait for its URL. @returns {Promise<{url:string, stop:()=>Promise<{code:number|null, log:string}>}>} */
-function startServer() {
+/** Start serve.mjs and wait for its URL. */
+function startFeatureServer() {
   const args = ['manual-testing/feature-pages/serve.mjs', '--ttl-minutes', '30', ...(emotions ? ['--emotions'] : [])];
-  const child = spawn(process.execPath, args, { cwd: repoRoot, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = '';
-  child.stdout.on('data', (d) => { log += d; });
-  child.stderr.on('data', (d) => { log += d; });
-  const exited = new Promise((r) => child.once('exit', (code) => r(code)));
-  const stop = async () => {
-    if (child.exitCode === null) child.kill('SIGTERM');
-    const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 180_000))]);
-    if (code === 'timeout') child.kill('SIGKILL');
-    return { code: /** @type {number|null} */ (code === 'timeout' ? null : code), log };
-  };
-  const urlPromise = new Promise((ok, fail) => {
-    const t = setTimeout(() => { stop().then(() => fail(new Error('server did not print a URL in 5 minutes, so it was stopped'))); }, 300_000);
-    const poll = setInterval(() => {
-      const m = /^Open: (\S+)/m.exec(log);
-      if (m) { clearTimeout(t); clearInterval(poll); ok(m[1]); }
-    }, 250);
-    exited.then(() => { clearTimeout(t); clearInterval(poll); fail(new Error(`server exited early:\n${redact(log)}`)); });
-  });
-  return urlPromise.then((url) => ({ url, stop }));
+  return startServer({ command: process.execPath, args, cwd: repoRoot, env: process.env, redact });
 }
 
 /** @param {string} text @param {string} label @returns {string|undefined} the value in a two-column table row */
@@ -207,7 +190,7 @@ async function drive(base) {
 async function main() {
   let server;
   try {
-    server = await startServer();
+    server = await startFeatureServer();
   } catch (err) {
     check('server-start', false, String(/** @type {any} */ (err)?.message || err));
     process.exit(1);
