@@ -189,7 +189,7 @@ export class Catalog {
    * typed error with `code:'voice_not_found_elevenlabs'`. A voice with no audio
    * samples raises `voice_has_no_samples`: upload an audio file with
    * {@link createVoice} instead.
-   * @param {string} voiceId The provider-side ElevenLabs voice id.
+   * @param {string} voiceId The provider-side ElevenLabs voice id: 1 to 128 characters, letters, digits, `_` or `-`. Anything else throws `bad_request` before any request.
    * @param {string} ks (admin)
    * @returns {Promise<object>} The created Voice catalog item.
    */
@@ -206,7 +206,7 @@ export class Catalog {
    * raises a typed error with `code:'voice_not_found_cartesia'`
    * (`VOICE_DOES_NOT_EXIST_ON_CARTESIA`, HTTP-200 exception envelope). A voice
    * with no audio samples raises `voice_has_no_samples`.
-   * @param {string} voiceId The provider-side Cartesia voice id.
+   * @param {string} voiceId The provider-side Cartesia voice id: 1 to 128 characters, letters, digits, `_` or `-`. Anything else throws `bad_request` before any request.
    * @param {string} ks (admin)
    * @returns {Promise<object>} The created Voice catalog item.
    */
@@ -310,8 +310,8 @@ function requireVoiceId(v, where) {
   if (typeof v !== 'string' || !v.trim()) {
     throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must be a non-empty string (the provider-side voice id).` });
   }
-  if (!/^[A-Za-z0-9_-]+$/.test(v)) {
-    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must contain only letters, digits, "_" or "-". Copy the id from the voice provider's dashboard.` });
+  if (v.length > 128 || !/^[A-Za-z0-9_-]+$/.test(v)) {
+    throw new KalturaError({ type: 'about:blank', title: 'bad request', code: 'bad_request', detail: `${where} voiceId must be 1 to 128 characters, letters, digits, "_" or "-" only. Copy the id from the voice provider's dashboard.` });
   }
 }
 

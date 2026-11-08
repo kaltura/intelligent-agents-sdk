@@ -13,6 +13,7 @@
  * | F6 | `timeouts.joinRoom` is 1 ms             | connect() rejects `timeout` with `phase: 'join'` and `retryable: true` |
  * | F7 | the tab is hidden while connecting      | connect() resolves through the canplay gate with real video dimensions, no `media_no_video`, under the 6 s no-frame cap |
  * | F8 | every WHEP answer points at an unreachable address | two POSTs, connect() rejects `ice_failed` with `phase: 'ice'`, `retryable: true`, a sanitized `error.ice` for the avatar peer, well before `overall` |
+ * | F9 | the avatar token is altered              | connect() rejects `unsupported_client` at once, not retryable. `serverCode` is `INVALID_KS`, and the error holds no token text |
  *
  * 3.5 s is well under the 5 s limit for one POST try, so a slow runner cannot push the first try past it. The 6 s
  * first-frame cap must start when the answer is applied, not when the request leaves.
@@ -189,6 +190,23 @@ const SCENARIOS = {
       report.check(`${id}: the failure came well before the 30 s overall limit`, Date.now() - t0 < 15000, { ms: Date.now() - t0 });
       report.check(`${id}: error.ice names the avatar peer and a cause`, connect.ice?.channel === 'stv' && !!connect.ice.cause && connect.ice.cause !== 'connected', connect.ice);
       report.check(`${id}: error.ice holds no IP address`, !/\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(JSON.stringify(connect.ice ?? {})), connect.ice);
+      await callHook(page, 'testDisconnect').catch(() => {});
+    },
+  },
+  F9: {
+    name: 'the avatar token is altered',
+    async run({ context, sink, id }) {
+      const page = await openHarness(context, origin, { mode: 'avatar', badKs: 1 }, sink);
+      const t0 = Date.now();
+      const connect = await callHook(page, 'testConnect');
+      report.check(`${id}: connect() rejected unsupported_client`, !connect.ok && connect.code === 'unsupported_client', connect);
+      report.check(`${id}: not retryable`, connect.retryable === false, connect);
+      report.check(`${id}: the refusal came well before the 30 s overall limit`, Date.now() - t0 < 15000, { ms: Date.now() - t0 });
+      report.check(`${id}: serverCode is INVALID_KS and code is unchanged`, connect.serverCode === 'INVALID_KS' && connect.code === 'unsupported_client', { serverCode: connect.serverCode });
+      const text = JSON.stringify(connect);
+      const real = await mintPageInit(kaltura, agent, target.genieUrl);
+      const leaks = [real.ks, real.conversationKs].filter((k) => typeof k === 'string' && text.includes(k.slice(0, 24)));
+      report.check(`${id}: the error holds no token text`, !/ks=|\bks\b.{0,3}[A-Za-z0-9_-]{40,}/.test(text) && !text.includes('AAAAAAAA') && !/djJ8/.test(text) && leaks.length === 0, undefined);
       await callHook(page, 'testDisconnect').catch(() => {});
     },
   },
