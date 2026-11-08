@@ -362,3 +362,141 @@ test('unsupportedClient during a media recovery keeps today\'s end', trapped(asy
   assert.deepEqual(seen, ['ended:io server disconnect']);
   assert.equal(session.state, 'disconnected');
 }));
+
+// ───────────────────────── serverCode ─────────────────────────
+// The refusal payload's `code` rides on `err.serverCode` when it is enum-shaped. `err.code` never changes,
+// and no other part of the frame (reason, message, extra fields) reaches the error.
+
+/** Refuse the next `onServerConnected` with `payload` (omit to send none). */
+function refuseWith(socket, ...args) {
+  const real = socket.server.bind(socket);
+  socket.server = (ev, payload) => (ev === 'onServerConnected' ? real('unsupportedClient', ...args) : real(ev, payload));
+}
+
+const SERVER_CODES = ['INVALID_KS', 'USAGE_LIMIT_EXCEEDED', 'INTERNAL_ERROR', 'A', '_', 'A'.repeat(64)];
+for (const code of SERVER_CODES) {
+  test(`unsupportedClient { code: ${code.length > 20 ? '64 chars' : code} } sets serverCode on the rejection and the error event`, trapped(async () => {
+    const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+    scriptHappyPath(socket);
+    refuseWith(socket, { code });
+    const events = [];
+    session.on('error', (e) => events.push(e));
+    const { err, ms } = await timedReject(() => session.connect());
+    assertRefused(err, ms, 'serverCode');
+    assert.equal(err.serverCode, code);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].code, 'unsupported_client');
+    assert.equal(events[0].serverCode, code);
+    assert.equal(err.toJSON().serverCode, code);
+    assert.ok(!String(err.message).includes(code) && !String(err.detail).includes(code), 'the code is not copied into the message');
+  }));
+}
+
+const BAD_PAYLOADS = [
+  ['no payload', []],
+  ['null payload', [null]],
+  ['string payload', ['INVALID_KS']],
+  ['number payload', [42]],
+  ['array payload', [['INVALID_KS']]],
+  ['no code property', [{ reason: 'R' }]],
+  ['non-string code', [{ code: 7 }]],
+  ['object code', [{ code: { x: 'INVALID_KS' } }]],
+  ['lowercase code', [{ code: 'invalid_ks' }]],
+  ['mixed-case code', [{ code: 'Invalid_KS' }]],
+  ['empty code', [{ code: '' }]],
+  ['65-char code', [{ code: 'A'.repeat(65) }]],
+  ['code with a space', [{ code: 'INVALID KS' }]],
+  ['code with a digit', [{ code: 'ERR_4' }]],
+  ['code with a newline', [{ code: 'INVALID_KS\n' }]],
+];
+for (const [name, args] of BAD_PAYLOADS) {
+  test(`unsupportedClient with ${name}: no serverCode, code unchanged`, trapped(async () => {
+    const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+    scriptHappyPath(socket);
+    refuseWith(socket, ...args);
+    const events = [];
+    session.on('error', (e) => events.push(e));
+    const { err, ms } = await timedReject(() => session.connect());
+    assert.ok(ms < 1000);
+    assert.equal(err.code, 'unsupported_client');
+    assert.equal(err.serverCode, undefined);
+    assert.ok(!('serverCode' in err.toJSON()));
+    assert.equal(events[0].serverCode, undefined);
+  }));
+}
+
+test('a server code that equals an SDK code stays in serverCode and never replaces code', trapped(async () => {
+  const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(socket);
+  refuseWith(socket, { code: 'TIER_EXCEEDED' });
+  const { err } = await timedReject(() => session.connect());
+  assert.equal(err.code, 'unsupported_client');
+  assert.equal(err.serverCode, 'TIER_EXCEEDED');
+  assert.equal(err.status, undefined);
+}));
+
+test('the other frame fields never reach the error', trapped(async () => {
+  const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(socket);
+  refuseWith(socket, { code: 'INVALID_KS', reason: 'LEAKY_REASON', message: 'LEAKY_MESSAGE', ks: 'LEAKY_KS' });
+  const { err } = await timedReject(() => session.connect());
+  assert.ok(!/LEAKY/.test(`${err.message} ${err.detail} ${JSON.stringify(err.toJSON())}`));
+  assert.equal(err.body, undefined);
+}));
+
+test('the error never contains the KS', trapped(async () => {
+  const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(socket);
+  refuseWith(socket, { code: 'INVALID_KS' });
+  const { err } = await timedReject(() => session.connect());
+  const ks = session._token;
+  assert.ok(ks && ks.length > 8);
+  assert.ok(!`${err.message} ${err.detail} ${JSON.stringify(err.toJSON())} ${err.stack}`.includes(ks));
+}));
+
+test('serverCode is set when the refusal arrives while connected', trapped(async () => {
+  const { session, socket } = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(socket);
+  await session.connect();
+  const errors = [];
+  session.on('error', (e) => errors.push(e));
+  socket.server('unsupportedClient', { code: 'USAGE_LIMIT_EXCEEDED' });
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'unsupported_client');
+  assert.equal(errors[0].serverCode, 'USAGE_LIMIT_EXCEEDED');
+  session.disconnect();
+}));
+
+test('serverCode is set on resume() and on prepare() rejections', trapped(async () => {
+  const a = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(a.socket);
+  await a.session.connect();
+  const base = a.socket._onEmit;
+  a.socket.onEmit((ev, p, s) => {
+    if (ev === 'stvNewSession') setTimeout(() => a.socket.server('unsupportedClient', { code: 'INTERNAL_ERROR' }), 0);
+    else base(ev, p, s);
+  });
+  a.session.pause();
+  a.socket.server('pauseSessionExpired', {});
+  const r = await timedReject(() => a.session.resume());
+  assert.equal(r.err.serverCode, 'INTERNAL_ERROR');
+
+  const b = newSession({ cfg: { timeouts: SHORT } });
+  scriptHappyPath(b.socket);
+  refuseWith(b.socket, { code: 'INVALID_KS' });
+  const p = await timedReject(() => b.session.prepare());
+  assert.equal(p.err.code, 'unsupported_client');
+  assert.equal(p.err.serverCode, 'INVALID_KS');
+}));
+
+test('a cold reconnect refusal carries serverCode on the error event', trapped(async () => {
+  const { session, socket, ev } = await coldSession();
+  const errs = [];
+  session.on('error', (e) => errs.push(e));
+  const real = socket.server.bind(socket);
+  socket.server = (e, p) => (e === 'clientConfiguration' || e === 'joinComplete' ? real('unsupportedClient', { code: 'INVALID_KS' }) : real(e, p));
+  socket.dropAndRecover('transport close', { recovered: false });
+  await until(() => ev.includes('ended:reconnect_failed'), 'the reconnect gave up');
+  const refusal = errs.find((e) => e.code === 'unsupported_client');
+  assert.equal(refusal.serverCode, 'INVALID_KS');
+}));

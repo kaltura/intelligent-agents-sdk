@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Live-backend verification for four capabilities on real Kaltura
- * API, no fakes: Knowledge#list, Application#getCustomPrompts,
+ * API, no fakes: Knowledge#list, Application#getCustomPrompts, Application#getCustomVariables,
  * Avatars#listTemplates, and the full Lifecycle domain (9 methods) plus the
  * InsightSettings domain a `triggerInsightSettingsKai` lifecycle action
  * references.
@@ -44,7 +44,45 @@ let admin;
 let ruleId;
 let ruleId2;
 let insightSettingId;
+let varsIntellectId;
+let varsAgentId;
 let failed = false;
+
+// Deletes the scratch agent and intellect. All callers (the `finally` block and
+// the signal handlers) share one promise, so the deletes run once and a second
+// signal waits for them instead of cutting them off.
+let cleanupP;
+const cleanupVars = () => (cleanupP ??= doCleanupVars());
+async function doCleanupVars() {
+  const agentToDelete = varsAgentId;
+  const intellectToDelete = varsIntellectId;
+  if (!admin) return;
+  if (agentToDelete) {
+    try {
+      await kaltura.agents.delete(agentToDelete, admin, { confirmPermanent: true });
+      record('agents.delete (getCustomVariables probe)', true, { id: agentToDelete });
+    } catch (err) {
+      failed = true;
+      record('agents.delete (getCustomVariables probe)', false, { id: agentToDelete, message: err?.detail || err?.message || String(err) });
+    }
+  }
+  if (intellectToDelete) {
+    try {
+      await kaltura.intellects.delete(intellectToDelete, admin, { confirmPermanent: true });
+      record('intellects.delete (getCustomVariables probe)', true, { id: intellectToDelete });
+    } catch (err) {
+      failed = true;
+      record('intellects.delete (getCustomVariables probe)', false, { id: intellectToDelete, message: err?.detail || err?.message || String(err) });
+    }
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    console.error(`${signal} received, deleting scratch agent and intellect`);
+    cleanupVars().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  });
+}
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
@@ -63,6 +101,47 @@ try {
     count: prompts.length,
     keys: prompts.map((p) => p.key),
   });
+
+  // ── Application#getCustomVariables ─────────────────────────────────────
+  // Scratch intellect + agent whose directive reads one custom {{ var }}.
+  const varName = `sdk_live_var_${Math.random().toString(36).slice(2, 8)}`;
+  const varsIntellect = await kaltura.intellects.add({
+    type: 'internal',
+    status: 2,
+    base_directive: `You are a probe. Greet the user and mention {{ ${varName} }}.`,
+  }, admin);
+  varsIntellectId = varsIntellect.id;
+  const varsAgent = await kaltura.agents.create({
+    displayName: `sdk-live-${varName}`,
+    intellect: { intellectType: 'genie', id: varsIntellectId },
+    adminTags: ['ci-scratch'],
+  }, admin);
+  varsAgentId = varsAgent.agentId || varsAgent.id;
+  const vars = await kaltura.application.getCustomVariables(varsAgentId, admin);
+  const mine = (vars.customVariables || []).find((v) => v.name === varName);
+  const sysNames = (vars.systemVariables || []).map((v) => v.name);
+  const varsOk = !!mine && sysNames.length > 0 && sysNames.every((n) => n.startsWith('sys__')) && (mine.sources || []).some((x) => x.field === 'base_directive');
+  if (!varsOk) failed = true;
+  record('application.getCustomVariables', varsOk, {
+    customNames: (vars.customVariables || []).map((v) => v.name),
+    systemCount: sysNames.length,
+    systemSample: sysNames.slice(0, 4),
+    custom: mine,
+  });
+
+  // An agent whose intellect was deleted: the SDK throws intellect_not_found.
+  await kaltura.intellects.delete(varsIntellectId, admin, { confirmPermanent: true });
+  const deletedIntellectId = varsIntellectId;
+  varsIntellectId = undefined;
+  try {
+    await kaltura.application.getCustomVariables(varsAgentId, admin);
+    failed = true;
+    record('application.getCustomVariables (deleted intellect)', false, { note: 'resolved instead of throwing' });
+  } catch (err) {
+    const ok = err?.code === 'intellect_not_found' && err?.cause?.code === 'server_error';
+    if (!ok) failed = true;
+    record('application.getCustomVariables (deleted intellect)', ok, { code: err?.code, causeCode: err?.cause?.code, intellectId: deletedIntellectId });
+  }
 
   // ── Avatars#listTemplates ───────────────────────────────────────────────
   const templates = await kaltura.avatars.listTemplates(admin, { pageSize: 5 });
@@ -155,6 +234,7 @@ try {
   failed = true;
   record('live-verify-capabilities', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  await cleanupVars();
   if (ruleId) {
     try {
       const del = await kaltura.lifecycle.delete(ruleId, admin, { confirmPermanent: true });
