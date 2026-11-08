@@ -12,6 +12,7 @@ import { KalturaScriptedVideoSession } from '../../src/experience/scripted-video
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor } from '../fakes/rtc.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { fakeWhepFetch } from '../fakes/whep.js';
+import { until, bothTracks } from './helpers/wait.js';
 
 const TURN = { url: 'turn.example.com', username: 'kaltura', credential: 'avatar' };
 
@@ -214,7 +215,7 @@ test("emits 'videoMetadata' once decoded dimensions are known (videoEl configure
   v.on('videoMetadata', (p) => events.push(p));
 
   const connectP = v.connect();
-  await delay(20);
+  await bothTracks(v, connectP);
   videoEl.fireLoadedMetadata(960, 540);
   videoEl.fireCanPlay();
   await connectP;
@@ -233,7 +234,7 @@ test('regression: the 6s hard-cap timer is cleared on connect and on disconnect 
   globalThis.clearTimeout = (id) => { if (armed.has(id)) cleared.add(id); return origClearTimeout(id); };
   try {
     const p = v.connect();
-    await delay(20);
+    await bothTracks(v, p);
     assert.equal(armed.size, 1, 'hard cap armed once');
     v.disconnect();   // mid-connect: canplay never fired
     await p.catch(() => {});
@@ -278,7 +279,6 @@ test("regression: 'videoMetadata' never fires when videoEl is omitted (headless)
   assert.equal(v.state, 'connected', 'still connects normally without a videoEl');
 });
 
-function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 test("disconnect() inside a 'track' listener defers the peer's close() to the next macrotask (Chromium hang guard); outside it, close() is synchronous", async () => {
   const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
@@ -328,7 +328,7 @@ test('disconnect() while connect() awaits the WHEP POST: connect() rejects, stat
   const f = gatedFetch('/whep/abc123/res1');
   const v = view({ fetch: f });
   const attempt = v.connect();
-  await new Promise((r) => setTimeout(r, 0));   // connect() is parked on the POST
+  await until(() => f.calls.some((c) => c.method === 'POST'));   // connect() is parked on the POST
   v.disconnect();
   f.release();
 
@@ -346,7 +346,7 @@ test('disconnect() during a stuck WHEP POST stops at once: connect() rejects and
   const f = fakeWhepFetch([{ hang: true }, {}]);
   const v = view({ fetch: f });
   const attempt = v.connect();
-  await new Promise((r) => setTimeout(r, 20));
+  await until(() => f.posts.length === 1);   // the stuck POST is in flight
   v.disconnect();
   await assert.rejects(() => attempt, (e) => e.code === 'connect_failed');
   await new Promise((r) => setTimeout(r, 20));
@@ -358,7 +358,7 @@ test('the release DELETE uses keepalive', async () => {
   const v = view({ fetch: f });
   await v.connect();
   v.disconnect();
-  await new Promise((r) => setTimeout(r, 10));
+  await until(() => f.deletes.length === 1);
   assert.equal(f.deletes.length, 1);
   assert.equal(f.deletes[0].keepalive, true);
 });
@@ -368,7 +368,7 @@ test('disconnect() while connect() awaits playback: connect() rejects and the st
   const f = fakeFetch([{ match: '/whep/abc123', respond: () => ({ status: 201, body: 'v=0\r\nfake-answer\r\n' }) }]);
   const v = view({ videoEl, fetch: f });
   const attempt = v.connect();
-  await new Promise((r) => setTimeout(r, 10));   // past the answer, waiting for canplay
+  await until(() => FakeRTCPeerConnection.instances[0]?.remoteDescription);   // past the answer, waiting for canplay
   v.disconnect();
 
   await assert.rejects(() => attempt, (e) => e.code === 'connect_failed');
