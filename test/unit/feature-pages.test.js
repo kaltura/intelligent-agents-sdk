@@ -2,11 +2,12 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname, join } from 'node:path';
 import {
-  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route, pickTarget, once, createHandler, installCrashGuards,
+  DEFAULT_PAGES, EMOTIONS_PAGE, parseArgs, createAgent, pageList, newToken, connectOrigins, buildCsp, securityHeaders, route, pickTarget, once, createHandler, installCrashGuards, emotionsTarget, loadEnvironmentFiles, createTeardown,
 } from '../../manual-testing/feature-pages/serve.mjs';
 import { leakCounts } from '../../scripts/lib/leak-scan.mjs';
 
@@ -15,7 +16,7 @@ const pagesDir = join(root, 'manual-testing/feature-pages');
 const TOKEN = 'a'.repeat(32);
 
 test('parseArgs: defaults', () => {
-  assert.deepEqual(parseArgs([], {}), { lan: false, port: 0, ttlMinutes: 60, envFile: undefined, emotions: false, target: undefined });
+  assert.deepEqual(parseArgs([], {}), { lan: false, port: 0, ttlMinutes: 60, envFile: undefined, emotions: false });
 });
 
 test('parseArgs: flags and ENV_FILE', () => {
@@ -27,12 +28,30 @@ test('parseArgs: flags and ENV_FILE', () => {
   assert.equal(parseArgs([], { ENV_FILE: 'e.env' }).envFile, 'e.env');
 });
 
-test('parseArgs: --emotions needs TARGET and has no default', () => {
-  assert.throws(() => parseArgs(['--emotions'], {}), /TARGET/);
-  const a = parseArgs(['--emotions'], { TARGET: 'some-env' });
-  assert.equal(a.emotions, true);
-  assert.equal(a.target, 'some-env');
+test('parseArgs: --emotions sets the flag only. TARGET is read later, after the env files', () => {
+  assert.equal(parseArgs(['--emotions'], {}).emotions, true);
   assert.equal(parseArgs([], { TARGET: 'some-env' }).emotions, false);
+  assert.throws(() => emotionsTarget({}), /TARGET/);
+  assert.equal(emotionsTarget({ TARGET: 'some-env' }), 'some-env');
+});
+
+test('loadEnvironmentFiles: loads the named file, keeps values already set, refuses an unreadable file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fp-env-'));
+  const file = join(dir, 'x.env');
+  writeFileSync(file, 'FP_TEST_NEW=from-file\nFP_TEST_KEEP=from-file\nTARGET=from-file\n');
+  process.env.FP_TEST_KEEP = 'already';
+  const hadTarget = 'TARGET' in process.env;
+  try {
+    loadEnvironmentFiles(file);
+    assert.equal(process.env.FP_TEST_NEW, 'from-file');
+    assert.equal(process.env.FP_TEST_KEEP, 'already');
+    if (!hadTarget) assert.equal(emotionsTarget(process.env), 'from-file', 'TARGET set only in the file is found');
+    assert.throws(() => loadEnvironmentFiles(join(dir, 'missing.env')), /--env-file/);
+  } finally {
+    delete process.env.FP_TEST_NEW; delete process.env.FP_TEST_KEEP;
+    if (!hadTarget) delete process.env.TARGET;
+    rmSync(dir, { recursive: true });
+  }
 });
 
 test('parseArgs: rejects bad input', () => {
@@ -361,6 +380,65 @@ test('installCrashGuards: an uncaught error or a rejected promise runs teardown 
 test('leakCounts: finds any ADMIN_SECRET value and session tokens, and returns counts only', () => {
   const env = { SOME_ADMIN_SECRET_2: 'twelve-chars!', OTHER: 'twelve-chars!', SHORT_ADMIN_SECRET: 'abc' };
   const r = leakCounts(['ok text', 'has twelve-chars! inside', 'token djJ8abcdefghijkl and djJ8short'], env);
-  assert.deepEqual(r, { secretHits: 1, ksHits: 1 });
-  assert.deepEqual(leakCounts(['clean'], env), { secretHits: 0, ksHits: 0 });
+  assert.deepEqual(r, { secretHits: 1, ksHits: 1, secretsChecked: 1 });
+  assert.deepEqual(leakCounts(['clean'], env), { secretHits: 0, ksHits: 0, secretsChecked: 1 });
+  assert.equal(leakCounts(['clean'], {}).secretsChecked, 0, 'no secret to look for must be visible to the caller');
+});
+
+/** A fake backend that records deletes and says "not found" for a deleted id. */
+function teardownKaltura() {
+  const removed = new Set(); const order = [];
+  const gone = (id) => { if (removed.has(id)) throw Object.assign(new Error('nf'), { status: 404 }); return { id }; };
+  const del = (kind) => async (id) => { order.push(`${kind}:${id}`); removed.add(`${kind}:${id}`); };
+  const get = (kind) => async (id) => gone(`${kind}:${id}`);
+  return {
+    order, removed,
+    threads: { list: () => ({ all: async () => [] }), delete: async () => {} },
+    catalog: { delete: del('item'), get: get('item') },
+    agents: { delete: del('agent'), get: get('agent') },
+    avatars: { delete: del('avatar'), get: get('avatar') },
+    intellects: { delete: del('intellect'), get: get('intellect') },
+  };
+}
+
+test('createTeardown: a stop signal during a slow provision waits for it, then removes what it made', async () => {
+  const k = teardownKaltura();
+  const state = { ids: undefined, catalog: undefined };
+  const logs = [];
+  // Setup finishes 30 ms after teardown starts, as a slow provision would.
+  const settle = () => new Promise((r) => setTimeout(() => { state.ids = { configId: 5, agentId: 'a1', avatarId: 'v1' }; r(undefined); }, 30));
+  const teardown = createTeardown({ kaltura: k, admin: async () => 'ks', state, settle, runId: 'abc123', log: (m) => logs.push(m), logIds: (m) => logs.push(m) });
+  assert.equal(await teardown(), 0);
+  assert.deepEqual(k.order.sort(), ['agent:a1', 'avatar:v1', 'intellect:5']);
+  assert.ok(logs.some((l) => l.startsWith('teardown verified')));
+});
+
+test('createTeardown: with no ids it does not claim anything was verified', async () => {
+  const k = teardownKaltura();
+  const logs = [];
+  const teardown = createTeardown({ kaltura: k, admin: async () => 'ks', state: {}, settle: async () => {}, runId: 'abc123', log: (m) => logs.push(m), logIds: (m) => logs.push(m) });
+  assert.equal(await teardown(), 1);
+  assert.deepEqual(k.order, []);
+  assert.ok(!logs.some((l) => /teardown verified/.test(l)));
+  assert.match(logs[0], /no ids were recorded.*sdk-pages-check-abc123/);
+});
+
+test('createTeardown: something still present is a failure that names the ids', async () => {
+  const k = teardownKaltura();
+  k.avatars.get = async () => ({ id: 'v1' });
+  const logs = [];
+  const teardown = createTeardown({ kaltura: k, admin: async () => 'ks', state: { ids: { configId: 5, agentId: 'a1', avatarId: 'v1' }, catalog: { itemId: 'i1' } }, settle: async () => {}, runId: 'abc123', log: (m) => logs.push(m), logIds: (m) => logs.push(`${m} [agent a1, avatar v1, item i1]`) });
+  assert.equal(await teardown(), 1);
+  assert.ok(logs.some((l) => /avatar: still present.*avatar v1/.test(l)));
+  assert.ok(!logs.some((l) => /teardown verified/.test(l)));
+});
+
+test('createTeardown: a partial run without an agent id never lists threads without a filter', async () => {
+  const k = teardownKaltura();
+  let listed = 0;
+  k.threads.list = () => { listed++; return { all: async () => [] }; };
+  const teardown = createTeardown({ kaltura: k, admin: async () => 'ks', state: { ids: { configId: 9 } }, settle: async () => {}, runId: 'abc123', log: () => {}, logIds: () => {} });
+  assert.equal(await teardown(), 0);
+  assert.equal(listed, 0);
+  assert.deepEqual(k.order, ['intellect:9']);
 });

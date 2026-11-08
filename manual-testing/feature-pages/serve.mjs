@@ -35,10 +35,10 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 /**
  * @param {string[]} argv
  * @param {Record<string, string|undefined>} [env]
- * @returns {{lan:boolean, port:number, ttlMinutes:number, envFile?:string, emotions:boolean, target?:string}}
+ * @returns {{lan:boolean, port:number, ttlMinutes:number, envFile?:string, emotions:boolean}}
  */
 export function parseArgs(argv, env = {}) {
-  const out = { lan: false, port: 0, ttlMinutes: 60, envFile: env.ENV_FILE || undefined, emotions: false, target: undefined };
+  const out = { lan: false, port: 0, ttlMinutes: 60, envFile: env.ENV_FILE || undefined, emotions: false };
   const num = (/** @type {string} */ flag, /** @type {string|undefined} */ v, /** @type {number} */ min, /** @type {number} */ max) => {
     const n = Number(v);
     if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${flag} needs a whole number from ${min} to ${max}.`);
@@ -53,11 +53,27 @@ export function parseArgs(argv, env = {}) {
     else if (a === '--env-file') { out.envFile = argv[++i]; if (!out.envFile) throw new Error('--env-file needs a path.'); }
     else throw new Error(`Unknown argument: ${a}`);
   }
-  if (out.emotions) {
-    if (!env.TARGET) throw new Error('--emotions needs TARGET set to the name of a Limited Availability environment. There is no default.');
-    out.target = env.TARGET;
-  }
   return out;
+}
+
+/**
+ * The environment `--emotions` runs against. Call it after the env files are loaded, because TARGET may be set there. There is no default.
+ * @param {Record<string, string|undefined>} env
+ */
+export function emotionsTarget(env) {
+  if (!env.TARGET) throw new Error('--emotions needs TARGET set to the name of a Limited Availability environment. There is no default.');
+  return env.TARGET;
+}
+
+/**
+ * Load the env files the same way for the server and the live script: the file named by `--env-file` or ENV_FILE
+ * (it must be readable), then the repo `.env`, then the `.env` one level up. Values already set are kept.
+ * @param {string|undefined} envFile
+ */
+export function loadEnvironmentFiles(envFile) {
+  if (envFile && !loadEnvFile(resolve(envFile))) throw new Error('Could not read the file given to --env-file.');
+  loadEnvFile(resolve(repoRoot, '.env'));
+  loadEnvFile(resolve(repoRoot, '../.env'));
 }
 
 /** @param {boolean} emotions */
@@ -162,12 +178,10 @@ export function pickTarget(env) {
   return 'prod';
 }
 
-/** @param {Record<string, string|undefined>} env @param {{envFile?:string, emotions:boolean, target?:string}} args */
+/** @param {Record<string, string|undefined>} env @param {{envFile?:string, emotions:boolean}} args */
 function resolveEnvironment(env, args) {
-  if (args.envFile && !loadEnvFile(resolve(args.envFile))) throw new Error('Could not read the file given to --env-file.');
-  loadEnvFile(resolve(repoRoot, '.env'));
-  loadEnvFile(resolve(repoRoot, '../.env'));
-  if (args.emotions) return resolveTarget(/** @type {string} */ (args.target));
+  loadEnvironmentFiles(args.envFile);
+  if (args.emotions) return resolveTarget(emotionsTarget(env));
   return resolveTarget(pickTarget(env));
 }
 
@@ -324,10 +338,63 @@ export function installCrashGuards(proc, shutdown, log) {
   }
 }
 
+/**
+ * Build the cleanup routine. It first waits for any setup still running (`settle`), so it never
+ * races a slow provision, then deletes everything and checks each piece is gone. Returns 0 only
+ * when it checked. With no ids recorded it cannot check anything, so it says so and returns 1.
+ * @param {{kaltura:any, admin:(ttl?:number)=>Promise<any>, state:{ids?:{configId?:number, agentId?:string, avatarId?:string}, catalog?:{itemId:string}}, settle:()=>Promise<unknown>, runId:string, log:(m:string)=>void, logIds:(m:string)=>void}} ctx
+ */
+export function createTeardown({ kaltura, admin, state, settle, runId, log, logIds }) {
+  return async function teardown() {
+    await settle();
+    const { ids, catalog } = state;
+    if (!ids && !catalog) {
+      log(`teardown: no ids were recorded, so nothing could be checked. Look for agents tagged ${RUN_PREFIX}-${runId}`);
+      return 1;
+    }
+    const problems = [];
+    const ks = await admin().catch(() => undefined);
+    if (!ks) { logIds('teardown: could not mint an admin token, so nothing was removed. Still present'); return 1; }
+    const step = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ fn) => { try { await fn(); } catch (err) { problems.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message || err))}`); } };
+    const agentId = ids?.agentId; const avatarId = ids?.avatarId; const configId = ids?.configId;
+    if (agentId) {
+      await step('threads', async () => {
+        const threads = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
+        if (threads.length) await kaltura.threads.delete(threads.map((t) => t.id), ks, { confirmPermanent: true });
+      });
+    }
+    if (catalog) await step('catalog item', () => kaltura.catalog.delete(catalog.itemId, ks, { confirmPermanent: true }));
+    if (agentId) await step('agent', () => kaltura.agents.delete(agentId, ks, { confirmPermanent: true }));
+    if (avatarId) await step('avatar', () => kaltura.avatars.delete(avatarId, ks, { confirmPermanent: true }));
+    if (configId) await step('intellect', () => kaltura.intellects.delete(configId, ks, { confirmPermanent: true }));
+    const gone = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ get) => {
+      try { await get(); problems.push(`${what}: still present`); } catch (err) {
+        const e = /** @type {any} */ (err);
+        if (!isNotFound(e)) problems.push(`${what}: ${redact(String(e?.code || e?.message))}`);
+      }
+    };
+    if (agentId) await gone('agent', () => kaltura.agents.get(agentId, ks));
+    if (avatarId) await gone('avatar', () => kaltura.avatars.get(avatarId, ks));
+    if (configId) await gone('intellect', () => kaltura.intellects.get(configId, ks));
+    if (catalog) await gone('catalog item', () => kaltura.catalog.get(catalog.itemId, ks));
+    if (agentId) {
+      await step('thread check', async () => {
+        const left = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
+        if (left.length) problems.push(`threads: ${left.length} left`);
+      });
+    }
+    if (problems.length) { for (const p of problems) logIds(`teardown problem: ${p}`); return 1; }
+    log('teardown verified: agent, avatar, intellect, catalog item and threads are gone');
+    return 0;
+  };
+}
+
 async function main() {
-  let args;
-  try { args = parseArgs(process.argv.slice(2), process.env); } catch (err) { console.error(/** @type {Error} */ (err).message); process.exit(1); }
-  const target = resolveEnvironment(process.env, args);
+  let args; let target;
+  try {
+    args = parseArgs(process.argv.slice(2), process.env);
+    target = resolveEnvironment(process.env, args);
+  } catch (err) { console.error(/** @type {Error} */ (err).message); process.exit(1); }
   const kaltura = managementFor(target);
   const admin = (ttlSeconds = 600) => kaltura.sessions.createAdminToken({ userId: `${RUN_PREFIX}-admin`, ttlSeconds });
   const pages = pageList(args.emotions);
@@ -364,43 +431,13 @@ async function main() {
     return { itemId: item.itemId, scopeA, scopeB };
   });
 
-  async function teardown() {
-    const problems = [];
-    await catalogInit.settled();
-    const ks = await admin().catch(() => undefined);
-    if (!ks) { logIds('teardown: could not mint an admin token, so nothing was removed. Still present'); return 1; }
-    const step = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ fn) => { try { await fn(); } catch (err) { problems.push(`${what}: ${redact(String(/** @type {any} */ (err)?.code || /** @type {any} */ (err)?.message || err))}`); } };
-    const agentId = ids?.agentId; const avatarId = ids?.avatarId; const configId = ids?.configId;
-    if (agentId) {
-      await step('threads', async () => {
-        const threads = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
-        if (threads.length) await kaltura.threads.delete(threads.map((t) => t.id), ks, { confirmPermanent: true });
-      });
-    }
-    if (catalog) await step('catalog item', () => kaltura.catalog.delete(catalog.itemId, ks, { confirmPermanent: true }));
-    if (agentId) await step('agent', () => kaltura.agents.delete(agentId, ks, { confirmPermanent: true }));
-    if (avatarId) await step('avatar', () => kaltura.avatars.delete(avatarId, ks, { confirmPermanent: true }));
-    if (configId) await step('intellect', () => kaltura.intellects.delete(configId, ks, { confirmPermanent: true }));
-    const gone = async (/** @type {string} */ what, /** @type {()=>Promise<any>} */ get) => {
-      try { await get(); problems.push(`${what}: still present`); } catch (err) {
-        const e = /** @type {any} */ (err);
-        if (!isNotFound(e)) problems.push(`${what}: ${redact(String(e?.code || e?.message))}`);
-      }
-    };
-    if (agentId) await gone('agent', () => kaltura.agents.get(agentId, ks));
-    if (avatarId) await gone('avatar', () => kaltura.avatars.get(avatarId, ks));
-    if (configId) await gone('intellect', () => kaltura.intellects.get(configId, ks));
-    if (catalog) await gone('catalog item', () => kaltura.catalog.get(catalog.itemId, ks));
-    if (agentId) {
-      await step('thread check', async () => {
-        const left = await kaltura.threads.list(ks, { filter: { agentIdEquals: agentId } }).all();
-        if (left.length) problems.push(`threads: ${left.length} left`);
-      });
-    }
-    if (problems.length) { for (const p of problems) logIds(`teardown problem: ${p}`); return 1; }
-    log('teardown verified: agent, avatar, intellect, catalog item and threads are gone');
-    return 0;
-  }
+  /** @type {Promise<unknown>|undefined} */
+  let setupP = undefined;
+  const teardown = createTeardown({
+    kaltura, admin, runId, log, logIds,
+    state: { get ids() { return ids; }, get catalog() { return catalog; } },
+    settle: async () => { await Promise.all([setupP?.catch(() => {}), catalogInit.settled()]); },
+  });
 
   async function shutdown(/** @type {number} */ code = 0) {
     if (stopping) return;
@@ -420,7 +457,8 @@ async function main() {
   for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(name, onSignal(name));
   installCrashGuards(process, shutdown, log);
 
-  try {
+  let setupFailed = false;
+  setupP = (async () => {
     log(`target ${target.name}; creating the throwaway agent`);
     await createAgent(kaltura, admin, runId, (made) => { ids = made; });
     conv = await kaltura.sessions.createConversationToken({ configId: ids.configId, agentId: ids.agentId, userId, ttlSeconds: args.ttlMinutes * 60 });
@@ -428,12 +466,17 @@ async function main() {
       const widget = await kaltura.sessions.createWidgetToken({ widgetId: ids.widgetId });
       init = await kaltura.application.appInit(widget.ks);
     }
+  })();
+  try {
+    await setupP;
   } catch (err) {
+    setupFailed = true;
     const failed = /** @type {any} */ (err);
     logIds(`setup failed: ${String(failed?.code || failed?.message || err)}${failed?.body?.failedStep ? ` at ${failed.body.failedStep}` : ''}. Removing what was made`);
-    await shutdown(1);
-    return;
   }
+  // A stop signal during setup already started teardown. It waited for setup, so leave the exit to it.
+  if (stopping) return;
+  if (setupFailed) { await shutdown(1); return; }
 
   const csp = buildCsp(connectOrigins([target.genieUrl, init?.conversationManagerUrl, init?.srsBaseUrl]));
 

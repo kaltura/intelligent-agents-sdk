@@ -33,8 +33,9 @@ $('notice').addEventListener('click', async () => {
     if (line.startsWith(NOTICE_PREFIX)) warnings.push(line);
     else original.apply(console, a);
   };
-  const session = new KalturaAvatarSession({ ...base(), token: cfg.avatarToken });
+  let session;
   try {
+    session = new KalturaAvatarSession({ ...base(), token: cfg.avatarToken });
     await session.connect();
     session.submitStructuredDataForm({ email: 'demo@example.com' });
     session.submitStructuredDataForm({ email: 'demo@example.com' });
@@ -44,7 +45,7 @@ $('notice').addEventListener('click', async () => {
   } finally {
     console.warn = original;
     button.disabled = false;
-    try { await session.disconnect(); } catch { /* already closed */ }
+    try { await session?.disconnect(); } catch { /* already closed */ }
   }
   document.body.dataset.noticeDone = 'true';
 });

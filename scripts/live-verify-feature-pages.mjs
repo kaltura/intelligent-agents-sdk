@@ -18,11 +18,17 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { leakCounts } from './lib/leak-scan.mjs';
+import { loadEnvironmentFiles } from '../manual-testing/feature-pages/serve.mjs';
 import { launchBrowser, warmFirefoxMedia, routeSocketIo, contextOptions, repoRoot, redact } from './live-verify-kickoff-shared.mjs';
 
 const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
 if (!['chromium', 'firefox', 'webkit'].includes(engineName)) {
   console.error(`Unknown LIVE_VERIFY_BROWSER "${engineName}". Use chromium, firefox or webkit.`);
+  process.exit(1);
+}
+// The same env files serve.mjs reads. The leak scan needs the secret values too, so the parent loads them.
+try { loadEnvironmentFiles(process.env.ENV_FILE); } catch (err) {
+  console.error(/** @type {Error} */ (err).message);
   process.exit(1);
 }
 const emotions = process.argv.includes('--emotions');
@@ -62,7 +68,7 @@ function startServer() {
     return { code: /** @type {number|null} */ (code === 'timeout' ? null : code), log };
   };
   const urlPromise = new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error('server did not print a URL in 5 minutes')), 300_000);
+    const t = setTimeout(() => { stop().then(() => fail(new Error('server did not print a URL in 5 minutes, so it was stopped'))); }, 300_000);
     const poll = setInterval(() => {
       const m = /^Open: (\S+)/m.exec(log);
       if (m) { clearTimeout(t); clearInterval(poll); ok(m[1]); }
@@ -87,11 +93,12 @@ async function drive(base) {
     await routeSocketIo(context);
     const page = await context.newPage();
     page.on('pageerror', (e) => problems.push(`pageerror: ${e?.message || e}`));
-    // Playwright injects a style element while it takes a screenshot, and the page's CSP refuses it. Every engine words that message with "style-src". It is not a page error, so it is counted and not failed on.
+    // Playwright injects a style element while it takes a screenshot, and the page's CSP refuses it. Every engine words that message with "style-src". Only such messages during a screenshot, or 500 ms after, are counted and not failed on.
     let ignored = 0;
+    let shotUntil = 0;
     page.on('console', (m) => {
       if (m.type() !== 'error') return;
-      if (/style-src/i.test(m.text())) { ignored++; return; }
+      if (Date.now() < shotUntil && /style-src/i.test(m.text())) { ignored++; return; }
       problems.push(`console.error: ${m.text()}`);
     });
 
@@ -99,7 +106,10 @@ async function drive(base) {
       await page.goto(`${base}manual-testing/feature-pages/${name}.html`);
       await page.waitForSelector('body[data-ready="true"]', { timeout: 20_000 });
     };
-    const shot = async (name) => { await page.screenshot({ path: join(outDir, `${engineName}-${name}.png`), fullPage: true }); };
+    const shot = async (name) => {
+      shotUntil = Infinity;
+      try { await page.screenshot({ path: join(outDir, `${engineName}-${name}.png`), fullPage: true }); } finally { shotUntil = Date.now() + 500; }
+    };
     const text = (sel) => page.locator(sel).innerText();
     const waitData = (key, value, timeout = 90_000) => page.waitForFunction(([k, v]) => document.body.dataset[k] === v, [key, value], { timeout });
     const stepClick = async (sel, step) => { await page.click(sel); await waitData('step', step); };
@@ -217,8 +227,9 @@ async function main() {
 
   // Leak scan: counts only. It reads the raw server log and raw script output, and every text file in out/.
   const files = readdirSync(outDir).filter((f) => /\.(log|txt|json)$/.test(f)).map((f) => readFileSync(join(outDir, f), 'utf8'));
-  const { secretHits, ksHits } = leakCounts([log, printedRaw.join('\n'), ...files], process.env);
-  check('no-secret-or-ks-in-logs', secretHits === 0 && ksHits === 0, { secretHits, ksHits });
+  const { secretHits, ksHits, secretsChecked } = leakCounts([log, printedRaw.join('\n'), ...files], process.env);
+  // With no admin secret value to look for, the scan proves nothing, so that fails too.
+  check('no-secret-or-ks-in-logs', secretsChecked > 0 && secretHits === 0 && ksHits === 0, { secretHits, ksHits, secretsChecked });
   process.exit(failed ? 1 : 0);
 }
 
