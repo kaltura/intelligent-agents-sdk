@@ -169,3 +169,23 @@ test('the latency note says the comparison is paired and names the scenarios', (
   assert.match(out, /Paired comparison/);
   assert.match(out, /12 pair\(s\) from 1 scenario\(s\): joy/);
 });
+
+test('a FAIL scenario opens, shows FAIL in its head and gets the red bar; a passing one stays closed and blue', () => {
+  const a = scenario('a', [['happy']], { title: 'A' });
+  const b = scenario('b', [['happy']], { title: 'B' });
+  const r = results({
+    scenarios: [a, b],
+    turns: [
+      ...many(3, (t) => turn({ scenario: 'a', trial: t, segments: avatar('x', 'sad') })),
+      ...many(40, (t) => turn({ scenario: 'b', trial: t, segments: avatar('x', 'happy') })),
+    ],
+    parserChecks: GOOD_PARSER,
+  });
+  const out = html(r);
+  assert.match(out, /<details id="s-a" open>/);
+  const head = out.slice(out.indexOf('id="s-a"'), out.indexOf('</summary>', out.indexOf('id="s-a"')));
+  assert.match(head, /FAIL<\/span>/);
+  assert.match(out, /fill="#a40e26" fill-opacity="0.85"/);
+  assert.match(out, /<details id="s-b">/);
+  assert.equal(out.split('fill="#a40e26"').length - 1, 1);
+});

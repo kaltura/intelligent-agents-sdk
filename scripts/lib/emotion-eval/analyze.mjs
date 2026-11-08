@@ -162,6 +162,8 @@ export function analyze(results) {
       avgAvatarSegments: ts.length ? segs / ts.length : null,
       density: segs ? emoSegs / segs : null,
       repeats,
+      // Judged on all scored turns of the scenario: a turn with no label counts as a miss. Target is the match target.
+      status: ts.length ? judge(wilson(success, ts.length), 'atLeast', THRESHOLDS.match.target) : 'NO_DATA',
       weak: ts.length > 0 && wilson(success, ts.length).hi < 0.5,
       flaky: ts.length >= 4 && wilson(success, ts.length).lo < 0.5 && wilson(success, ts.length).hi > 0.5 && success > 0 && success < ts.length,
     };
@@ -171,7 +173,8 @@ export function analyze(results) {
   const all = onScored.map(F);
   const attempted = all.length;
   const withLabel = all.filter((f) => f.valid.length).length;
-  const matchedGivenLabel = onScored.filter((t) => F(t).ok && F(t).valid.length && matches(F(t), specOf(t))).length;
+  const okLabeled = onScored.filter((t) => F(t).ok && F(t).valid.length);
+  const matchedGivenLabel = okLabeled.filter((t) => matches(F(t), specOf(t))).length;
   const neutralTurns = onScored.filter((t) => scenarios.find((s) => s.id === t.scenario)?.expectNeutral && F(t).valid.length);
   const neutralFp = neutralTurns.filter((t) => F(t).valid.some((v) => v !== 'neutral')).length;
   const repeats = all.reduce((n, f) => n + f.repeats, 0);
@@ -204,7 +207,7 @@ export function analyze(results) {
 
   const soft = {
     coverage: { name: 'Coverage: turns with at least one emotion', ...rateDim(withLabel, attempted, THRESHOLDS.coverage) },
-    match: { name: 'Expected match: turns whose label is in the accepted set (of turns with a label)', ...rateDim(matchedGivenLabel, withLabel, THRESHOLDS.match) },
+    match: { name: 'Expected match: turns whose label is in the accepted set (of turns with a label)', ...rateDim(matchedGivenLabel, okLabeled.length, THRESHOLDS.match) },
     avatarChunks: { name: 'Avatar chunks: turns that came back as avatar, not plain text', ...rateDim(all.filter((f) => f.avatarChunks).length, attempted, THRESHOLDS.avatarChunks) },
     neutralFalsePositive: { name: 'False positive on neutral topics (of labeled turns)', ...rateDim(neutralFp, neutralTurns.length, THRESHOLDS.neutralFalsePositive) },
     emptyText: { name: 'Empty text: turns with no spoken text', ...rateDim(all.filter((f) => f.ok && f.empty).length, all.filter((f) => f.ok).length, THRESHOLDS.emptyText) },
@@ -224,6 +227,17 @@ export function analyze(results) {
     placement: { name: 'Placement: emotion on a chunk that is not an avatar segment start', ...hardDim([...on, ...send].reduce((n, t) => n + F(t).misplaced, 0), [...on, ...send].reduce((n, t) => n + F(t).emotionChunks, 0)) },
     avatarOff: { name: 'Avatar off, emotions on: turns that still carry an emotion (must be refused or inert)', ...hardDim(avatarOff.filter((t) => F(t).ok && F(t).emotionChunks > 0).length, avatarOff.filter((t) => F(t).ok).length) },
     parser: { name: 'SDK parser checks (offline): checks that failed', ...hardDim(parserChecks.filter((c) => !c.pass).length, parserChecks.length) },
+  };
+
+  // For each hard dimension: how many turns were tried on the paths it reads, and how many of those were usable.
+  // A dimension with attempts but no usable turn is an outage. One with no attempts was not run.
+  const tally = (/** @type {any[]} */ ts) => ({ attempted: ts.length, usable: ts.filter((t) => F(t).ok).length });
+  const hardAttempts = {
+    leakage: tally(off),
+    validity: tally([...on, ...avatarOff, ...send, ...off]),
+    placement: tally([...on, ...send]),
+    avatarOff: tally(avatarOff),
+    parser: { attempted: parserChecks.length, usable: parserChecks.length },
   };
 
   // How the avatar-off path really behaves, as an observation.
@@ -259,7 +273,7 @@ export function analyze(results) {
     widgetOnly: onScored.filter((t) => F(t).widgets > 0 && F(t).avatarChunks === 0).length,
   };
 
-  const model = { meta: results?.meta ?? {}, notes: runNotes(results?.meta), counts: { turns: turns.length, throttled: throttledTurns.length, on: on.length, off: off.length, avatarOff: avatarOff.length, send: send.length }, perScenario, soft, hard, latency, extra, thresholds: THRESHOLDS };
+  const model = { meta: results?.meta ?? {}, notes: runNotes(results?.meta), hardAttempts, counts: { turns: turns.length, throttled: throttledTurns.length, on: on.length, off: off.length, avatarOff: avatarOff.length, send: send.length }, perScenario, soft, hard, latency, extra, thresholds: THRESHOLDS };
   const verdict = judgeAll(model);
   const insights = buildInsights(model);
   return { ...model, verdict, insights };
@@ -312,13 +326,19 @@ function rollUp(model) {
   const hardNoData = hard.filter((d) => /** @type {any} */ (d).status === 'NO_DATA');
   const softFail = soft.filter((d) => /** @type {any} */ (d).status === 'FAIL');
   const softInconclusive = soft.filter((d) => /** @type {any} */ (d).status === 'INCONCLUSIVE' || /** @type {any} */ (d).status === 'NO_DATA');
-  const errors = /** @type {any} */ (model.soft.errors);
   if (hardFail.length) return { label: 'FAIL', exitCode: 1, tone: 'bad', summary: `${hardFail.length} hard dimension(s) failed. These must be 100%.` };
-  // Empty hard dimensions caused by failing turns are an outage, not a lack of trials.
-  if (hardNoData.length && errors?.status === 'FAIL') {
-    return { label: 'FAIL', exitCode: 1, tone: 'bad', summary: `${model.extra.failedTurns.n} of ${model.extra.failedTurns.total} turns failed, so ${hardNoData.length} hard dimension(s) have no data. Check the target, the credentials and the error codes in the report.` };
+  // A hard dimension is an outage only when turns were tried for it and none was usable. Missing data from a path
+  // that was never run (for example `--paths on`) is not an outage, so the exit code does not depend on --paths.
+  const entries = Object.entries(model.hard).filter(([, d]) => /** @type {any} */ (d).status === 'NO_DATA');
+  const outage = entries.filter(([k]) => { const x = model.hardAttempts?.[k]; return x && x.attempted > 0 && x.usable === 0; }).map(([k]) => k);
+  if (outage.length) {
+    const f = model.extra?.failedTurns;
+    return { label: 'FAIL', exitCode: 1, tone: 'bad', summary: `${f ? `${f.n} of ${f.total} turns failed. ` : ''}No turn was usable for: ${outage.join(', ')}. Check the target, the credentials and the error codes in the report.` };
   }
-  if (hardNoData.length) return { label: 'INCOMPLETE', exitCode: 3, tone: 'warn', summary: `${hardNoData.length} hard dimension(s) had no data. Run with emotions-off trials and the other paths.` };
+  if (hardNoData.length) {
+    const why = entries.map(([k]) => { const x = model.hardAttempts?.[k]; return `${k} (${x && x.attempted === 0 ? 'not run, add its path to --paths' : 'no emotion data seen'})`; });
+    return { label: 'INCOMPLETE', exitCode: 3, tone: 'warn', summary: `${hardNoData.length} hard dimension(s) had no data: ${why.join(', ')}.` };
+  }
   if (softFail.length) return { label: 'SOFT FAIL', exitCode: 2, tone: 'bad', summary: `All hard dimensions pass. ${softFail.length} quality dimension(s) are confidently below target.` };
   if (softInconclusive.length) return { label: 'PASS WITH WARNINGS', exitCode: 0, tone: 'warn', summary: `All hard dimensions pass. ${softInconclusive.length} quality dimension(s) are not decided at this sample size.` };
   return { label: 'PASS', exitCode: 0, tone: 'good', summary: 'All hard dimensions pass and every quality dimension is above target.' };

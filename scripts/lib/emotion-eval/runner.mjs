@@ -124,7 +124,7 @@ export function liveTurn(kaltura, convKs, timeoutMs, deps = {}) {
     const t0 = now();
     const segments = [];
     let first = null, tid = threadId;
-    // One abort signal for both paths. On a timeout the request is cancelled, so it stops counting against the server's request limit.
+    // One abort signal for both paths. On a timeout the abort closes the connection, so the turn stops running. The server still counted the request when it started.
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
     const failure = (/** @type {any} */ err) => (ac.signal.aborted ? { code: 'timeout', message: 'turn timed out' } : errInfo(err));

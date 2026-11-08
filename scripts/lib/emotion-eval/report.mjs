@@ -4,8 +4,7 @@
  * Closed `<details>` hide the turn lists; pass `expandAll` to open them for printing.
  */
 import { EMOTIONS } from './scenarios.mjs';
-import { turnFacts, THRESHOLDS } from './analyze.mjs';
-import { judge } from './stats.mjs';
+import { turnFacts } from './analyze.mjs';
 
 /** Escape text for HTML text and attribute positions. @param {unknown} v */
 export function esc(v) {
@@ -126,7 +125,7 @@ function coverageSvg(a) {
     const y = top + i * rowH + rowH / 2;
     const r = s.success_ci;
     g += `<text x="${left - 8}" y="${y + 4}" text-anchor="end">${esc(clip(s.title, 32))}</text>`;
-    g += `<rect x="${x(0)}" y="${y - 7}" width="${Math.max(0, r.rate * plotW)}" height="14" fill="${s.weak ? '#a40e26' : '#0b4fb3'}"${s.weak ? ' fill-opacity="0.85"' : ''}/>`;
+    g += `<rect x="${x(0)}" y="${y - 7}" width="${Math.max(0, r.rate * plotW)}" height="14" fill="${s.status === 'FAIL' ? '#a40e26' : '#0b4fb3'}"${s.status === 'FAIL' ? ' fill-opacity="0.85"' : ''}/>`;
     g += `<line x1="${x(r.lo)}" y1="${y}" x2="${x(r.hi)}" y2="${y}" stroke="#111" stroke-width="2"/><line x1="${x(r.lo)}" y1="${y - 5}" x2="${x(r.lo)}" y2="${y + 5}" stroke="#111" stroke-width="2"/><line x1="${x(r.hi)}" y1="${y - 5}" x2="${x(r.hi)}" y2="${y + 5}" stroke="#111" stroke-width="2"/>`;
     const cov = s.coverage.rate ?? 0;
     g += `<path d="M${x(cov)} ${y - 6} l5 6 l-5 6 l-5 -6 z" fill="#fff" stroke="#111" stroke-width="1.5"/>`;
@@ -206,7 +205,7 @@ function drill(s, spec, turns, open) {
         : '<div class="seg"><span class="t">(no segments)</span></div>';
     return `<tr><td class="num">${esc(t.trial)}.${esc(t.turnIndex)}</td><td><span class="pill">${esc(t.mode)}</span></td><td class="prompt">${esc(clip(String(t.prompt ?? ''), 140))}</td><td>${segHtml}</td><td class="num">${ms(t.firstChunkMs)}<br>${ms(t.totalMs)}</td></tr>`;
   }).join('');
-  const status = specTurns.some((/** @type {any} */ x) => x.edge === 'empty') ? 'UNSCORED' : s.n === 0 ? 'NO_DATA' : judge(s.success_ci, 'atLeast', THRESHOLDS.match.target);
+  const status = specTurns.some((/** @type {any} */ x) => x.edge === 'empty') ? 'UNSCORED' : s.status;
   const accept = [...new Set(specTurns.flatMap((/** @type {any} */ x) => x.accept ?? []))];
   return `<details id="s-${esc(s.id)}"${open ? ' open' : ''}><summary><h3>${esc(s.title)}</h3>${badge(status)} <span class="pill">${s.success}/${s.n} accepted</span> <span class="pill">pass^3 ${s.passK3 === null ? 'n/a' : pct(s.passK3)}</span>${s.flaky ? ' <span class="pill">flaky</span>' : ''}</summary>
 <div class="body"><p class="why">${esc(spec?.why ?? '')} Accepted: ${accept.length ? esc(accept.join(', ')) : 'any valid label'}.</p>
@@ -239,7 +238,7 @@ export function renderReport(results, a, opts = {}) {
     ? `<ul class="ins">${a.insights.map((/** @type {any} */ i) => `<li class="${esc(i.level)}"><span class="tag">${i.level === 'bad' ? 'PROBLEM' : i.level === 'warn' ? 'WATCH' : 'NOTE'}</span>${esc(i.text)}</li>`).join('')}</ul>`
     : '<p>No insights. No data to read.</p>';
   const parser = (Array.isArray(results?.parserChecks) ? results.parserChecks : []).map((/** @type {any} */ c) => `<tr><td>${esc(c.name)}</td><td>${badge(c.pass ? 'PASS' : 'FAIL')}</td><td>${esc(c.detail)}</td></tr>`).join('');
-  const drills = a.perScenario.map((/** @type {any} */ s) => drill(s, scenarios.find((/** @type {any} */ x) => x.id === s.id), turns.filter((/** @type {any} */ t) => t.scenario === s.id), !!opts.expandAll || s.weak || s.flaky)).join('');
+  const drills = a.perScenario.map((/** @type {any} */ s) => drill(s, scenarios.find((/** @type {any} */ x) => x.id === s.id), turns.filter((/** @type {any} */ t) => t.scenario === s.id), !!opts.expandAll || s.status === 'FAIL' || s.flaky)).join('');
   const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
   const wrapTables = (/** @type {string} */ x) => x.replace(/<table/g, '<div class="scroll"><table').replace(/<\/table>/g, '</table></div>');
   return wrapTables(`<!doctype html>
@@ -259,7 +258,7 @@ export function renderReport(results, a, opts = {}) {
 <h2>Expected-emotion rate per scenario</h2>${coverageSvg(a)}
 <h2>Latency, emotions on vs off</h2>${latencySvg(a)}
 <p class="legend">Paired comparison. Each emotions-off turn is matched to the emotions-on turn with the same scenario, trial and turn number, and only matched pairs count. Median of the per-pair total time difference (on minus off): ${a.latency.totalDiff ? `${Math.round(a.latency.totalDiff.diff)} ms, 95% interval ${Math.round(a.latency.totalDiff.lo)} to ${Math.round(a.latency.totalDiff.hi)} ms` : 'not enough pairs'}. Budget ${ms(a.latency.budgetMs)}. ${a.latency.pairs} pair(s) from ${a.latency.scenarios.length} scenario(s): ${esc(a.latency.scenarios.join(', ') || 'none')}. The bars show the medians of those same turns.</p>
-<h2>Turns by scenario</h2><p class="legend">Weak and flaky scenarios start open.</p>${drills}
+<h2>Turns by scenario</h2><p class="legend">Failing and flaky scenarios start open. A scenario status compares the share of its scored turns that showed an accepted label (a turn with no label counts as a miss) with the 70% target, using the 95% interval.</p>${drills}
 <h2>SDK parser checks (offline)</h2>
 <table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>${parser || '<tr><td colspan="3">Not run.</td></tr>'}</tbody></table>
 <footer>Generated from the raw results file only. Accepted label sets are judgments, written with a reason per scenario in scenarios.mjs. Intervals are Wilson 95%. This page makes no network request and runs no script.</footer>

@@ -407,5 +407,81 @@ test('the pooled match counts only ok turns, like the per-scenario match', () =>
   const a = analyze(results({ scenarios: [sc], turns, parserChecks: GOOD_PARSER }));
   assert.equal(a.perScenario[0].matched, 1);
   assert.equal(a.soft.match.k, 1);
+  assert.equal(a.soft.match.n, 1);
+});
+
+test('the pooled match base is the ok turns that have a label; coverage keeps the labelled turns', () => {
+  const sc = scenario('joy', [['happy']]);
+  const turns = [
+    turn({ trial: 1, segments: avatar('Hi.', 'happy') }),
+    turn({ trial: 2, segments: [...avatar('Hi.', 'happy'), chunk('error', 'Internal server error')] }),
+    turn({ trial: 3, segments: avatar('Hi.', 'sad') }),
+  ];
+  const a = analyze(results({ scenarios: [sc], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.soft.coverage.k, 3);
   assert.equal(a.soft.match.n, 2);
+  assert.equal(a.soft.match.k, 1);
+});
+
+// ── outage versus a path that was not run ───────────────────────────────────
+
+const PATH_SC = scenario('joy', [['happy']], { send: true, avatarOff: true });
+const okOn = (t) => turn({ trial: t, segments: avatar('Great!', 'happy') });
+const bad = (mode) => (t) => turn({ trial: 100 + t, mode, ok: false, error: { code: 'server_error', message: 'failed' }, segments: [] });
+const okMode = {
+  on: okOn,
+  off: (t) => turn({ trial: t, mode: 'off', segments: avatar('Great!') }),
+  'avatar-off': (t) => turn({ trial: t, mode: 'avatar-off', segments: [{ type: 'text', content: 'Great!', segmentStart: true, segmentEnd: true, isFinal: true }] }),
+  send: (t) => turn({ trial: t, mode: 'send', segments: avatar('Great!', 'happy') }),
+};
+/** 30 good and 10 failed turns for each listed mode. */
+const modeTurns = (modes, good = 30, failed = 10) => modes.flatMap((m) => [...many(good, okMode[m]), ...many(failed, bad(m))]);
+
+test('with --paths on only, a 25% error rate is INCOMPLETE (hard dimensions not run), not an outage', () => {
+  const a = analyze(results({ scenarios: [PATH_SC], turns: modeTurns(['on']), parserChecks: GOOD_PARSER }));
+  assert.equal(a.verdict.label, 'INCOMPLETE');
+  assert.equal(a.verdict.exitCode, 3);
+  assert.match(a.verdict.summary, /leakage \(not run, add its path to --paths\)/);
+  assert.match(a.verdict.summary, /avatarOff \(not run/);
+  assert.equal(/Check the target/.test(a.verdict.summary), false);
+});
+
+test('the same error rate with every path run gives the exit code of a quality failure, not an outage', () => {
+  const a = analyze(results({ scenarios: [PATH_SC], turns: modeTurns(['on', 'off', 'avatar-off', 'send']), parserChecks: GOOD_PARSER }));
+  assert.equal(a.verdict.exitCode, 2);
+  assert.equal(a.verdict.label, 'SOFT FAIL');
+});
+
+test('when every turn of one hard path failed, that is an outage (FAIL, exit 1) and names the dimension', () => {
+  const turns = [...modeTurns(['on', 'avatar-off'], 30, 0), ...many(30, bad('off'))];
+  const a = analyze(results({ scenarios: [PATH_SC], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.verdict.label, 'FAIL');
+  assert.equal(a.verdict.exitCode, 1);
+  assert.match(a.verdict.summary, /No turn was usable for: leakage/);
+  assert.match(a.verdict.summary, /30 of 90 turns failed/);
+});
+
+test('turns that worked but showed no emotion data say so, and stay INCOMPLETE', () => {
+  const turns = many(30, (t) => turn({ trial: t, segments: avatar('Great!') }));
+  const a = analyze(results({ scenarios: [scenario('joy', [['happy']])], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.verdict.label, 'INCOMPLETE');
+  assert.equal(a.verdict.exitCode, 3);
+  assert.match(a.verdict.summary, /validity \(no emotion data seen\)/);
+});
+
+// ── per-scenario status ─────────────────────────────────────────────────────
+
+test('a scenario is FAIL when its interval is below the target, and weak only when below 50%', () => {
+  const sc = ['a', 'b', 'c', 'd'].map((id) => scenario(id, [['happy']]));
+  const turns = [
+    ...many(3, (t) => turn({ scenario: 'a', trial: t, segments: avatar('x', 'sad') })),
+    turn({ scenario: 'b', trial: 1, segments: avatar('x', 'happy') }),
+    ...many(40, (t) => turn({ scenario: 'c', trial: t, segments: avatar('x', 'happy') })),
+  ];
+  const by = Object.fromEntries(analyze(results({ scenarios: sc, turns, parserChecks: GOOD_PARSER })).perScenario.map((p) => [p.id, p]));
+  assert.equal(by.a.status, 'FAIL');
+  assert.equal(by.a.weak, false);
+  assert.equal(by.b.status, 'INCONCLUSIVE');
+  assert.equal(by.c.status, 'PASS');
+  assert.equal(by.d.status, 'NO_DATA');
 });

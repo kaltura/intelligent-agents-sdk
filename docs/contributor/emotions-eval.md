@@ -23,7 +23,7 @@ node scripts/live-eval-emotions.mjs --from out/x/emotions-eval-<stamp>.json   # 
 | `--concurrency` | 4 | Turns in flight |
 | `--rate` | 80 | Most turns started per minute. The server allows 100 per minute and answers `rate_limited` above that |
 | `--max-turns` | 400 | Turn budget. Whole trials are dropped, latest first. The report shows a banner when the plan was cut |
-| `--turn-timeout` | 90 | Seconds before a turn is aborted. The request is cancelled, so it stops using the rate limit. The aggregate `send` call has no documented `signal` option, so the eval passes one through to the stream it uses |
+| `--turn-timeout` | 90 | Seconds before a turn is aborted. The abort closes the connection, so the turn stops running. The aggregate `send` call has no documented `signal` option, so the eval passes one through to the stream it uses |
 | `--out` | `out/emotions-eval` | Output folder (git-ignored) |
 | `--strict` | off | Exit 2 on PASS WITH WARNINGS |
 | `--expand` | off | Open every turn list (for printing) |
@@ -64,8 +64,8 @@ The page has no script and makes no request. Status uses an icon and a word, not
 
 | Verdict | Exit | When |
 |---|---|---|
-| FAIL | 1 | A hard dimension has a violation, or turns failed so hard dimensions are empty (an outage) |
-| INCOMPLETE | 3 | A hard dimension has no data, or the run was stopped early (Ctrl-C) |
+| FAIL | 1 | A hard dimension has a violation, or turns were tried for a hard dimension and none was usable (an outage) |
+| INCOMPLETE | 3 | A hard dimension has no data (for example its path was left out of `--paths`), or the run was stopped early (Ctrl-C) |
 | SOFT FAIL | 2 | Every hard dimension passes, a quality dimension is confidently below target |
 | PASS WITH WARNINGS | 0 (2 with `--strict`) | A quality dimension is undecided at this sample size |
 | PASS | 0 | Everything is on the good side |
@@ -92,7 +92,7 @@ Quality dimensions (targets live in `THRESHOLDS` in `scripts/lib/emotion-eval/an
 | Name | Meaning | Target |
 |---|---|---|
 | coverage | Turns with at least one emotion | at least 80% |
-| match | Turns whose label is in the scenario's accepted set | at least 70% |
+| match | Of turns with a label, those whose label is in the scenario's accepted set | at least 70% |
 | avatarChunks | Turns answered as avatar speech, not plain text | at least 90% |
 | neutralFalsePositive | Neutral-topic turns that got a non-neutral label | at most 20% |
 | emptyText | Turns with no spoken text | at most 5% |
@@ -101,7 +101,7 @@ Quality dimensions (targets live in `THRESHOLDS` in `scripts/lib/emotion-eval/an
 | sendCoverage | Coverage on the `send` path | at least 70% |
 | latency | Median total time, on minus off, upper end of the interval | at most 1500 ms |
 
-Per scenario the report also shows pass^3 (the chance that three runs in a row all show an accepted emotion, from the per-trial rate), a flaky mark for mixed results, and the label counts. The JSON analysis also holds segment density (labeled segments per avatar segment).
+The per-scenario status in the report uses the same 70% target but a wider base: all scored turns of the scenario, where a turn with no label counts as a miss. Per scenario the report also shows pass^3 (the chance that three runs in a row all show an accepted emotion, from the per-trial rate), a flaky mark for mixed results, and the label counts. The JSON analysis also holds segment density (labeled segments per avatar segment).
 
 A turn the server refused for rate limiting is retried after the wait it asks for. If it still fails, it is counted as throttled and left out of every metric. An insight names the count.
 

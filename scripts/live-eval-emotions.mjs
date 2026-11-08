@@ -18,8 +18,9 @@
  *   node scripts/live-eval-emotions.mjs --dry-run            # recorded fixture, no network, no TARGET
  *   node scripts/live-eval-emotions.mjs --from results.json  # rebuild the report from saved results
  *
- * Exit code: 0 pass, 1 a hard dimension failed, 2 a quality dimension failed (or is undecided with --strict),
- * 3 a hard dimension had no data, 4 bad usage or run error.
+ * Exit code: 0 pass, 1 a hard dimension failed or turns failed so a hard dimension has no usable turn (an outage),
+ * 2 a quality dimension failed (or is undecided with --strict), 3 a hard dimension had no data (for example a path
+ * left out of --paths) or the run was stopped early, 4 bad usage or run error.
  * Not part of CI: CI has no credentials for this environment.
  */
 import { mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
