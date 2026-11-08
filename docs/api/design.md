@@ -195,7 +195,7 @@ agentScope=<agent id>
 | `createVoice`, `createVisual`, `createFace`, `createBackground` | Omit it for an unscoped item. Otherwise a non-blank string. |
 | `update` | Omit it to leave the tag as it is. A non-blank string sets it. `''` clears it. |
 
-Anything else (`null`, a number, a blank string, or `''` on create) throws `bad_request` before any request. The SDK does not trim the value or check that the id names an existing agent, so it must match the value you list with exactly, including case and spaces.
+Anything else (`null`, a number, a blank string, or `''` on create) throws `bad_request` before any request. The SDK does not trim the value or check that the id names an existing agent, so it must equal the `agentScope` you pass to `catalog.list`, including case and spaces.
 
 ```js
 const voice = await mgmt.catalog.createVoice(mp3, { name, description, agentScope: agentId }, adminKs);
