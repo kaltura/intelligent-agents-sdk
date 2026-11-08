@@ -118,3 +118,55 @@ test('getCustomVariables: is a read, so a dropped connection is resent', async (
   assert.deepEqual(out, { systemVariables: [], customVariables: [] });
   assert.equal(f.calls.length, 2);
 });
+
+/** Fake fetch for the server_error path: answers by URL path and records the paths. */
+function byPath(answers) {
+  const paths = [];
+  const fn = async (url) => {
+    const path = new URL(String(url)).pathname;
+    paths.push(path);
+    const key = Object.keys(answers).find((k) => path.endsWith(k));
+    if (!key) throw new Error(`unexpected path ${path}`);
+    return answers[key];
+  };
+  fn.paths = paths;
+  return fn;
+}
+const SERVER_ERROR = reply(500, { statusCode: 500, message: 'Internal server error' });
+
+test('getCustomVariables: a 500 for an agent whose intellect is gone throws intellect_not_found', async () => {
+  const f = byPath({
+    '/application/getCustomVariables': SERVER_ERROR,
+    '/agent/get': reply(200, { id: AGENT_ID, intellect: { intellectType: 'genie', id: 4242 } }),
+    '/intellect/get': reply(404, { detail: 'Not found' }),
+  });
+  await assert.rejects(
+    () => mgmtWith(f).application.getCustomVariables(AGENT_ID, ADMIN_KS),
+    (e) => e instanceof KalturaError && e.code === 'intellect_not_found' && e.status === 500 && e.retryable === false
+      && /4242/.test(e.detail) && e.cause instanceof KalturaError && e.cause.code === 'server_error',
+  );
+  assert.deepEqual(f.paths.map((p) => p.split('/').slice(-2).join('/')), ['application/getCustomVariables', 'agent/get', 'intellect/get']);
+});
+
+test('getCustomVariables: a 500 is thrown unchanged when the intellect exists', async () => {
+  const f = byPath({
+    '/application/getCustomVariables': SERVER_ERROR,
+    '/agent/get': reply(200, { id: AGENT_ID, intellect: { intellectType: 'genie', id: 4242 } }),
+    '/intellect/get': reply(200, { id: 4242 }),
+  });
+  await assert.rejects(() => mgmtWith(f).application.getCustomVariables(AGENT_ID, ADMIN_KS), (e) => e.code === 'server_error' && e.status === 500);
+});
+
+test('getCustomVariables: a 500 is thrown unchanged when a lookup fails or finds no intellect id', async () => {
+  for (const agent of [reply(503, { message: 'busy' }), reply(200, { id: AGENT_ID, intellect: { intellectType: 'genie' } })]) {
+    const f = byPath({ '/application/getCustomVariables': SERVER_ERROR, '/agent/get': agent, '/intellect/get': reply(404, { detail: 'Not found' }) });
+    await assert.rejects(() => mgmtWith(f).application.getCustomVariables(AGENT_ID, ADMIN_KS), (e) => e.code === 'server_error' && e.status === 500);
+    assert.ok(!f.paths.some((p) => p.endsWith('/intellect/get')));
+  }
+});
+
+test('getCustomVariables: errors other than server_error make no lookup', async () => {
+  const f = byPath({ '/application/getCustomVariables': reply(403, { message: 'nope' }) });
+  await assert.rejects(() => mgmtWith(f).application.getCustomVariables(AGENT_ID, ADMIN_KS), (e) => e.code === 'forbidden');
+  assert.equal(f.paths.length, 1);
+});

@@ -120,12 +120,28 @@ try {
   const vars = await kaltura.application.getCustomVariables(varsAgentId, admin);
   const mine = (vars.customVariables || []).find((v) => v.name === varName);
   const sysNames = (vars.systemVariables || []).map((v) => v.name);
-  record('application.getCustomVariables', !!mine && sysNames.length > 0 && sysNames.every((n) => n.startsWith('sys__')) && (mine.sources || []).some((x) => x.field === 'base_directive'), {
+  const varsOk = !!mine && sysNames.length > 0 && sysNames.every((n) => n.startsWith('sys__')) && (mine.sources || []).some((x) => x.field === 'base_directive');
+  if (!varsOk) failed = true;
+  record('application.getCustomVariables', varsOk, {
     customNames: (vars.customVariables || []).map((v) => v.name),
     systemCount: sysNames.length,
     systemSample: sysNames.slice(0, 4),
     custom: mine,
   });
+
+  // An agent whose intellect was deleted: the SDK throws intellect_not_found.
+  await kaltura.intellects.delete(varsIntellectId, admin, { confirmPermanent: true });
+  const deletedIntellectId = varsIntellectId;
+  varsIntellectId = undefined;
+  try {
+    await kaltura.application.getCustomVariables(varsAgentId, admin);
+    failed = true;
+    record('application.getCustomVariables (deleted intellect)', false, { note: 'resolved instead of throwing' });
+  } catch (err) {
+    const ok = err?.code === 'intellect_not_found' && err?.cause?.code === 'server_error';
+    if (!ok) failed = true;
+    record('application.getCustomVariables (deleted intellect)', ok, { code: err?.code, causeCode: err?.cause?.code, intellectId: deletedIntellectId });
+  }
 
   // ── Avatars#listTemplates ───────────────────────────────────────────────
   const templates = await kaltura.avatars.listTemplates(admin, { pageSize: 5 });

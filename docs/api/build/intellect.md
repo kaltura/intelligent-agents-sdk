@@ -208,7 +208,7 @@ customVariables.map((v) => v.name);              // ['pass_var']
 systemVariables.filter((v) => v.used).length;    // reserved variables the agent reads
 ```
 
-A non-string or non-UUID-shaped `agentId` throws `bad_request`, and so does a missing KS, both before any request. The agent id check is on shape only, so the server can still refuse an id with `bad_request`. An unknown agent throws `agent_not_found`. A dropped connection is resent, like other reads.
+A non-string or non-UUID-shaped `agentId` throws `bad_request`, and so does a missing KS, both before any request. The agent id check is on shape only, so the server can still refuse an id with `bad_request`. An unknown agent throws `agent_not_found`. An agent whose intellect was deleted throws `intellect_not_found`, with the original `server_error` in `err.cause`. A dropped connection is resent, like other reads.
 
 ---
 
