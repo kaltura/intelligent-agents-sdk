@@ -131,6 +131,11 @@ test('assertRequestVars sys__ prefix check is case-sensitive and anchored at the
   assert.deepEqual(assertRequestVars(ok), ok);
 });
 
+test('assertRequestVars accepts names that only look like secrets (only the exact key "secrets" is reserved)', () => {
+  const ok = { 'secrets.x': 'a', secrets_x: 'b', Secrets: 'c', SECRETS: 'd', 'a.secrets': 'e' };
+  assert.deepEqual(assertRequestVars(ok), ok);
+});
+
 test('assertRequestVars does not look inside values (a sys__ key nested in a value fails as non-scalar, not as reserved)', () => {
   assert.throws(() => assertRequestVars({ profile: { sys__x: 1 } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
 });
