@@ -555,6 +555,15 @@ test('intellectConfig.setModelConfiguration writes a validated object; null rese
   assert.deepEqual(sent.model_configuration, modern, 'sonnet-5 id, medium level and include_thoughts sent verbatim');
 });
 
+test('intellectConfig.setModelConfiguration sends every MODEL_IDS entry verbatim', async () => {
+  for (const model_id of MODEL_IDS) {
+    const { cfg, f } = mkMgmt([getDto(), updateEcho]);
+    await cfg.setModelConfiguration(1481, { model_id }, ADMIN);
+    const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
+    assert.deepEqual(sent.model_configuration, { model_id });
+  }
+});
+
 test('intellectConfig.setModelConfiguration sends a model id that is not in MODEL_IDS', async () => {
   const { cfg, f } = mkMgmt([getDto(), updateEcho]);
   await cfg.setModelConfiguration(1481, { model_id: 'my-custom-model' }, ADMIN);

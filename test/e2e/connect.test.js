@@ -488,7 +488,7 @@ test('resilience: a NON-recoverable drop → ended (no reconnect)', async () => 
   assert.equal(reconnecting, false);
 });
 
-test('submitStructuredDataForm warns once per session that it only records the submission', async (t) => {
+test('submitStructuredDataForm warns once per session that the server gets the values and the agent does not', async (t) => {
   const warn = t.mock.method(console, 'warn', () => {});
   const { session, socket } = newSession();
   scriptHappyPath(socket);
@@ -499,6 +499,8 @@ test('submitStructuredDataForm warns once per session that it only records the s
   assert.equal(warn.mock.callCount(), 1, 'one console warning per session');
   const msg = String(warn.mock.calls[0].arguments[0]);
   assert.ok(msg.includes('speak()') && msg.includes('updateRequestVars()'), msg);
+  assert.ok(msg.includes('sends the values to the server') && msg.includes('agent does not see them'), msg);
+  assert.ok(!/\brecords?\b/i.test(msg), 'the old wording is gone');
   assert.ok(!msg.includes('ada@example.com'), 'the warning never carries viewer values');
   session.disconnect();
 });
