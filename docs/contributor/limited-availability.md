@@ -87,6 +87,12 @@ await kaltura.avatars.update({ id: avatarId, emotions: { enabled: true, intensit
 TARGET=<name> node scripts/live-verify-emotions.mjs
 ```
 
-`TARGET` is required, so a run never reaches an environment by accident. Set it to the name of the Limited Availability environment. The script needs that environment's credentials. It creates a throwaway agent and avatar, runs three trials with emotions on and one control with them off, and deletes everything. It passes when at least two of three trials show two or more distinct labels over two or more avatar segments, the control shows none and has a non-empty reply, and the avatar `emotions` setting round-trips on `create`, `get` and `update`. CI has no credentials for this environment, so the script is not part of any workflow.
+`TARGET` is required, so a run never reaches an environment by accident. Set it to the name of the Limited Availability environment. The script needs that environment's credentials. It creates a throwaway agent and avatar, runs three trials with emotions on and one control with them off, and deletes everything. It passes when all of these hold:
+
+- At least two of three trials show two or more distinct labels over two or more avatar segments.
+- The control shows no labels and has a non-empty reply.
+- The avatar `emotions` setting round-trips on `create`, `get` and `update`.
+
+CI has no credentials for this environment, so the script is not part of any workflow.
 
 For a statistical check of the output, run the [emotions eval](emotions-eval.md).

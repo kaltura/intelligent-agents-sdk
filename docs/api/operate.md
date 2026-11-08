@@ -28,7 +28,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. `fast` or `smart`, lowercase. Omit it to use the default, `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects any key that starts with `sys__`. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects them: [Reserved Template Variables](#reserved-template-variables-sys__). For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 | `context_id` | Optional. The id of the category or entry the turn is about, as a string. With `context_type: 'entry'` it must look like `0_abcd1234`. |
 | `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
@@ -63,7 +63,9 @@ Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for fee
 
 ### Size limits
 
-Over a limit, the server answers 413 and the SDK throws `payload_too_large`. The SDK does not check these limits before it sends. `converse` `userMessage`, `threads.push` `content` and `system_message`: 4000 characters each, and `err.detail` has no number. `threads.push` `request_vars`: 200 keys, 128 characters per key, 100,000 characters per value once serialized (a 99,998-character string passes, 99,999 fails), and `err.detail` names the limit. `converse` can also end a turn with no text and no HTTP error. Keep `request_vars` inside these limits, and use `conversations.send` or `converseOnce`, which throw `empty_reply` on an empty turn.
+Over a limit, the server answers 413 and the SDK throws `payload_too_large`. The SDK does not check these limits before it sends. An oversized `request_vars` on `converse` can instead end the turn with no text and no HTTP error. `conversations.send` and `converseOnce` throw `empty_reply` then.
+- `converse` `userMessage`; `threads.push` `content` and `system_message`: 4000 characters each. `err.detail` gives no number.
+- `threads.push` `request_vars`: 200 keys, 128 characters per key, 100,000 characters per value once serialized. `err.detail` names the limit.
 
 ### Refusals that arrive with HTTP 200
 
@@ -81,7 +83,7 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
-| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls, sources or a widget is not empty: it resolves with `text: ''`, so check `toolCalls` and `experiencesList`. A widget (flashcards, followups) can replace the spoken text while `kaltura_genie_experiences` is on. Turn it off for agents that must answer in text. | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
+| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls, sources or a widget is not empty: it resolves with `text: ''`, so check `toolCalls` and `experiencesList`. A widget can replace the spoken text. See [capabilities](../genui/authoring-and-consuming.md#authoring-which-capability-turns-each-widget-on). | If you sent `context_id` or `shared_message_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 

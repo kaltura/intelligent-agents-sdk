@@ -372,7 +372,7 @@ export class Threads {
    * Filter fields: `agentIdEquals`, `agentIdIn`, `contextIdEqual`,
    * `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`,
    * `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`,
-   * `partnerIdEquals`, `statusEquals`, `statusIn`,
+   * `statusEquals`, `statusIn`,
    * `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`.
    * @param {string} ks @param {{filter?:object,pageSize?:number}} [opts]
    */
