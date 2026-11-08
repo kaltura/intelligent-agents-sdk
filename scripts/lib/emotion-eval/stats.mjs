@@ -94,3 +94,23 @@ export function bootstrapMedianDiff(a, b, opts = {}) {
   for (let i = 0; i < iters; i++) diffs.push(/** @type {number} */ (median(pick(x))) - /** @type {number} */ (median(pick(y))));
   return { diff: /** @type {number} */ (median(x)) - /** @type {number} */ (median(y)), lo: /** @type {number} */ (percentile(diffs, 0.025)), hi: /** @type {number} */ (percentile(diffs, 0.975)) };
 }
+
+/**
+ * Median of paired differences with a bootstrap 95% interval. Each value is one on-minus-off difference
+ * for the same prompt, so prompt length and tool use cancel out.
+ * @param {number[]} diffs @param {{iters?:number, seed?:number}} [opts]
+ * @returns {{diff:number, lo:number, hi:number}|null}
+ */
+export function bootstrapPairedMedian(diffs, opts = {}) {
+  const x = clean(diffs);
+  if (x.length < 2) return null;
+  const iters = opts.iters ?? 1000;
+  const rnd = seededRandom(opts.seed ?? 1);
+  const meds = [];
+  for (let i = 0; i < iters; i++) {
+    const pick = new Array(x.length);
+    for (let j = 0; j < x.length; j++) pick[j] = x[Math.floor(rnd() * x.length)];
+    meds.push(/** @type {number} */ (median(pick)));
+  }
+  return { diff: /** @type {number} */ (median(x)), lo: /** @type {number} */ (percentile(meds, 0.025)), hi: /** @type {number} */ (percentile(meds, 0.975)) };
+}

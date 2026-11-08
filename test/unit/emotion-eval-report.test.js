@@ -140,3 +140,32 @@ test('an error turn shows its code and message in the drill-down', () => {
   const r = results({ scenarios: [sc], turns: [turn({ scenario: 's', ok: false, error: { code: 'timeout', message: 'turn timed out' }, segments: [] })] });
   assert.match(html(r, { expandAll: true }), /ERROR<\/span> timeout turn timed out/);
 });
+
+test('the drill-down status follows the interval, not the point estimate (1 good turn is not a PASS)', () => {
+  const joke = scenario('joke', [['happy']], { title: 'A joke' });
+  const r = results({ scenarios: [joke], turns: [turn({ scenario: 'joke', trial: 1, segments: avatar('Ha.', 'happy') })], parserChecks: GOOD_PARSER });
+  const out = html(r, { expandAll: true });
+  const head = out.slice(out.indexOf('id="s-joke"'), out.indexOf('</summary>', out.indexOf('id="s-joke"')));
+  assert.equal(/PASS<\/span>/.test(head), false);
+  assert.match(head, /UNDECIDED/);
+  const many40 = results({ scenarios: [joke], turns: many(40, (t) => turn({ scenario: 'joke', trial: t, segments: avatar('Ha.', 'happy') })), parserChecks: GOOD_PARSER });
+  const out2 = html(many40, { expandAll: true });
+  const head2 = out2.slice(out2.indexOf('id="s-joke"'), out2.indexOf('</summary>', out2.indexOf('id="s-joke"')));
+  assert.match(head2, /PASS<\/span>/);
+});
+
+test('an interrupted run and a cut plan each show a banner above the verdict', () => {
+  const base = healthyRun(12);
+  const plain = html(base);
+  assert.equal(plain.includes('role="alert"'), false);
+  const out = html({ ...base, meta: { ...base.meta, interrupted: true, budgetCut: true, maxTurns: 30, trials: 12 } });
+  assert.equal((out.match(/role="alert"/g) ?? []).length, 2);
+  assert.match(out, /stopped early/);
+  assert.match(out, /turn budget \(30 turns\)/);
+});
+
+test('the latency note says the comparison is paired and names the scenarios', () => {
+  const out = html(healthyRun(12));
+  assert.match(out, /Paired comparison/);
+  assert.match(out, /12 pair\(s\) from 1 scenario\(s\): joy/);
+});

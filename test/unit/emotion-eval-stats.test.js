@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { wilson, judge, zeroViolationBound, percentile, median, seededRandom, bootstrapMedianDiff } from '../../scripts/lib/emotion-eval/stats.mjs';
+import { wilson, judge, zeroViolationBound, percentile, median, seededRandom, bootstrapMedianDiff, bootstrapPairedMedian } from '../../scripts/lib/emotion-eval/stats.mjs';
 
 /** Statistics behind the emotions eval. */
 
@@ -85,4 +85,16 @@ test('bootstrapMedianDiff needs two values per side and is repeatable', () => {
   assert.ok(r1.lo <= r1.diff && r1.diff <= r1.hi);
   const same = bootstrapMedianDiff([5, 5, 5], [5, 5, 5], { iters: 50, seed: 3 });
   assert.deepEqual(same, { diff: 0, lo: 0, hi: 0 });
+});
+
+test('bootstrapPairedMedian needs two pairs, is repeatable and brackets the median', () => {
+  assert.equal(bootstrapPairedMedian([5]), null);
+  assert.equal(bootstrapPairedMedian([]), null);
+  assert.equal(bootstrapPairedMedian([NaN, 3]), null);
+  const d = [10, 20, 30, 40, 50, 60];
+  const r1 = bootstrapPairedMedian(d);
+  assert.deepEqual(r1, bootstrapPairedMedian(d));
+  assert.equal(r1.diff, 35);
+  assert.ok(r1.lo <= 35 && 35 <= r1.hi);
+  assert.deepEqual(bootstrapPairedMedian([7, 7, 7], { iters: 20, seed: 2 }), { diff: 7, lo: 7, hi: 7 });
 });

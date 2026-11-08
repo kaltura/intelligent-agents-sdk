@@ -47,17 +47,34 @@ test('planJobs adds the side paths only where a scenario asks for them, and only
   assert.deepEqual([...new Set(jobs.filter((j) => j.scenario === 'sarcasm').map((j) => j.mode))], ['on']);
 });
 
-test('planJobs honours the path filter and the turn budget, trial by trial', () => {
+test('planJobs honours the path filter and the turn budget, dropping whole trials', () => {
   const some = pickScenarios(['joy', 'sadness', 'sarcasm']);
   const onlyOn = planJobs({ scenarios: some, trials: 3, paths: ['on'] });
   assert.ok(onlyOn.jobs.every((j) => j.mode === 'on'));
   assert.equal(onlyOn.jobs.length, 9);
   const cut = planJobs({ scenarios: some, trials: 3, paths: ['on'], maxTurns: 4 });
   assert.equal(cut.cut, true);
-  assert.equal(cut.jobs.length, 4);
+  assert.equal(cut.jobs.length, 3);
   assert.equal(cut.planned, 9);
-  assert.deepEqual(ids(cut.jobs), ['joy/1/on', 'sadness/1/on', 'sarcasm/1/on', 'joy/2/on']);
+  assert.deepEqual(ids(cut.jobs), ['joy/1/on', 'sadness/1/on', 'sarcasm/1/on']);
   assert.equal(planJobs({ scenarios: some, trials: 1, maxTurns: 0 }).jobs.length, 0);
+});
+
+test('a budget drops whole trials, so a thread scenario is never the first thing to go', () => {
+  const mix = pickScenarios(['joy', 'topic-shift']);
+  const perTrial = planJobs({ scenarios: mix, trials: 1, paths: ['on'] }).jobs.reduce((n, j) => n + j.turns.length, 0);
+  const { jobs, cut, planned } = planJobs({ scenarios: mix, trials: 4, paths: ['on'], maxTurns: perTrial * 2 + 1 });
+  assert.equal(cut, true);
+  assert.equal(planned, perTrial * 4);
+  assert.deepEqual([...new Set(jobs.map((j) => j.trial))], [1, 2]);
+  assert.equal(jobs.filter((j) => j.scenario === 'topic-shift').length, 2);
+});
+
+test('when even trial 1 does not fit, it is filled job by job', () => {
+  const mix = pickScenarios(['joy', 'topic-shift']);
+  const { jobs, cut } = planJobs({ scenarios: mix, trials: 2, paths: ['on'], maxTurns: 1 });
+  assert.equal(cut, true);
+  assert.deepEqual(ids(jobs), ['joy/1/on']);
 });
 
 test('a multi-turn scenario is one job whose turns share a thread, and a budget never splits it', () => {
@@ -175,6 +192,20 @@ test('liveTurn on the send path uses the aggregate call, has no first-chunk time
   assert.equal(bad.segments.length, 1);
   const hang = await liveTurn({ conversations: { send: () => new Promise(() => {}) } }, 'ks', 20)({ job: job('send'), prompt: 'x' });
   assert.equal(hang.error.code, 'timeout');
+});
+
+test('liveTurn passes an abort signal to send and the timeout aborts it', async () => {
+  let seen;
+  const send = (opts) => { seen = opts.signal; return new Promise((_, rej) => opts.signal.addEventListener('abort', () => rej(new Error('aborted')))); };
+  const r = await liveTurn({ conversations: { send } }, 'ks', 20)({ job: job('send'), prompt: 'x' });
+  assert.equal(r.error.code, 'timeout');
+  assert.equal(seen.aborted, true);
+});
+
+test('liveTurn keeps the chunks an empty_reply error carries in its body', async () => {
+  const send = async () => { throw Object.assign(new Error('empty'), { code: 'empty_reply', body: { segments: [{ type: 'think', content: 'x' }] } }); };
+  const r = await liveTurn({ conversations: { send } }, 'ks', 1000)({ job: job('send'), prompt: 'x' });
+  assert.equal(r.segments.length, 1);
 });
 
 // ── pacing ──────────────────────────────────────────────────────────────────

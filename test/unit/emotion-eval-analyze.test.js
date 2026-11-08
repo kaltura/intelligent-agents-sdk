@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, turnFacts, judgeAll, buildInsights, THRESHOLDS } from '../../scripts/lib/emotion-eval/analyze.mjs';
+import { analyze, turnFacts, judgeAll, buildInsights, runNotes, THRESHOLDS } from '../../scripts/lib/emotion-eval/analyze.mjs';
 import { runParserChecks } from '../../scripts/lib/emotion-eval/parser-checks.mjs';
 import { avatar, scenario, turn, many, results, healthyRun, GOOD_PARSER } from '../fakes/emotion-results.js';
 
@@ -304,4 +304,108 @@ test('a stream that ends with an error chunk is a failed turn even though nothin
   assert.equal(a.soft.errors.k, 6);
   assert.equal(a.extra.streamErrors.n, 6);
   assert.ok(a.insights.some((i) => /6 turn\(s\) ended with an error chunk \("Internal server error"\) in: fr\. Median 2 tool calls and 20 s/.test(i.text)));
+});
+
+// ── review fixes ────────────────────────────────────────────────────────────
+
+test('latency is paired: only turns that have an emotions-off twin are compared', () => {
+  const joy = scenario('joy', [['happy']], { send: true });
+  const slow = scenario('slow', [['happy']]);
+  const turns = [
+    ...many(10, (t) => turn({ trial: t, total: 1100, first: 400, segments: avatar('Hi.', 'happy') })),
+    ...many(10, (t) => turn({ trial: t, mode: 'off', total: 1000, first: 350, segments: avatar('Hi.') })),
+    // A scenario with no off twin and a much longer reply must not move the result.
+    ...many(40, (t) => turn({ scenario: 'slow', trial: t, total: 9000, first: 5000, segments: avatar('Hi.', 'happy') })),
+  ];
+  const a = analyze(results({ scenarios: [joy, slow], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.latency.pairs, 10);
+  assert.deepEqual(a.latency.scenarios, ['joy']);
+  assert.equal(a.latency.totalDiff.diff, 100);
+  assert.equal(a.latency.firstDiff.diff, 50);
+  assert.equal(a.latency.on.total, 1100);
+  assert.equal(a.latency.on.n, 10);
+  assert.equal(a.latency.off.n, 10);
+  assert.equal(a.latency.status, 'PASS');
+});
+
+test('latency pairs skip a turn whose twin failed or has no timing', () => {
+  const joy = scenario('joy', [['happy']], { send: true });
+  const turns = [
+    turn({ trial: 1, total: 1100 }), turn({ trial: 1, mode: 'off', total: 1000, segments: avatar('Hi.') }),
+    turn({ trial: 2, ok: false, error: { code: 'timeout', message: 'x' }, segments: [] }), turn({ trial: 2, mode: 'off', total: 900, segments: avatar('Hi.') }),
+    turn({ trial: 3, total: 1200 }), turn({ trial: 3, mode: 'off', total: null, segments: avatar('Hi.') }),
+    turn({ trial: 4, total: 1300 }), turn({ trial: 4, mode: 'off', total: 1000, segments: avatar('Hi.') }),
+    turn({ trial: 5, total: 1000 }),
+  ];
+  const a = analyze(results({ scenarios: [joy], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.latency.pairs, 2);
+  assert.equal(a.latency.totalDiff.diff, 200);
+  assert.equal(analyze(results({ scenarios: [joy], turns: [turn({ trial: 1 })], parserChecks: GOOD_PARSER })).latency.status, 'NO_DATA');
+});
+
+test('a total outage is a FAIL (exit 1) that names the failed turns, not INCOMPLETE', () => {
+  const sc = scenario('joy', [['happy']], { send: true });
+  const bad = { ok: false, error: { code: 'unauthorized', message: 'no' }, segments: [] };
+  const turns = ['on', 'off', 'avatar-off', 'send'].flatMap((mode) => many(12, (t) => turn({ trial: t, mode, ...bad })));
+  const a = analyze(results({ scenarios: [sc], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.soft.errors.status, 'FAIL');
+  assert.equal(a.hard.leakage.status, 'NO_DATA');
+  assert.equal(a.verdict.label, 'FAIL');
+  assert.equal(a.verdict.exitCode, 1);
+  assert.match(a.verdict.summary, /48 of 48 turns failed/);
+});
+
+test('a lack of trials without failures stays INCOMPLETE (exit 3)', () => {
+  const sc = scenario('joy', [['happy']]);
+  const a = analyze(results({ scenarios: [sc], turns: many(30, (t) => turn({ trial: t })), parserChecks: GOOD_PARSER }));
+  assert.equal(a.verdict.label, 'INCOMPLETE');
+  assert.equal(a.verdict.exitCode, 3);
+});
+
+test('an interrupted run cannot pass, but a hard failure still wins', () => {
+  const run = healthyRun(40);
+  assert.equal(analyze(run).verdict.exitCode, 0);
+  const stopped = analyze({ ...run, meta: { ...run.meta, interrupted: true } });
+  assert.equal(stopped.verdict.label, 'INCOMPLETE');
+  assert.equal(stopped.verdict.exitCode, 3);
+  assert.match(stopped.verdict.summary, /stopped before it finished/);
+  assert.equal(stopped.notes[0].level, 'bad');
+  const leak = { ...run, meta: { ...run.meta, interrupted: true }, turns: [...run.turns, turn({ scenario: 'joy', trial: 99, mode: 'off', segments: avatar('Hi.', 'happy') })] };
+  assert.equal(analyze(leak).verdict.exitCode, 1);
+});
+
+test('runNotes reports an interrupted run and a cut plan, and nothing otherwise', () => {
+  assert.deepEqual(runNotes({}), []);
+  assert.deepEqual(runNotes(undefined), []);
+  const both = runNotes({ interrupted: true, budgetCut: true, maxTurns: 50, trials: 8 });
+  assert.equal(both.length, 2);
+  assert.match(both[1].text, /50 turns/);
+  assert.match(both[1].text, /\(8\)/);
+  assert.equal(analyze(healthyRun(12)).notes.length, 0);
+  assert.equal(analyze({ ...healthyRun(12), meta: { budgetCut: true, maxTurns: 10 } }).verdict.exitCode, 0);
+});
+
+test('empty-text rate counts ok turns only, in both the numerator and the denominator', () => {
+  const sc = scenario('joy', [['happy']]);
+  const turns = [
+    ...many(5, (t) => turn({ trial: t, ok: false, error: { code: 'timeout', message: 'x' }, segments: [] })),
+    ...many(4, (t) => turn({ trial: 10 + t, segments: avatar('Hi.', 'happy') })),
+    turn({ trial: 20, segments: [chunk('avatar', '', { segmentStart: true })] }),
+  ];
+  const e = analyze(results({ scenarios: [sc], turns, parserChecks: GOOD_PARSER })).soft.emptyText;
+  assert.equal(e.n, 5);
+  assert.equal(e.k, 1);
+});
+
+test('the pooled match counts only ok turns, like the per-scenario match', () => {
+  const sc = scenario('joy', [['happy']]);
+  const turns = [
+    turn({ trial: 1, segments: avatar('Hi.', 'happy') }),
+    // Ended with an error chunk after a correct label: a failed turn, so it is not a match.
+    turn({ trial: 2, segments: [...avatar('Hi.', 'happy'), chunk('error', 'Internal server error')] }),
+  ];
+  const a = analyze(results({ scenarios: [sc], turns, parserChecks: GOOD_PARSER }));
+  assert.equal(a.perScenario[0].matched, 1);
+  assert.equal(a.soft.match.k, 1);
+  assert.equal(a.soft.match.n, 2);
 });

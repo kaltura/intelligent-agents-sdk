@@ -29,4 +29,4 @@ live-verify-artifacts/
 app-builder-skill/evals/results/
 
 # Emotions eval output (raw results and HTML reports), never committed
-out/
+/out/

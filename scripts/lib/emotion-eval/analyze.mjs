@@ -10,7 +10,7 @@
  * A segment has an `emotion` key only when the chunk carried `metadata.emotion`.
  */
 import { EMOTIONS } from './scenarios.mjs';
-import { wilson, judge, zeroViolationBound, median, percentile, bootstrapMedianDiff } from './stats.mjs';
+import { wilson, judge, zeroViolationBound, median, percentile, bootstrapPairedMedian } from './stats.mjs';
 
 /** Targets for the soft dimensions. A rate passes when its 95% interval is on the right side of the target. */
 export const THRESHOLDS = Object.freeze({
@@ -171,23 +171,31 @@ export function analyze(results) {
   const all = onScored.map(F);
   const attempted = all.length;
   const withLabel = all.filter((f) => f.valid.length).length;
-  const matchedGivenLabel = onScored.filter((t) => F(t).valid.length && matches(F(t), specOf(t))).length;
+  const matchedGivenLabel = onScored.filter((t) => F(t).ok && F(t).valid.length && matches(F(t), specOf(t))).length;
   const neutralTurns = onScored.filter((t) => scenarios.find((s) => s.id === t.scenario)?.expectNeutral && F(t).valid.length);
   const neutralFp = neutralTurns.filter((t) => F(t).valid.some((v) => v !== 'neutral')).length;
   const repeats = all.reduce((n, f) => n + f.repeats, 0);
   const repeatDenominator = all.reduce((n, f) => n + Math.max(f.startLabels.length - 1, 0), 0);
 
-  const onOk = on.filter((t) => F(t).ok);
   const offOk = off.filter((t) => F(t).ok);
-  const offTotal = offOk.map((t) => t.totalMs).filter(Number.isFinite);
-  const onTotal = onOk.map((t) => t.totalMs).filter(Number.isFinite);
-  const offFirst = offOk.map((t) => t.firstChunkMs).filter(Number.isFinite);
-  const onFirst = onOk.map((t) => t.firstChunkMs).filter(Number.isFinite);
-  const totalDiff = bootstrapMedianDiff(onTotal, offTotal);
-  const firstDiff = bootstrapMedianDiff(onFirst, offFirst);
+  // Latency compares like with like: only (scenario, trial, turn) keys that have both an ok "on" turn and an ok "off" turn.
+  const key = (/** @type {any} */ t) => `${t.scenario}|${t.trial}|${t.turnIndex}`;
+  const onByKey = new Map(on.filter((t) => F(t).ok).map((t) => [key(t), t]));
+  const pairs = offOk.map((o) => ({ on: onByKey.get(key(o)), off: o })).filter((p) => p.on);
+  const field = (/** @type {'totalMs'|'firstChunkMs'} */ f) => pairs.filter((p) => Number.isFinite(p.on[f]) && Number.isFinite(p.off[f]));
+  const totalPairs = field('totalMs');
+  const firstPairs = field('firstChunkMs');
+  const onTotal = totalPairs.map((p) => p.on.totalMs);
+  const offTotal = totalPairs.map((p) => p.off.totalMs);
+  const onFirst = firstPairs.map((p) => p.on.firstChunkMs);
+  const offFirst = firstPairs.map((p) => p.off.firstChunkMs);
+  const totalDiff = bootstrapPairedMedian(totalPairs.map((p) => p.on.totalMs - p.off.totalMs));
+  const firstDiff = bootstrapPairedMedian(firstPairs.map((p) => p.on.firstChunkMs - p.off.firstChunkMs));
   const latency = {
     on: { total: median(onTotal), totalP90: percentile(onTotal, 0.9), first: median(onFirst), n: onTotal.length },
     off: { total: median(offTotal), totalP90: percentile(offTotal, 0.9), first: median(offFirst), n: offTotal.length },
+    pairs: totalPairs.length,
+    scenarios: [...new Set(totalPairs.map((p) => p.off.scenario))],
     totalDiff, firstDiff,
     budgetMs: THRESHOLDS.latencyBudgetMs,
     status: !totalDiff ? 'NO_DATA' : totalDiff.hi <= THRESHOLDS.latencyBudgetMs ? 'PASS' : totalDiff.lo > THRESHOLDS.latencyBudgetMs ? 'FAIL' : 'INCONCLUSIVE',
@@ -199,11 +207,11 @@ export function analyze(results) {
     match: { name: 'Expected match: turns whose label is in the accepted set (of turns with a label)', ...rateDim(matchedGivenLabel, withLabel, THRESHOLDS.match) },
     avatarChunks: { name: 'Avatar chunks: turns that came back as avatar, not plain text', ...rateDim(all.filter((f) => f.avatarChunks).length, attempted, THRESHOLDS.avatarChunks) },
     neutralFalsePositive: { name: 'False positive on neutral topics (of labeled turns)', ...rateDim(neutralFp, neutralTurns.length, THRESHOLDS.neutralFalsePositive) },
-    emptyText: { name: 'Empty text: turns with no spoken text', ...rateDim(all.filter((f) => f.ok && f.empty).length, attempted, THRESHOLDS.emptyText) },
+    emptyText: { name: 'Empty text: turns with no spoken text', ...rateDim(all.filter((f) => f.ok && f.empty).length, all.filter((f) => f.ok).length, THRESHOLDS.emptyText) },
     errors: { name: 'Errors: turns that failed', ...rateDim(all.filter((f) => !f.ok).length, attempted, THRESHOLDS.errors) },
     repeatedLabel: { name: 'Same label on two segments in a row (a label change should start a segment)', ...rateDim(repeats, repeatDenominator, THRESHOLDS.repeatedLabel) },
     sendCoverage: { name: 'Aggregate (send) path: turns with at least one emotion', ...rateDim(sendScored.filter((t) => F(t).valid.length).length, sendScored.length, THRESHOLDS.sendCoverage) },
-    latency: { name: `Latency: median total time with emotions on minus off (budget ${THRESHOLDS.latencyBudgetMs} ms, 95% interval)`, status: latency.status, n: Math.min(onTotal.length, offTotal.length) },
+    latency: { name: `Latency: median total time with emotions on minus off (budget ${THRESHOLDS.latencyBudgetMs} ms, 95% interval)`, status: latency.status, n: totalPairs.length },
   };
 
   // ── hard dimensions ──
@@ -244,13 +252,14 @@ export function analyze(results) {
       const bad = turns.filter((t) => F(t).streamError);
       return { n: bad.length, message: bad.length ? F(bad[0]).streamError : '', scenarios: [...new Set(bad.map((t) => t.scenario))], medianToolCalls: median(bad.map((t) => F(t).toolSegments)) ?? 0, medianMs: median(bad.map((t) => t.totalMs).filter(Number.isFinite)) ?? 0 };
     })(),
+    failedTurns: { n: turns.filter((t) => !F(t).ok).length, total: turns.length },
     throttled: throttledTurns.length,
     retried: allTurns.filter((t) => t?.retries > 0).length,
     waitedMs: allTurns.reduce((n, t) => n + (Number.isFinite(t?.waitedMs) ? t.waitedMs : 0), 0),
     widgetOnly: onScored.filter((t) => F(t).widgets > 0 && F(t).avatarChunks === 0).length,
   };
 
-  const model = { meta: results?.meta ?? {}, counts: { turns: turns.length, throttled: throttledTurns.length, on: on.length, off: off.length, avatarOff: avatarOff.length, send: send.length }, perScenario, soft, hard, latency, extra, thresholds: THRESHOLDS };
+  const model = { meta: results?.meta ?? {}, notes: runNotes(results?.meta), counts: { turns: turns.length, throttled: throttledTurns.length, on: on.length, off: off.length, avatarOff: avatarOff.length, send: send.length }, perScenario, soft, hard, latency, extra, thresholds: THRESHOLDS };
   const verdict = judgeAll(model);
   const insights = buildInsights(model);
   return { ...model, verdict, insights };
@@ -287,17 +296,43 @@ function topicShift(ts, specOf, F) {
 
 /** Roll the dimensions up into one verdict and an exit code. @param {any} model */
 export function judgeAll(model) {
+  const v = rollUp(model);
+  // A run that was stopped early cannot pass. A hard failure still wins, because it is real.
+  if (model.meta?.interrupted && v.exitCode !== 1) {
+    return { label: 'INCOMPLETE', exitCode: 3, tone: 'warn', summary: `The run was stopped before it finished, so the numbers cover only part of the plan. ${v.summary}` };
+  }
+  return v;
+}
+
+/** @param {any} model */
+function rollUp(model) {
   const hard = Object.values(model.hard);
   const soft = Object.values(model.soft);
   const hardFail = hard.filter((d) => /** @type {any} */ (d).status === 'FAIL');
   const hardNoData = hard.filter((d) => /** @type {any} */ (d).status === 'NO_DATA');
   const softFail = soft.filter((d) => /** @type {any} */ (d).status === 'FAIL');
   const softInconclusive = soft.filter((d) => /** @type {any} */ (d).status === 'INCONCLUSIVE' || /** @type {any} */ (d).status === 'NO_DATA');
+  const errors = /** @type {any} */ (model.soft.errors);
   if (hardFail.length) return { label: 'FAIL', exitCode: 1, tone: 'bad', summary: `${hardFail.length} hard dimension(s) failed. These must be 100%.` };
+  // Empty hard dimensions caused by failing turns are an outage, not a lack of trials.
+  if (hardNoData.length && errors?.status === 'FAIL') {
+    return { label: 'FAIL', exitCode: 1, tone: 'bad', summary: `${model.extra.failedTurns.n} of ${model.extra.failedTurns.total} turns failed, so ${hardNoData.length} hard dimension(s) have no data. Check the target, the credentials and the error codes in the report.` };
+  }
   if (hardNoData.length) return { label: 'INCOMPLETE', exitCode: 3, tone: 'warn', summary: `${hardNoData.length} hard dimension(s) had no data. Run with emotions-off trials and the other paths.` };
   if (softFail.length) return { label: 'SOFT FAIL', exitCode: 2, tone: 'bad', summary: `All hard dimensions pass. ${softFail.length} quality dimension(s) are confidently below target.` };
   if (softInconclusive.length) return { label: 'PASS WITH WARNINGS', exitCode: 0, tone: 'warn', summary: `All hard dimensions pass. ${softInconclusive.length} quality dimension(s) are not decided at this sample size.` };
   return { label: 'PASS', exitCode: 0, tone: 'good', summary: 'All hard dimensions pass and every quality dimension is above target.' };
+}
+
+/**
+ * Notes about how the run itself ended. The report shows them above the verdict.
+ * @param {any} meta @returns {{level:'bad'|'warn', text:string}[]}
+ */
+export function runNotes(meta) {
+  /** @type {{level:'bad'|'warn', text:string}[]} */ const out = [];
+  if (meta?.interrupted) out.push({ level: 'bad', text: 'This run was stopped early (Ctrl-C). Only the turns that finished are counted, so the numbers cover part of the plan.' });
+  if (meta?.budgetCut) out.push({ level: 'warn', text: `The turn budget (${meta.maxTurns ?? '?'} turns) cut the plan. Later trials were dropped, so fewer trials ran than asked for (${meta.trials ?? '?'}).` });
+  return out;
 }
 
 /** @param {number|null} x */

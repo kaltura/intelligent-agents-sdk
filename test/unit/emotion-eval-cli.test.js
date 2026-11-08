@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFlags, writeOutputs } from '../../scripts/live-eval-emotions.mjs';
+import { parseFlags, writeOutputs, isEntry } from '../../scripts/live-eval-emotions.mjs';
 import { healthyRun } from '../fakes/emotion-results.js';
 
 /** The eval command line: flags, output files, exit codes. No network. */
@@ -107,4 +107,47 @@ test('the recorded fixture holds only placeholder data', () => {
   assert.equal(j.meta.dryRun, false);
   assert.ok(j.turns.length > 50);
   assert.equal(/ks=|djJ8|secret|@[a-z]+\.[a-z]/i.test(text), false);
+});
+
+test('isEntry matches the running file for plain, spaced and symlinked paths, and is false otherwise', () => {
+  const dir = tmp();
+  try {
+    assert.equal(isEntry(CLI), true);
+    assert.equal(isEntry(undefined), false);
+    assert.equal(isEntry(join(dir, 'missing.mjs')), false);
+    assert.equal(isEntry(FIXTURE), false);
+    mkdirSync(join(dir, 'a folder with spaces'));
+    const link = join(dir, 'a folder with spaces', 'my eval.mjs');
+    symlinkSync(CLI, link);
+    assert.equal(isEntry(link), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('started through a symlink in a folder with spaces, the command still runs', () => {
+  const dir = tmp();
+  try {
+    mkdirSync(join(dir, 'a folder with spaces'));
+    const link = join(dir, 'a folder with spaces', 'my eval.mjs');
+    symlinkSync(CLI, link);
+    const r = spawnSync(process.execPath, [link, '--dry-run', '--out', join(dir, 'out')], { env: cleanEnv(), encoding: 'utf8', timeout: 60000 });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /VERDICT/);
+    assert.equal(readdirSync(join(dir, 'out')).length, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('an interrupted run exits 3 and its report carries the banner', () => {
+  const dir = tmp();
+  try {
+    const run = healthyRun(40);
+    const out = writeOutputs({ ...run, meta: { ...run.meta, interrupted: true } }, dir, { stamp: 'T2' });
+    assert.equal(out.code, 3);
+    assert.match(readFileSync(out.htmlPath, 'utf8'), /stopped early/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('only the top-level out folder is ignored by git', () => {
+  const lines = readFileSync(fileURLToPath(new URL('../../.gitignore', import.meta.url)), 'utf8').split('\n');
+  assert.ok(lines.includes('/out/'));
+  assert.equal(lines.includes('out/'), false);
 });

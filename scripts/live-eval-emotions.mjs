@@ -22,9 +22,9 @@
  * 3 a hard dimension had no data, 4 bad usage or run error.
  * Not part of CI: CI has no credentials for this environment.
  */
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { pickScenarios, SCENARIOS } from './lib/emotion-eval/scenarios.mjs';
 import { planJobs, runJobs, liveTurn, withPacing } from './lib/emotion-eval/runner.mjs';
@@ -91,6 +91,15 @@ function printSummary(a) {
 function openFile(file) {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
   execFile(cmd, [file], () => {});
+}
+
+/**
+ * Is this file the one node was started with? Works for paths with spaces and for symlinks.
+ * @param {string|undefined} argv1
+ */
+export function isEntry(argv1) {
+  if (!argv1) return false;
+  try { return import.meta.url === pathToFileURL(realpathSync(argv1)).href; } catch { return false; }
 }
 
 async function main() {
@@ -179,6 +188,6 @@ async function main() {
   return out.code;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isEntry(process.argv[1])) {
   main().then((code) => process.exit(code), (err) => { console.error(`error: ${err?.message ?? err}`); process.exit(4); });
 }

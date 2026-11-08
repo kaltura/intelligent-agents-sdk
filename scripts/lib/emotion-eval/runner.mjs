@@ -19,7 +19,8 @@ export function capabilitiesFor(mode, extra = {}) {
 }
 
 /**
- * Build the job list. Order is trial-major, so a turn budget cuts trials evenly across scenarios.
+ * Build the job list. A turn budget drops whole trials, latest first, so every kept trial has all its scenarios.
+ * If even trial 1 does not fit, trial 1 is filled job by job.
  * @param {{scenarios:any[], trials:number, paths?:Mode[], maxTurns?:number, baseCapabilities?:Record<string,string>}} p
  * @returns {{jobs:Job[], planned:number, cut:boolean}}
  */
@@ -28,6 +29,7 @@ export function planJobs({ scenarios, trials, paths = ['on', 'off', 'avatar-off'
   let used = 0, planned = 0, cut = false;
   const want = new Set(paths);
   for (let trial = 1; trial <= trials; trial++) {
+    /** @type {Omit<Job,'id'>[]} */ const trialJobs = [];
     for (const sc of scenarios) {
       /** @type {Mode[]} */ const modes = ['on'];
       if (sc.avatarOff || sc.send) modes.push('off');
@@ -36,10 +38,23 @@ export function planJobs({ scenarios, trials, paths = ['on', 'off', 'avatar-off'
       for (const mode of modes) {
         if (!want.has(mode)) continue;
         const turns = sc.turns.map((/** @type {any} */ t, /** @type {number} */ i) => ({ turnIndex: i, prompt: t.prompt }));
-        planned += turns.length;
-        if (used + turns.length > maxTurns) { cut = true; continue; }
-        used += turns.length;
-        jobs.push({ id: jobs.length, scenario: sc.id, trial, mode, capabilities: capabilitiesFor(mode, { ...baseCapabilities, ...sc.capabilities }), turns });
+        trialJobs.push({ scenario: sc.id, trial, mode, capabilities: capabilitiesFor(mode, { ...baseCapabilities, ...sc.capabilities }), turns });
+      }
+    }
+    const size = trialJobs.reduce((n, j) => n + j.turns.length, 0);
+    planned += size;
+    if (cut) continue;
+    if (used + size <= maxTurns) {
+      used += size;
+      for (const j of trialJobs) jobs.push({ id: jobs.length, ...j });
+      continue;
+    }
+    cut = true;
+    if (jobs.length === 0) {
+      for (const j of trialJobs) {
+        if (used + j.turns.length > maxTurns) continue;
+        used += j.turns.length;
+        jobs.push({ id: jobs.length, ...j });
       }
     }
   }
@@ -109,21 +124,23 @@ export function liveTurn(kaltura, convKs, timeoutMs, deps = {}) {
     const t0 = now();
     const segments = [];
     let first = null, tid = threadId;
+    // One abort signal for both paths. On a timeout the request is cancelled, so it stops counting against the server's request limit.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    const failure = (/** @type {any} */ err) => (ac.signal.aborted ? { code: 'timeout', message: 'turn timed out' } : errInfo(err));
     if (job.mode === 'send') {
-      let timer;
       try {
+        // The signal cancels the request. The race ends the wait at once even if the call is slow to react.
         const res = await Promise.race([
-          kaltura.conversations.send(opts, convKs),
-          new Promise((_, rej) => { timer = setTimeout(() => rej(Object.assign(new Error('turn timed out'), { code: 'timeout' })), timeoutMs); }),
+          kaltura.conversations.send({ ...opts, signal: ac.signal }, convKs),
+          new Promise((_, rej) => ac.signal.addEventListener('abort', () => rej(new Error('turn timed out')))),
         ]);
         return { ok: true, threadId: res.threadId ?? tid, firstChunkMs: null, totalMs: now() - t0, segments: (res.segments ?? []).map(slimSegment) };
       } catch (err) {
-        const partial = /** @type {any} */ (err)?.segments;
-        return { ok: false, error: errInfo(err), firstChunkMs: null, totalMs: now() - t0, segments: Array.isArray(partial) ? partial.map(slimSegment) : [] };
+        const partial = /** @type {any} */ (err)?.segments ?? /** @type {any} */ (err)?.body?.segments;
+        return { ok: false, error: failure(err), firstChunkMs: null, totalMs: now() - t0, segments: Array.isArray(partial) ? partial.map(slimSegment) : [] };
       } finally { clearTimeout(timer); }
     }
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
       for await (const seg of kaltura.conversations.stream({ ...opts, signal: ac.signal }, convKs)) {
         if (first === null) first = now() - t0;
@@ -132,8 +149,7 @@ export function liveTurn(kaltura, convKs, timeoutMs, deps = {}) {
       }
       return { ok: true, threadId: tid, firstChunkMs: first, totalMs: now() - t0, segments };
     } catch (err) {
-      const e = ac.signal.aborted ? { code: 'timeout', message: 'turn timed out' } : errInfo(err);
-      return { ok: false, error: e, threadId: tid, firstChunkMs: first, totalMs: now() - t0, segments };
+      return { ok: false, error: failure(err), threadId: tid, firstChunkMs: first, totalMs: now() - t0, segments };
     } finally { clearTimeout(timer); }
   };
 }

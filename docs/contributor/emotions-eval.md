@@ -22,8 +22,8 @@ node scripts/live-eval-emotions.mjs --from out/x/emotions-eval-<stamp>.json   # 
 | `--paths` | all four | `on`, `off`, `avatar-off`, `send` |
 | `--concurrency` | 4 | Turns in flight |
 | `--rate` | 80 | Most turns started per minute. The server allows 100 per minute and answers `rate_limited` above that |
-| `--max-turns` | 400 | Turn budget. Trials are cut evenly across scenarios |
-| `--turn-timeout` | 90 | Seconds before a turn is aborted |
+| `--max-turns` | 400 | Turn budget. Whole trials are dropped, latest first. The report shows a banner when the plan was cut |
+| `--turn-timeout` | 90 | Seconds before a turn is aborted. The request is cancelled, so it stops using the rate limit. The aggregate `send` call has no documented `signal` option, so the eval passes one through to the stream it uses |
 | `--out` | `out/emotions-eval` | Output folder (git-ignored) |
 | `--strict` | off | Exit 2 on PASS WITH WARNINGS |
 | `--expand` | off | Open every turn list (for printing) |
@@ -55,7 +55,7 @@ The offline parser checks run in every report: unknown label, non-string label, 
 | Quality dimensions | Rates with 95% intervals against a target |
 | Scenario by label | Heatmap of how often each label appeared. An outlined cell with ✓ is an accepted label |
 | Expected-emotion rate | Bar per scenario with an interval whisker and the target line |
-| Latency | Emotions on vs off, with the 95% interval of the median difference |
+| Latency | Emotions on vs off, paired by scenario, trial and turn. The 95% interval is of the median per-pair difference |
 | Turns by scenario | The real turns: path, prompt, each segment with its label and text. Weak and flaky scenarios start open |
 
 The page has no script and makes no request. Status uses an icon and a word, not colour alone.
@@ -64,8 +64,8 @@ The page has no script and makes no request. Status uses an icon and a word, not
 
 | Verdict | Exit | When |
 |---|---|---|
-| FAIL | 1 | A hard dimension has a violation |
-| INCOMPLETE | 3 | A hard dimension has no data |
+| FAIL | 1 | A hard dimension has a violation, or turns failed so hard dimensions are empty (an outage) |
+| INCOMPLETE | 3 | A hard dimension has no data, or the run was stopped early (Ctrl-C) |
 | SOFT FAIL | 2 | Every hard dimension passes, a quality dimension is confidently below target |
 | PASS WITH WARNINGS | 0 (2 with `--strict`) | A quality dimension is undecided at this sample size |
 | PASS | 0 | Everything is on the good side |

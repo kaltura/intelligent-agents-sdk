@@ -4,7 +4,8 @@
  * Closed `<details>` hide the turn lists; pass `expandAll` to open them for printing.
  */
 import { EMOTIONS } from './scenarios.mjs';
-import { turnFacts } from './analyze.mjs';
+import { turnFacts, THRESHOLDS } from './analyze.mjs';
+import { judge } from './stats.mjs';
 
 /** Escape text for HTML text and attribute positions. @param {unknown} v */
 export function esc(v) {
@@ -205,7 +206,7 @@ function drill(s, spec, turns, open) {
         : '<div class="seg"><span class="t">(no segments)</span></div>';
     return `<tr><td class="num">${esc(t.trial)}.${esc(t.turnIndex)}</td><td><span class="pill">${esc(t.mode)}</span></td><td class="prompt">${esc(clip(String(t.prompt ?? ''), 140))}</td><td>${segHtml}</td><td class="num">${ms(t.firstChunkMs)}<br>${ms(t.totalMs)}</td></tr>`;
   }).join('');
-  const status = specTurns.some((/** @type {any} */ x) => x.edge === 'empty') ? 'UNSCORED' : s.n === 0 ? 'NO_DATA' : s.weak ? 'FAIL' : (s.success_ci.rate ?? 0) >= 0.7 ? 'PASS' : 'INCONCLUSIVE';
+  const status = specTurns.some((/** @type {any} */ x) => x.edge === 'empty') ? 'UNSCORED' : s.n === 0 ? 'NO_DATA' : judge(s.success_ci, 'atLeast', THRESHOLDS.match.target);
   const accept = [...new Set(specTurns.flatMap((/** @type {any} */ x) => x.accept ?? []))];
   return `<details id="s-${esc(s.id)}"${open ? ' open' : ''}><summary><h3>${esc(s.title)}</h3>${badge(status)} <span class="pill">${s.success}/${s.n} accepted</span> <span class="pill">pass^3 ${s.passK3 === null ? 'n/a' : pct(s.passK3)}</span>${s.flaky ? ' <span class="pill">flaky</span>' : ''}</summary>
 <div class="body"><p class="why">${esc(spec?.why ?? '')} Accepted: ${accept.length ? esc(accept.join(', ')) : 'any valid label'}.</p>
@@ -246,7 +247,7 @@ export function renderReport(results, a, opts = {}) {
 <body><main>
 <h1>Avatar emotions eval</h1>
 <p class="sub">Limited Availability feature. Employees and certified partners only. Target: ${esc(meta.target ?? 'unknown')}. Started: ${esc(meta.startedAt ?? 'unknown')}. ${esc(meta.trials ?? '?')} trials per scenario. ${esc(a.counts.turns)} turns.${meta.dryRun ? ' <b>Recorded fixture, not a live run.</b>' : ''}</p>
-<div class="banner ${esc(v.tone)}" role="status"><span class="big">${esc(v.label)}</span><p>${esc(v.summary)} Exit code ${esc(v.exitCode)}.</p></div>
+<div class="banner ${esc(v.tone)}" role="status"><span class="big">${esc(v.label)}</span><p>${esc(v.summary)} Exit code ${esc(v.exitCode)}.</p></div>${(a.notes ?? []).map((n) => `<div class="banner ${esc(n.level)}" role="alert"><p>${esc(n.text)}</p></div>`).join('')}
 <div class="cards">${cards}</div>
 <h2>Insights</h2>${insights}
 <h2>Hard dimensions (must be 100%)</h2>
@@ -257,7 +258,7 @@ export function renderReport(results, a, opts = {}) {
 <h2>Scenario by label</h2>${heatmap(a)}
 <h2>Expected-emotion rate per scenario</h2>${coverageSvg(a)}
 <h2>Latency, emotions on vs off</h2>${latencySvg(a)}
-<p class="legend">Median total time difference (on minus off): ${a.latency.totalDiff ? `${Math.round(a.latency.totalDiff.diff)} ms, 95% interval ${Math.round(a.latency.totalDiff.lo)} to ${Math.round(a.latency.totalDiff.hi)} ms` : 'not enough data'}. Budget ${ms(a.latency.budgetMs)}. ${a.latency.on.n} turns on, ${a.latency.off.n} turns off.</p>
+<p class="legend">Paired comparison. Each emotions-off turn is matched to the emotions-on turn with the same scenario, trial and turn number, and only matched pairs count. Median of the per-pair total time difference (on minus off): ${a.latency.totalDiff ? `${Math.round(a.latency.totalDiff.diff)} ms, 95% interval ${Math.round(a.latency.totalDiff.lo)} to ${Math.round(a.latency.totalDiff.hi)} ms` : 'not enough pairs'}. Budget ${ms(a.latency.budgetMs)}. ${a.latency.pairs} pair(s) from ${a.latency.scenarios.length} scenario(s): ${esc(a.latency.scenarios.join(', ') || 'none')}. The bars show the medians of those same turns.</p>
 <h2>Turns by scenario</h2><p class="legend">Weak and flaky scenarios start open.</p>${drills}
 <h2>SDK parser checks (offline)</h2>
 <table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>${parser || '<tr><td colspan="3">Not run.</td></tr>'}</tbody></table>
