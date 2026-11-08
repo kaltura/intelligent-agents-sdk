@@ -1130,8 +1130,8 @@ describe('16. Docs accuracy', () => {
     const re = /(submitStructuredDataForm|setFormLeadInfo)[^\n]*(feeds|is sent to the (agent|model)|reaches the (agent|model)|tells the (agent|model))/i;
     const hits = scanFiles().filter((f) => f.endsWith('.md')).flatMap((f) => read(f).split('\n')
       .map((l, i) => [i + 1, l]).filter(([, l]) => re.test(l)).map(([n]) => `${f}:${n}`));
-    assert.deepEqual(hits, [], `a form submission only records the values. Fix: ${hits.join(', ')}`);
-    assert.match(read('docs/STRUCTURED-DATA-FORMS.md'), /records the submission/);
+    assert.deepEqual(hits, [], `a form submission goes to the server and the agent does not see the values. Fix: ${hits.join(', ')}`);
+    assert.match(read('docs/STRUCTURED-DATA-FORMS.md'), /sends the values to the server\. The agent does not see them/);
   });
 
   test('the GenUI widget name literal in code and in docs is the same single value', () => {
