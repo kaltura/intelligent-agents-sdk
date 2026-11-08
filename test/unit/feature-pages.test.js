@@ -163,7 +163,7 @@ test('every page and script exists, and the page list matches the files', () => 
 test('pages: no inline script, inline style or event attributes', () => {
   for (const f of pageFiles.filter((x) => x.endsWith('.html'))) {
     const html = readFileSync(f, 'utf8');
-    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi)) {
       assert.match(m[1], /\bsrc="/, `${f}: script without src`);
       assert.equal(m[2].trim(), '', `${f}: inline script body`);
       const src = /src="([^"]+)"/.exec(m[1])?.[1] ?? '';
