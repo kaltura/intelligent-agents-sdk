@@ -28,7 +28,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. `fast` or `smart`, lowercase. Omit it to use the default, `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects a client-supplied value for them. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects any key that starts with `sys__`. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 | `context_id` | Optional. The id of the category or entry the turn is about, as a string. With `context_type: 'entry'` it must look like `0_abcd1234`. |
 | `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
@@ -98,7 +98,7 @@ The Kaltura API (the media calls such as categories, entries and uploads) also a
 
 The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in the `instructions` of a skill attached with mode `'preloaded'` (see [§ Skills](management-operations.md#skills)), regardless of `allow_client_variables`.
 
-Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
+Before any network call, the SDK's own `request_vars` pre-flight guard throws `validation_error` for `secrets` and for any key that starts with lowercase `sys__`, whether or not the table below lists it. The match is case-sensitive: `Sys__x`, `SYS__X` and `sys_x` pass. The error names the key, never the value. Every entry point shares the check: `conversations.send` and `stream`, `threads.push`, and the `requestVars` option and `updateRequestVars` of the session classes (see `request_vars` above):
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|

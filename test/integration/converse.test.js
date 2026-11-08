@@ -116,6 +116,47 @@ test('assertRequestVars rejects the bare sys__user_obj key (no trailing dot)', (
   assert.throws(() => assertRequestVars({ sys__user_obj: 'anything' }), (e) => e.code === 'validation_error' && /sys__user_obj/.test(e.detail));
 });
 
+test('assertRequestVars rejects every key that starts with lowercase sys__ and names the key, not the value', () => {
+  for (const k of ['sys__x', 'sys__', 'sys__custom_thing', 'sys__user_obj.x']) {
+    assert.throws(
+      () => assertRequestVars({ [k]: 'SECRET-VALUE-123' }, 'request_vars'),
+      (e) => e.code === 'validation_error' && e.detail.includes(`"${k}"`) && !e.detail.includes('SECRET-VALUE-123'),
+      k,
+    );
+  }
+});
+
+test('assertRequestVars sys__ prefix check is case-sensitive and anchored at the start', () => {
+  const ok = { Sys__x: 1, SYS__X: 2, ' sys__x': 3, sys_x: 4, 'a_sys__x': 5, sys_: 6, sys: 7 };
+  assert.deepEqual(assertRequestVars(ok), ok);
+});
+
+test('assertRequestVars accepts names that only look like secrets (only the exact key "secrets" is reserved)', () => {
+  const ok = { 'secrets.x': 'a', secrets_x: 'b', Secrets: 'c', SECRETS: 'd', 'a.secrets': 'e' };
+  assert.deepEqual(assertRequestVars(ok), ok);
+});
+
+test('assertRequestVars does not look inside values (a sys__ key nested in a value fails as non-scalar, not as reserved)', () => {
+  assert.throws(() => assertRequestVars({ profile: { sys__x: 1 } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
+});
+
+test('assertRequestVars rejects non-object input as before', () => {
+  for (const bad of ['sys__x', 5, true]) {
+    assert.throws(() => assertRequestVars(bad), (e) => e.code === 'validation_error' && /expected an object/.test(e.detail));
+  }
+});
+
+test('converse send/stream refuse a custom sys__ key with zero fetch calls', async () => {
+  const f = fakeFetch([{ match: '/assistant/converse', respond: () => ({ body: '{"type":"text","content":"ok"}\n' }) }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  await assert.rejects(() => m.conversations.send({ userMessage: 'x', request_vars: { sys__x: 'v' } }, CONV_KS), (e) => e.code === 'validation_error' && e.detail.includes('"sys__x"'));
+  await assert.rejects(
+    async () => { for await (const _ of m.conversations.stream({ userMessage: 'x', request_vars: { sys__: 'v' } }, CONV_KS)) { /* */ } },
+    (e) => e.code === 'validation_error',
+  );
+  assert.equal(f.calls.length, 0);
+});
+
 test('assertRequestVars rejects a non-scalar (nested object/array) value', () => {
   assert.throws(() => assertRequestVars({ profile: { tier: 'gold' } }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
   assert.throws(() => assertRequestVars({ ids: [1, 2] }), (e) => e.code === 'validation_error' && /scalar/.test(e.detail));
