@@ -18,11 +18,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 ```
 
 ```json
-{
-  "userMessage": "How do I fix video buffering?",
-  "threadId": null,
-  "sse": false
-}
+{ "userMessage": "How do I fix video buffering?", "threadId": null, "sse": false }
 ```
 
 | Field | Notes |
@@ -39,8 +35,10 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
 | `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
 | `metadata` | Optional. `{ voice_start_time?, voice_end_time? }`. Each value you send must be a finite number. Saved with the user's message. |
+| `add_message_in_db` | Optional. Boolean. `false` answers the turn without storing it: the thread keeps the same messages. The returned `messageId` does not exist afterwards (`messages.get` gives `not_found`), so do not store it. With a `threadId`, the reply carries that same thread id. Without one, the returned `threadId` does not exist either (`threads.get` gives `not_found`). The SDK sends the request once, and `recoverFromSpiral` sends no follow-up turn for it. |
+| `shared_message_id` | Optional. Non-empty message id string. Starts a new thread seeded from that message. The reply carries the new `threadId` and the source thread stays unchanged. `recoverFromSpiral` continues on the new thread. Send it without `threadId`: with both, the turn starts a new thread and the given thread is unchanged. An id that does not exist, or the id of a turn sent with `add_message_in_db: false`, gives an empty reply with no thread: `send` throws `empty_reply`. Forking another user's message can also fail with `thread_access_denied`. |
 
-The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
+The SDK checks `context_type`, `context_id`, both entry id lists, `metadata`, `add_message_in_db` and `shared_message_id` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
