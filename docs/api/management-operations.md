@@ -33,6 +33,17 @@ The request also takes a top-level `orderBy`, next to `filter`, not inside it. `
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
 | List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}`. Curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
 
+**Failures in the response body.** `avatars.get`, `avatars.create` and `avatars.update` can fail with HTTP 200. `code` is `api_exception`, or a more specific SDK code such as `catalog_item_not_found` when the cause is a missing catalog item. The reason is always in `err.title`. Branch on `title`, not `code`.
+
+| `title` | Meaning | Where |
+|---|---|---|
+| `INVALID_VISUAL_ID` | `visual.id` is not in the catalog | create and update |
+| `AVATAR_TEMPLATE_NOT_FOUND` | `templateId` does not exist | create only |
+| `AVATAR_MISSING_VISUAL_RESOLUTION` | No usable visual: none sent, or `face` without `background` | create |
+| `AVATAR_FAILED_TO_COMPOSE_VISUAL` | `face` and `background` could not be combined, for example an unknown face id | create |
+| `AVATAR_MISSING_VOICE` | No `voice` sent | create |
+| `AVATAR_NOT_FOUND` | Unknown avatar id | get |
+
 **Changing the look on update.** On create, `face` and `background` travel together. On update:
 
 - To change the background, send `background` alone. It applies to the avatar's current face.

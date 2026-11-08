@@ -148,3 +148,30 @@ test('string bodies, detail arrays and error segments are redacted before they a
     assert.ok(!e.message.includes(secret.slice(0, 8)), e.message);
   }
 });
+
+test('errorFromOkBody keeps each documented avatar error title', () => {
+  const titles = [
+    'INVALID_VISUAL_ID',
+    'AVATAR_TEMPLATE_NOT_FOUND',
+    'AVATAR_MISSING_VISUAL_RESOLUTION',
+    'AVATAR_FAILED_TO_COMPOSE_VISUAL',
+    'AVATAR_MISSING_VOICE',
+    'AVATAR_NOT_FOUND',
+  ];
+  for (const title of titles) {
+    const e = errorFromOkBody({ objectType: 'KalturaAPIException', code: title, message: 'x' }, '/avatar/create');
+    assert.ok(e instanceof KalturaError, title);
+    assert.equal(e.title, title);
+    assert.equal(e.code, 'api_exception', title);
+    assert.equal(e.status, 200, title);
+  }
+});
+
+test('errorFromOkBody keeps the avatar compose title when the cause is a missing catalog item', () => {
+  const e = errorFromOkBody(
+    { objectType: 'KalturaAPIException', code: 'AVATAR_FAILED_TO_COMPOSE_VISUAL', message: 'Failed to composite face "f" with color "#ffffff": [CATALOG_ITEM_NOT_FOUND] Catalog item not found' },
+    '/avatar/create',
+  );
+  assert.equal(e.title, 'AVATAR_FAILED_TO_COMPOSE_VISUAL');
+  assert.equal(e.code, 'catalog_item_not_found');
+});

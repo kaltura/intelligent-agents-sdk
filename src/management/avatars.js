@@ -161,10 +161,13 @@ export class Avatars {
    * `name` (≤255 chars) labels the avatar; over 255 is a 400.
    *
    * Domain failures arrive in an HTTP 200 body. The SDK throws `KalturaError`
-   * with `code:'api_exception'` and the failure code in `err.title`:
+   * with the failure code in `err.title`. `code` is `api_exception`, or a more
+   * specific SDK code such as `catalog_item_not_found`:
    * `AVATAR_MISSING_VISUAL_RESOLUTION` (face/background/template incomplete),
    * `AVATAR_FAILED_TO_COMPOSE_VISUAL` (for example a bogus face id),
-   * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`. Branch on `title`. The
+   * `AVATAR_MISSING_VOICE`, `AVATAR_NOT_FOUND`, `INVALID_VISUAL_ID` (a
+   * `visual.id` that is not in the catalog) and `AVATAR_TEMPLATE_NOT_FOUND`
+   * (a `templateId` that does not exist). Branch on `title`. The
    * pre-network guard below catches the incomplete-pairing case before the
    * request, including an incomplete pair sent alongside `visual` on create.
    *
@@ -209,6 +212,10 @@ export class Avatars {
    * `background` too to actually recompose). `name` is also accepted.
    * `templateId` is REJECTED on update (400 `property templateId should not
    * exist`) — it's a create-only convenience.
+   *
+   * A `visual.id` that is not in the catalog arrives in an HTTP 200 body: the
+   * SDK throws `KalturaError` with `code:'api_exception'` and
+   * `title:'INVALID_VISUAL_ID'`. Branch on `title`.
    *
    * @example <caption>Clear a legacy avatar-level opening phrase so the intellect's `opening_phrase` owns the line; voice/visual untouched</caption>
    * await k.avatars.update({ id: avatarId, openingPhrase: null }, adminKs);

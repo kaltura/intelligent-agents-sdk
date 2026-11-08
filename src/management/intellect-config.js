@@ -431,7 +431,8 @@ export class IntellectConfig {
    * client-side: `model_id` a non-empty string (known ids: {@link MODEL_IDS}),
    * `thinking_level` in {@link THINKING_LEVELS} (not every model uses it),
    * `include_thoughts` a boolean, `max_output_tokens` a positive integer,
-   * `temperature` a number in [0, 1], `provider` `'vertex'` or `'bedrock'` (the
+   * `temperature` a number in [0, 1] (replies can still differ at `0`, so do not rely on it for
+   * repeatable output), `provider` `'vertex'` or `'bedrock'` (the
    * cloud that serves the model). Unknown keys are rejected.
    * With the `avatar_show_content` capability on, unset `thinking_level`
    * defaults to `low` and unset `max_output_tokens` to 4096.
