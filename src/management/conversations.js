@@ -171,7 +171,7 @@ export class Conversations {
 
   /**
    * Send a message and stream the response as an async iterator of segments.
-   * WRITE — appends to thread memory. Needs a non-admin token: a
+   * WRITE — appends to thread memory (unless `add_message_in_db` is `false`). Needs a non-admin token: a
    * CONVERSATION or AGENT token. Mint it with an agent id (`agentId` on
    * either) so the thread carries the real `agent_id` for lifecycle-rule
    * matching. HTTP converse is HEADLESS TEXT ONLY: it never
@@ -297,6 +297,7 @@ export class Conversations {
     if (!opts.recoverFromSpiral || opts.add_message_in_db === false || !first.spiralStopped || first.text) return first;
     const nudgeOpts = { ...opts, threadId: first.threadId || opts.threadId, userMessage: `${SPIRAL_RECOVERY_PREFIX}${opts.userMessage}` };
     delete nudgeOpts.recoverFromSpiral;
+    if (first.threadId) delete nudgeOpts.shared_message_id; // the fork exists now; the nudge continues it
     const retry = this._throwOnErrorSegment(await collectConverse(this.stream(nudgeOpts, ks)), nudgeOpts);
     return { ...retry, spiralRecovered: !(retry.spiralStopped && !retry.text), firstAttempt: { toolCalls: first.toolCalls, spiralStopped: first.spiralStopped } };
   }

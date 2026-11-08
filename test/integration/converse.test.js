@@ -400,3 +400,21 @@ test('add_message_in_db:false skips the spiral recovery turn', async () => {
   assert.equal(r.spiralRecovered, undefined);
   assert.equal(converseCalls(f).length, 1, 'no second turn');
 });
+
+test('recoverFromSpiral nudge continues the fork: no second shared_message_id', async () => {
+  const f = fakeFetch([{
+    match: '/assistant/converse',
+    respond: (req) => (String(req.body.userMessage).startsWith(SPIRAL_RECOVERY_PREFIX)
+      ? { body: '{"type":"text","content":"The answer is 42.","threadId":"t-spiral"}\n' }
+      : { body: spiralNdjson() }),
+  }]);
+  const m = new Management({ partnerId: 123, adminSecret: 'a'.repeat(32), fetch: f });
+  const r = await m.conversations.send({ userMessage: 'x', shared_message_id: 'm1', recoverFromSpiral: true }, CONV_KS);
+  assert.equal(r.spiralRecovered, true);
+  const calls = converseCalls(f);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].body.shared_message_id, 'm1');
+  assert.equal(calls[0].body.threadId, undefined);
+  assert.equal(calls[1].body.threadId, 't-spiral');
+  assert.equal(calls[1].body.shared_message_id, undefined, 'the nudge must not fork a second thread');
+});
