@@ -88,3 +88,5 @@ TARGET=<name> node scripts/live-verify-emotions.mjs
 ```
 
 `TARGET` is required, so a run never reaches an environment by accident. Set it to the name of the Limited Availability environment. The script needs that environment's credentials. It creates a throwaway agent and avatar, runs three trials with emotions on and one control with them off, and deletes everything. It passes when at least two of three trials show two or more distinct labels over two or more avatar segments, and the control shows none. CI has no credentials for this environment, so the script is not part of any workflow.
+
+For a statistical check of the output, run the [emotions eval](emotions-eval.md).

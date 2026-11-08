@@ -197,6 +197,20 @@ const SHIPPED = [
   'test/unit/limited-availability.test.js',
   'docs/contributor/limited-availability.md',
   'scripts/live-verify-emotions.mjs',
+  'scripts/live-eval-emotions.mjs',
+  'scripts/lib/emotion-eval/stats.mjs',
+  'scripts/lib/emotion-eval/scenarios.mjs',
+  'scripts/lib/emotion-eval/analyze.mjs',
+  'scripts/lib/emotion-eval/parser-checks.mjs',
+  'scripts/lib/emotion-eval/report.mjs',
+  'scripts/lib/emotion-eval/runner.mjs',
+  'docs/contributor/emotions-eval.md',
+  'test/unit/emotion-eval-stats.test.js',
+  'test/unit/emotion-eval-analyze.test.js',
+  'test/unit/emotion-eval-report.test.js',
+  'test/unit/emotion-eval-runner.test.js',
+  'test/unit/emotion-eval-cli.test.js',
+  'test/fakes/emotion-results.js',
 ];
 
 test('files that carry the Limited Availability feature use none of the banned release words, in comments or code', () => {

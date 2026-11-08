@@ -12,6 +12,7 @@ Docs for contributors. They are never published on the docs site and never loade
 | [../../CONTRIBUTING.md](../../CONTRIBUTING.md) | Contribution process |
 | [../../SDK_CONSTITUTION.md](../../SDK_CONSTITUTION.md) | Invariants every change must hold |
 | [limited-availability.md](limited-availability.md) | Use, test or extend a feature that only some environments have |
+| [emotions-eval.md](emotions-eval.md) | Run and read the live eval for avatar emotions |
 | [site-nav.md](site-nav.md) | Test, extend or set non-goals for the SITE-NAV plugin |
 | [startup-kpis.md](startup-kpis.md) | See the startup latency KPIs and how CI tracks them |
 | [../../scripts/README.md](../../scripts/README.md) | Pick and run the verification tiers and live-verify scripts |
