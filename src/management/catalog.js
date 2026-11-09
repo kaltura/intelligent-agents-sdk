@@ -148,6 +148,11 @@ export class Catalog {
    * attribute shape). Free-text fields (`name`, `hairStyle`, `clothing`) are sent
    * to the server as given. The SDK does not trim, escape or check them.
    *
+   * Upload a transparent PNG cutout (the person only, alpha around them), not an
+   * opaque photo. An opaque Face keeps its own backdrop in the live stream and
+   * ignores the background you compose it with. See docs/api/design.md,
+   * "Custom look: a Face and a Background".
+   *
    * NAME COLLISION: `attrs.background` here is a photo ATTRIBUTE string (e.g.
    * `'Image'`) describing this upload's own backdrop — unrelated to
    * {@link Avatars#create}'s `body.background`, the composition selector you

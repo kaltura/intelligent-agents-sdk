@@ -24,7 +24,7 @@ There is no build step and no npm registry package. Import the raw ESM from `src
 
 - **You own the source, no black box.** Raw ESM in `src/`. Read it line by line. There is no build step and no install step in the browser: import straight from a jsDelivr URL pinned to a git tag.
 - **Zero runtime dependencies.** No transitive supply-chain surface to audit.
-- **Voice and visual cloning is self-serve**, not a support ticket: `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createVisual`.
+- **Voice and visual cloning is self-serve**, not a support ticket: `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createFace` + `catalog.createBackground` (or `catalog.createVisual` for one finished photo).
 - **Security designed in, not bolted on.** Pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments. Summary in [Security posture](#security-posture) below, full matrix in [SECURITY.md](SECURITY.md).
 
 ---
@@ -1165,7 +1165,7 @@ const v = await mgmt.catalog.importVoiceFromElevenLabs('<elevenlabs-voice-id>', 
 
 An unknown provider id creates **nothing** and raises a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. Voice id rules: [design.md](docs/api/design.md#import-a-provider-voice-by-id-no-audio-upload).
 
-**Custom face works self-serve** (`mgmt.catalog`, `mgmt.avatars`): upload a portrait image via `catalog.createVisual`, pass `itemId` as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
+**Custom face works self-serve** (`mgmt.catalog`, `mgmt.avatars`). Recommended: upload a transparent PNG cutout with `catalog.createFace`, upload backgrounds with `catalog.createBackground`, and pair them in `avatars.create({ voice, face, background })`. One Face serves many backgrounds, and `avatars.update` swaps the background later. Guide, Google Flow and Gemini recipe, and keying script: [Catalog & Assets](docs/api/design.md#custom-look-a-face-and-a-background-recommended). Alternative: one finished photo via `catalog.createVisual`, passed as `visualId` in `provision`/`avatars.create`. The model animates the portrait at runtime. Video-clip ingest is not available through this API.
 
 ---
 
