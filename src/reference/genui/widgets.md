@@ -142,7 +142,7 @@ Form level:
 | `formId` | `form_id`, `formId` | A non-negative integer (`0` is valid) or a digit string of 1 to 9 digits, which becomes a number. Anything else is `null`. Sent back in the submit payload |
 
 Descriptor: `{kind:'user-properties-form', data:{title, secondaryTitle, formId, fields:[{key, type, label, knownValue, required, description}]}}`.
-- **Report back:** on `submit`, send the values to the agent with `speak()` or `updateRequestVars()`. `session.submitStructuredDataForm(values)` only records the submission ([details](/guides/structured-data-forms/#reading-back-what-the-viewer-submitted)). For a durable path that skips `user_properties_forms`, see [Structured data forms](/guides/structured-data-forms/).
+- **Report back:** on `submit`, send the values to the agent with `speak()` or `updateRequestVars()`. `session.submitStructuredDataForm(values)` does not reach the agent ([details](/guides/structured-data-forms/#reading-back-what-the-viewer-submitted)). For a durable path that skips `user_properties_forms`, see [Structured data forms](/guides/structured-data-forms/).
 - For the full picture, see [Structured Data Forms](/guides/structured-data-forms/) and [External API Integrations](/guides/external-api-integrations/). They cover configuration, reading back what the viewer submitted, and how to deliver the collected data somewhere durable.
 
 ### 9. content-gallery (`renderContentGallery`): image/content cards

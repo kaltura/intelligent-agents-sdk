@@ -140,7 +140,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Put a talking video avatar on a web page | [Use-Case Catalog](/reference/use-cases/) → UC-12 |
 | Make the avatar greet the user first, interruptibly, as fast as possible | [Start the Conversation](/guides/start-the-conversation/) |
 | Use your **own voice** for the avatar | [Catalog & Assets](/reference/api/design/#upload-a-custom-voice-clone) |
-| Use your **own face/portrait** for the avatar | [Catalog & Assets](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) |
+| Use your **own face/portrait** for the avatar | [Catalog & Assets § Face + Background](/reference/api/design/#custom-look-a-face-and-a-background-recommended) |
 | Build a real app with the JavaScript SDK | [README.md](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#quick-start) |
 | Let Claude Code build it with you | [Using Claude Code or another coding agent](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#using-claude-code-or-another-coding-agent) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [Client-Side Commands](/guides/client-commands/) |
@@ -167,5 +167,5 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter with `agents.list(admin.ks, { filter: { adminTagsIn: ['<tag>'] } })`. Details under [Create an Agent](/reference/api/build/avatar-and-agent/#create-an-agent).
 
-**Can I use my own face or voice?** Yes, both. See [Catalog & Assets](/reference/api/design/#upload-a-custom-visual-portrait--animated-avatar) (visual) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
+**Can I use my own face or voice?** Yes, both. See [Catalog & Assets](/reference/api/design/#custom-look-a-face-and-a-background-recommended) (face and background) and [→ Custom Voice](/reference/api/design/#upload-a-custom-voice-clone).
 

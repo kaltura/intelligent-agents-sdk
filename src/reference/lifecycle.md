@@ -59,7 +59,7 @@ You can create four `actionType` values. `match` output can also list built-in r
 
 A `templateId` is more durable than a `presetType`. It points at a template you created yourself via [`mgmt.emailTemplates`](#emailtemplates-managing-the-templates-sendinsightemail-references) (see below). A `presetType` uses a preset template instead.
 
-**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge, and uses letters, digits, `_` and `-`. A `type:'boolean'` badge needs `score`, given when the insight is true. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.detail` names the field.
+**`createBadges`** takes `{ badges: [{ badgeId, type, score?, scoreAction? }] }`, a non-empty list with unique `badgeId`s. `badgeId` is the insight key whose value sets the badge. It is 1 to 64 characters: letters, digits, `_` and `-`. A dot is refused, so give a badge's insight setting a key without dots. A `type:'boolean'` badge needs `score`, given when the insight is true, from -1,000,000 to 1,000,000. A `type:'numeric'` badge takes its score from the insight value, so it must not set `score`. `scoreAction` is `'upsert'` (set the score) or `'delta'` (add to it). Add a `changed_keys` filter on the badge keys, as `lifecycle.audit` advises (`badges_unfiltered`). A wrong shape returns 400, and `err.detail` names the field.
 
 ```js
 const sentiment = await mgmt.insightSettings.create({
@@ -93,7 +93,7 @@ await mgmt.insightSettings.update(setting.id, { status: 'disabled' }, ks);      
 await mgmt.insightSettings.delete(setting.id, ks, { confirmPermanent: true });            // WRITE, destructive
 ```
 
-`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `number` and `arrayNumber` hold whole numbers only. `prompt` is required. There's no built-in fallback prompt for any key name. `prompt` can hold the same `{{path}}` placeholders as `recipients`. `key` uses letters, digits, `_`, `.` and `-`, within a length limit. Another key returns 400 that shows the allowed pattern. Insight setting ids are 24-character hex strings. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
+`valueType` is one of `'string'`/`'number'`/`'boolean'`/`'arrayString'`/`'arrayNumber'`/`'arrayBoolean'`. `number` and `arrayNumber` hold whole numbers only. `prompt` is required. There's no built-in fallback prompt for any key name. `prompt` can hold the same `{{path}}` placeholders as `recipients`. `key` is 1 to 64 characters: letters, digits, `_`, `.` and `-`. Another key returns 400 that shows the allowed pattern. Insight setting ids are 24-character hex strings. `status` (`'active'`/`'disabled'`) controls whether a lifecycle rule referencing this id actually extracts it the next time it fires. Deleting the entity instead just leaves any referencing rule's `insightSettingsIds` dangling. That id is simply skipped going forward.
 
 ### `EmailTemplates`: managing the templates `sendInsightEmail` references
 
