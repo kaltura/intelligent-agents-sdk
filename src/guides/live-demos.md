@@ -7,7 +7,7 @@ eyebrow: How-to Guide
 
 # Live Demos
 
-The `examples/` folder has five browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos need your partner id, plus either an admin secret (to create a throwaway agent) or the widget id of an existing agent. Three of the scripts need the admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
+The `examples/` folder has six browser demos, four server scripts and an MCP server. They are not hosted. Run them from a clone of the repo. The browser demos need your partner id, plus either an admin secret (to create a throwaway agent) or the widget id of an existing agent. Three of the scripts need the admin secret. `genui-graded-question.mjs` and the MCP server need no credentials.
 
 ## Run a browser demo
 
@@ -30,6 +30,16 @@ With an admin secret and no `AGENTIC_WIDGET_ID`, the server provisions a throwaw
 | [screen-share-agent.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/screen-share-agent.html) | A debugging assistant. The user shares their screen with `startScreenShare()` and asks the avatar about the code, error or app on it |
 | [chroma-key-avatar.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/chroma-key-avatar.html) | The avatar video chroma-keyed with `attachChromaKeyAvatar`, so it sits over your own page |
 | [event-timing.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/event-timing.html) | The core session events (connect timings, transcript, speech, turn, interrupt, warning, error, ended) with a timestamp since `connect()` |
+
+## One Face on many backgrounds
+
+[face-and-backgrounds/](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/face-and-backgrounds/) shows one Face on four image backgrounds and one flat color, as five live avatars on one page. It has its own server, which uploads the assets, builds the avatars and agents, and deletes them on Ctrl+C or after `--ttl-minutes` (default 60). It needs the admin secret. The folder also holds the green-screen keying script and the source images. Guide: [Catalog & Assets § Custom look](/reference/api/design/#custom-look-a-face-and-a-background-recommended).
+
+```bash
+node examples/face-and-backgrounds/serve.mjs
+```
+
+Then open `http://127.0.0.1:8092/`.
 
 ## Server scripts
 

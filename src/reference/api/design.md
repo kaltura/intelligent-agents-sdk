@@ -79,11 +79,62 @@ POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromElevenLabs 
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/createVoiceFromCartesia     {"voiceId":"<provider-voice-id>"}
 ```
 
-An unknown provider id creates **nothing**. A `voiceId` with characters other than letters, digits, `_` or `-` throws `bad_request` before any request. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. A voice with no audio samples throws `voice_has_no_samples`: upload an audio file with `catalog.createVoice` instead. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+An unknown provider id creates **nothing**. A `voiceId` must be 1 to 128 characters, letters, digits, `_` or `-` only. Anything else throws `bad_request` before any request. The SDK throws a typed `voice_not_found_elevenlabs` / `voice_not_found_cartesia` error. A voice with no audio samples throws `voice_has_no_samples`: upload an audio file with `catalog.createVoice` instead. SDK: `mgmt.catalog.importVoiceFromElevenLabs(voiceId, ks)` / `importVoiceFromCartesia(voiceId, ks)`.
+
+---
+
+## Custom look: a Face and a Background (recommended)
+
+Upload one Face and any number of Backgrounds, then pair them in `avatars.create`. One person on many backdrops costs one Face upload. A later background swap needs no upload at all. Use this path for your own media. A single photo with its background baked in is the [alternative](#upload-a-custom-visual-portrait--animated-avatar).
+
+| Piece | SDK upload | Requirement |
+|---|---|---|
+| Face | `catalog.createFace(pngBlob, attrs, ks)` | A **transparent PNG cutout**: the person only, with alpha around them. Square, 2048×2048 px or larger. |
+| Background | `catalog.createBackground(imageBlob, attrs, ks)` | Any JPEG or PNG. For a flat color skip the upload and pass `background: { type: 'color', value: '#RRGGBB' }`. |
+
+A Face that is an opaque photo keeps its own backdrop in the live stream and ignores the background you pick, even a flat color. Preset Faces are transparent PNGs for the same reason.
+
+`attrs` takes the same fields as `createVisual` ([values](#upload-a-custom-visual-portrait--animated-avatar)). `attrs.background` is a photo attribute string such as `"Image"`. It is unrelated to the `background` selector of `avatar/create`. Compose, then swap a background later: [Agent Components · Create an Avatar and an Agent § Compose from a custom Face and Background](/reference/api/build/avatar-and-agent/#compose-from-a-custom-face-and-background). Live example, one Face on five backgrounds: [examples/face-and-backgrounds/](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/face-and-backgrounds/).
+
+### Make the Face with Google Flow or Gemini
+
+Image models cannot write real transparency. Ask for a flat green background, then key the green out.
+
+1. Get a portrait: your own photo, or one generated in [Google Flow](https://flow.google.com) or the Gemini app.
+2. Ask an image model that edits photos (Gemini, "Nano Banana") for the same person on flat green. In Flow, send the prompt in the project chat. In Gemini, attach the portrait.
+
+   ```text
+   Edit this portrait. Keep the person's identity, face, hair, skin tone, expression and
+   clothing exactly as they are. Replace the whole background with one flat, pure green
+   (#00FF00). No shadows, no gradient, no green light on the skin or hair, no props.
+   Head and shoulders, centered, facing the camera, eyes open, mouth closed, even lighting.
+   Square image.
+   ```
+
+   To start from nothing, replace the first two sentences with "Generate a photo-real portrait of …".
+3. Download the largest size (Flow: Download, then 2K). Expect a square image of at least 2048 px.
+4. Key the green out with [key-green-screen.py](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/face-and-backgrounds/key-green-screen.py):
+
+   ```bash
+   pip install pillow numpy
+   python3 examples/face-and-backgrounds/key-green-screen.py face-green.jpg face.png
+   ```
+
+   The script does three things: a difference key (how much greener a pixel is than its red and blue), a despill that removes the green tint on edge pixels, and a 2 px matte shave plus a soft edge that removes the halo. The downloaded green is rarely exact (about `rgb(13,247,0)` in the example), which the difference key tolerates. Green fringe left: lower `--high`. Holes in the person: raise `--low`.
+5. Check the edges on a dark and a light backdrop before upload:
+
+   ```bash
+   magick face.png -background '#202020' -flatten check-dark.png
+   magick face.png -background '#f2f2f2' -flatten check-light.png
+   ```
+
+   Look for a green line along the hair and shoulders. The input and output of the example are `assets/face-green.jpg` and `assets/face.png`.
 
 ---
 
 ## Upload a Custom Visual (portrait → animated avatar)
+
+The alternative to a [Face and a Background](#custom-look-a-face-and-a-background-recommended). Use it when you have one finished photo and its background never changes. The photo carries its own backdrop, so the background cannot be swapped without a new upload.
 
 ```
 POST https://api.avatar.us.kaltura.ai/v1/catalog-item/create   (multipart/form-data)
@@ -171,22 +222,27 @@ A value outside the lists above for `genderPresentation`, `background`, `skinTon
 
 **SDK shortcut:** `catalog.createVisual(imageBlob, { name, genderPresentation, ...attributes }, adminKs)` takes the attributes from the table above. It requires `name` and `genderPresentation` client-side (`bad_request` before any network call if either is missing) and defaults the rest to a consistent baseline look. Returns the server response: `{ itemId, loadingVideo }`. Pass an optional `consentRef` and the result also carries a consent receipt. See [Security & Compliance](/reference/security/) for the receipt.
 
-## Upload a custom Face or Background (compose-a-visual path)
+## Tag an upload with an agent id (`agentScope`)
 
-`createVisual` above uploads a photo directly as a ready-to-use Visual. `catalog-item/create` also accepts an explicit `Face`/`Background` `type`, producing the two composable HALVES that the `avatar/create` `face`/`background` fields expect instead. This uses the same multipart shape and attribute fields as a Visual upload, just with `type` set.
-
-**Watch for this name collision:** the `attributes.visual.background` field below is a photo ATTRIBUTE string (e.g. `"Image"`) describing the upload's own backdrop. It's unrelated to `avatar/create`'s own `background` field, the `{type:'color'|'visual', value}` composition selector used a few steps later.
+Every file upload above (`createVoice`, `createVisual`, `createFace`, `createBackground`) takes an optional `agentScope`, and `catalog-item/update` takes it too. It is one more form field on `catalog-item/create`, or one more key in the `catalog-item/update` body:
 
 ```
-file=@face-portrait.jpg
-attributes={"visual":{"name":"Support rep","genderPresentation":"Feminine","background":"Image","skinTone":"Light","ageGroup":"YoungAdult","hairColor":"Brown"}}
-type=Face
-adminTags=custom
+agentScope=<agent id>
 ```
 
-Send `type=Background` for a backdrop image instead.
+[Browse the catalog](#browse-the-catalog) with the same `agentScope` to list the items tagged with that agent next to the unscoped ones. `agentScope` is a tag for listing. It is not access control. A list call without `agentScope` does not return a scoped item. After `update` with `agentScope: ''`, the item is unscoped and appears in every list.
 
-**SDK shortcut:** `catalog.createFace(imageBlob, attrs, adminKs)` / `catalog.createBackground(imageBlob, attrs, adminKs)`. Same `attrs` shape as `createVisual`. Free-text fields (`name`, `hairStyle`, `clothing`) reach the server as given. The SDK does not trim, escape or check them. Composing the two halves into an avatar: [Agent Components · Create an Avatar and an Agent § Compose from a custom Face and Background](/reference/api/build/avatar-and-agent/#compose-from-a-custom-face-and-background).
+| Call | `agentScope` |
+|---|---|
+| `createVoice`, `createVisual`, `createFace`, `createBackground` | Omit it for an unscoped item. Otherwise a non-blank string. |
+| `update` | Omit it to leave the tag as it is. A non-blank string sets it. `''` clears it. |
+
+Anything else (`null`, a number, a blank string, or `''` on create) throws `bad_request` before any request. The SDK does not trim the value or check that the id names an existing agent, so it must equal the `agentScope` you pass to `catalog.list`, including case and spaces.
+
+```js
+const voice = await mgmt.catalog.createVoice(mp3, { name, description, agentScope: agentId }, adminKs);
+await mgmt.catalog.update({ itemId: voice.itemId, agentScope: '' }, adminKs);   // share with every agent
+```
 
 ---
 
@@ -194,8 +250,8 @@ Send `type=Background` for a backdrop image instead.
 
 Each step lives on its own page. Follow them in order:
 
-1. Upload the portrait: [§ Upload a Custom Visual](#upload-a-custom-visual-portrait--animated-avatar), above. Returns `itemId`.
-2. Create the avatar with `visual: { id: itemId }`, then the agent: [Agent Components · Create an Avatar and an Agent](/reference/api/build/avatar-and-agent/).
+1. Upload the Face and a Background ([§ Custom look](#custom-look-a-face-and-a-background-recommended)), or one portrait ([§ Upload a Custom Visual](#upload-a-custom-visual-portrait--animated-avatar)). Each returns an `itemId`.
+2. Create the avatar with `face` and `background`, or with `visual: { id: itemId }`, then the agent: [Agent Components · Create an Avatar and an Agent](/reference/api/build/avatar-and-agent/).
 3. Resolve the widget id and initialize the browser runtime: [Widget & Runtime Init](/reference/api/deploy/).
 4. Start the conversation from the browser with a silent opening and `kickoff`: [Start the Conversation](/guides/start-the-conversation/).
 

@@ -41,6 +41,17 @@ The request also takes a top-level `orderBy`, next to `filter`, not inside it. `
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
 | List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}`. Curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([Agent Components · Create an Avatar and an Agent § Three ways to get a visual](/reference/api/build/avatar-and-agent/#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
 
+**Failures in the response body.** `avatars.get`, `avatars.create` and `avatars.update` can fail with HTTP 200. `code` is `api_exception`, or a more specific SDK code such as `catalog_item_not_found` when the cause is a missing catalog item. The reason is always in `err.title`. Branch on `title`, not `code`.
+
+| `title` | Meaning | Where |
+|---|---|---|
+| `INVALID_VISUAL_ID` | `visual.id` is not in the catalog | create and update |
+| `AVATAR_TEMPLATE_NOT_FOUND` | `templateId` does not exist | create only |
+| `AVATAR_MISSING_VISUAL_RESOLUTION` | No usable visual: none sent, or only one of `face` and `background` | create |
+| `AVATAR_FAILED_TO_COMPOSE_VISUAL` | `face` and `background` could not be combined, for example an unknown face id | create |
+| `AVATAR_MISSING_VOICE` | No `voice` sent | create |
+| `AVATAR_NOT_FOUND` | Unknown avatar id | get |
+
 **Changing the look on update.** On create, `face` and `background` travel together. On update:
 
 - To change the background, send `background` alone. It applies to the avatar's current face.
@@ -83,7 +94,7 @@ Each validates client-side and throws `bad_request` before any network call. See
 
 ## Tools
 
-A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409. Skills below follow the same rule.
+A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -97,14 +108,14 @@ A standalone, partner-level entity, not embedded in an intellect. A name that is
 
 ## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](/reference/api/build/intellect/#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](/reference/api/build/intellect/#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. Names are unique ignoring case. A name that is already in use returns 409 on add and on rename.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}`. `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A new `name` uses the same character rule as add, checked before the request |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
 **Variables in skills.** The `instructions` of a skill render `{{ variable }}` placeholders and template tags, like prompt blocks, in every mode (`'adhoc'`, `'adhoc-save'` and `'preloaded'`). A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
@@ -124,11 +135,11 @@ Token rules per method: [Conversation & Analytics § Threads](/reference/api/ope
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}`. Shallow merge one level under `analysis`. A key whose value changes fires `analysis_updated`. A patch that changes nothing fires no event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}`. Clears `analysis`. SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. Push needs an admin key. The SDK throws `wrong_token_scope` for a non-admin token it can recognize, and the server answers 403 to any other non-admin key. `system_message` is at most 4000 characters. An oversized `content`, `request_vars` or `system_message` (4001 characters or more) returns 413 and throws `payload_too_large`. |
+| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. Push needs an admin key. The SDK throws `wrong_token_scope` for a non-admin token it can recognize, and the server answers 403 to any other non-admin key. An oversized `content`, `request_vars` or `system_message` returns 413 and throws `payload_too_large`. Limits: [Conversation & Analytics § Size limits](/reference/api/operate/#size-limits). |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [Conversation & Analytics § Threads](/reference/api/operate/#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
-**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [Conversation & Analytics § Threads](/reference/api/operate/#threads).
+**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [Conversation & Analytics § Threads](/reference/api/operate/#threads).
 
 Rules to know:
 
@@ -186,7 +197,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record thr
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` does not tell you that indexing is complete. For the completion check, see [Agent Components · Ground the Agent in Your Content (RAG) § Ground the Agent](/reference/api/build/knowledge-rag/#ground-the-agent-in-your-content-rag).
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. `removeSource` on a source that lists `categoryIds` is refused with `bad_request`: to drop the categories, delete the record. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` and `mgmt.skills.delete` use the same guard.
 
