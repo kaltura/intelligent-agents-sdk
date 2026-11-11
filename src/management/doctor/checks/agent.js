@@ -147,7 +147,7 @@ export const avatarReferences = {
   },
 };
 
-/** The opening line set on both the avatar and the intellect. @type {DoctorCheck} */
+/** An avatar copy of the opening line that the intellect already sets. @type {DoctorCheck} */
 export const openingPhraseDuplicate = {
   id: 'opening-phrase-duplicate', category: 'avatar', scope: 'agent', needs: ['intellect', 'avatars'], codes: ['opening_phrase_duplicate'],
   run(/** @type {AgentView} */ view) {
