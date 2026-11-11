@@ -260,7 +260,7 @@ export class Management {
     // The siblings are what `lifecycle.audit` reads.
     this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
     // Read-only health check behind `doctor()`.
-    this._doctorFix = new DoctorFix(ctx, { agents: this.agents });
+    this._doctorFix = new DoctorFix(ctx, { agents: this.agents, intellects: this.intellects });
     this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, intellects: this.intellects, agents: this.agents, avatars: this.avatars, catalog: this.catalog, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates, tools: this.tools, skills: this.skills });
   }
 

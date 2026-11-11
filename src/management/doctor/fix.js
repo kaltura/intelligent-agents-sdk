@@ -7,6 +7,7 @@
  * because the right value cannot be known from the config alone.
  */
 import { KalturaError } from '../../core/errors.js';
+import { resolveIntellectId } from '../agents.js';
 import { normalizeLanguage, sameLanguage } from './language.js';
 
 /**
@@ -47,14 +48,15 @@ function fixOf(f) {
 
 /** Applies the fixes in a doctor report. */
 export class DoctorFix {
-  /** @param {import('../client.js').Ctx} ctx @param {{agents: import('../agents.js').Agents}} deps */
-  constructor(ctx, deps) { this._ = ctx; this._agents = deps.agents; }
+  /** @param {import('../client.js').Ctx} ctx @param {{agents: import('../agents.js').Agents, intellects: import('../intellects.js').Intellects}} deps */
+  constructor(ctx, deps) { this._ = ctx; this._agents = deps.agents; this._intellects = deps.intellects; }
 
   /**
    * Plan or apply the fixes in a doctor report. A dry run (the default) reads each
    * agent and plans. With `apply: true` it writes, one agent at a time. Before each
-   * write it reads the agent again and refuses when `asr.language` is no longer the
-   * value the report saw, so a stale report cannot overwrite a later change. The ASR
+   * write it reads the agent and its intellect again. It refuses when `asr.language` is
+   * no longer the value the report saw, or the intellect no longer forces replies in
+   * the target language, so a stale report cannot overwrite a later change. The ASR
    * provider is kept. Every result carries an `undo` body for `agents.update`.
    * WRITE only with `apply: true`.
    * @param {string} ks  Admin token. An expired or non-admin token rejects the call.
@@ -63,10 +65,10 @@ export class DoctorFix {
    * @returns {Promise<DoctorFixReport>}
    * @throws {KalturaError} `bad_request` for a malformed report, or `apply` without `codes`.
    */
-  async run(ks, report, opts = {}) {
+  async run(ks, report, opts) {
     this._.assertAdmin(ks, 'doctorFix');
     if (!report || !Array.isArray(report.findings)) throw badRequest('doctorFix: the report must be the result of mgmt.doctor, with a findings array.');
-    const { apply = false, codes } = opts;
+    const { apply = false, codes } = opts ?? {};
     if (codes !== undefined && (!Array.isArray(codes) || codes.some((c) => typeof c !== 'string'))) throw badRequest('doctorFix: codes must be an array of finding codes.');
     if (apply && (!codes || codes.length === 0)) throw badRequest('doctorFix: apply needs the codes to fix, for example { apply: true, codes: ["asr_language_mismatch"] }.');
     const wanted = report.findings.map(fixOf).filter((f) => f && (!codes || codes.includes(f.code)));
@@ -76,6 +78,25 @@ export class DoctorFix {
     const results = [];
     for (const fix of fixes) results.push(await this._one(ks, /** @type {NonNullable<ReturnType<typeof fixOf>>} */ (fix), apply));
     return { applied: apply && results.some((r) => r.status === 'applied'), results };
+  }
+
+  /**
+   * A reason to refuse when the agent's intellect no longer forces replies in `to`. Null when it still does,
+   * or when the read fails with a non-token error (the agent check above still holds).
+   * @param {string} ks @param {any} agent @param {string} to @returns {Promise<string|null>}
+   */
+  async _intellectStale(ks, agent, to) {
+    const id = resolveIntellectId(agent?.intellect);
+    if (id === undefined || id === null) return null;
+    try {
+      const config = /** @type {any} */ (await this._intellects.get(id, ks));
+      const forced = config && config.type !== 'external' ? normalizeLanguage(config.force_language) : null;
+      return forced === to ? null : 'The intellect no longer forces replies in this language. Run the doctor again.';
+    } catch (e) {
+      const err = /** @type {any} */ (e);
+      if (err?.status === 401 || err?.code === 'wrong_token_scope') throw e;
+      return null;
+    }
   }
 
   /** @param {string} ks @param {{code:string, agentId:string, from:string, to:string}} fix @param {boolean} apply @returns {Promise<DoctorFixResult>} */
@@ -95,6 +116,8 @@ export class DoctorFix {
     const undo = typeof before.language === 'string' ? { agentId: fix.agentId, asr: { language: before.language, provider } } : undefined;
     if (sameLanguage(before.language, fix.to) === true) return { ...base, status: 'already_applied' };
     if (before.language !== fix.from) return { ...base, status: 'refused', reason: `asr.language is "${before.language}" now, but the report saw "${fix.from}". Run the doctor again.` };
+    const stale = await this._intellectStale(ks, agent, fix.to);
+    if (stale) return { ...base, status: 'refused', reason: stale };
     if (!apply) return { ...base, status: 'planned', ...(undo ? { undo } : {}) };
     try {
       await this._agents.update({ agentId: fix.agentId, asr: { language: fix.to, provider } }, ks);

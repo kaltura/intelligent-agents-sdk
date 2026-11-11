@@ -12,18 +12,19 @@ const VOICE = { itemId: 'v1', type: 'Voice', adminTags: ['preset'], attributes: 
 /** One agent with the incident setup. `live` is what `agent/get` returns when the fix reads it. */
 function harness({ live = { language: 'en', provider: 'kaltura' }, getStatus } = {}) {
   const writes = [];
+  const intellect = { forced: 'Hebrew' };
   const ff = fakeFetch([
     { match: 'lifecycle/list', respond: pageOf([]) },
     { match: 'insight-settings/list', respond: pageOf([]) },
     { match: 'email-template/list', respond: pageOf([]) },
     { match: 'agent/list', respond: pageOf([{ agentId: 'a1', intellect: { id: 10 }, avatarIds: ['av1'], asr: { language: 'en', provider: 'kaltura' } }]) },
-    { match: 'v1/intellect/get', respond: () => ({ body: { id: 10, type: 'brain', force_language: 'Hebrew' } }) },
+    { match: 'v1/intellect/get', respond: () => ({ body: { id: 10, type: 'brain', force_language: intellect.forced } }) },
     { match: 'avatar/list', respond: pageOf([{ id: 'av1', voice: { id: 'v1' }, visual: { id: 'vis1' } }]) },
     { match: 'catalog-item/list', respond: (req) => pageOf(req.body.filter?.typeEqual === 'Voice' ? [VOICE] : [{ itemId: 'vis1', type: 'Visual' }])() },
-    { match: 'agent/get', respond: () => (getStatus ? { status: getStatus, body: { message: 'x' } } : { body: { agentId: 'a1', asr: live } }) },
+    { match: 'agent/get', respond: () => (getStatus ? { status: getStatus, body: { message: 'x' } } : { body: { agentId: 'a1', intellect: { id: 10 }, asr: live } }) },
     { match: 'agent/update', respond: (req) => { writes.push(req.body); return { body: { agentId: 'a1', ...req.body } }; } },
   ]);
-  return { mgmt: new Management({ partnerId: '123', fetch: ff }), ff, writes };
+  return { mgmt: new Management({ partnerId: '123', fetch: ff }), ff, writes, intellect };
 }
 
 test('the doctor puts an autofix on the error variant of asr_language_mismatch', async () => {
@@ -125,4 +126,16 @@ test('doctorFix needs an admin token', async () => {
   const { mgmt, ff } = harness();
   await assert.rejects(() => mgmt.doctorFix({ ks: 'x', kind: 'conversation' }, { findings: [] }), (e) => e.code === 'wrong_token_scope');
   assert.equal(ff.calls.length, 0);
+});
+
+test('doctorFix: refuses when the intellect no longer forces the target language, and writes nothing', async () => {
+  const { mgmt, writes, intellect } = harness();
+  const report = await mgmt.doctor(ADMIN_KS);
+  intellect.forced = 'English';
+  for (const opts of [undefined, { apply: true, codes: ['asr_language_mismatch'] }]) {
+    const out = await mgmt.doctorFix(ADMIN_KS, report, opts);
+    assert.equal(out.results[0].status, 'refused');
+    assert.match(out.results[0].reason, /no longer forces replies/);
+  }
+  assert.equal(writes.length, 0);
 });
