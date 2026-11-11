@@ -166,6 +166,7 @@ jobs:
       avatars: ${{ steps.filter.outputs.avatars }}
       agents: ${{ steps.filter.outputs.agents }}
       lifecycle-audit: ${{ steps.filter.outputs.lifecycle-audit }}
+      doctor: ${{ steps.filter.outputs.doctor }}
       browser: ${{ steps.filter.outputs.browser }}
       kickoff: ${{ steps.filter.outputs.kickoff }}
       startup-faults: ${{ steps.filter.outputs.startup-faults }}
@@ -469,6 +470,18 @@ jobs:
               - 'src/core/response-headers.js'
               - 'src/core/safety.js'
               - 'src/core/transport-guard.js'
+              - '.github/workflows/live-verify.yml'
+              - *shared
+            doctor:
+              - 'scripts/live-verify-doctor.mjs'
+              - 'scripts/doctor.mjs'
+              - 'scripts/live-verify-kickoff-shared.mjs'
+              - 'src/management/doctor.js'
+              - 'src/management/doctor/**'
+              - 'src/management/agents.js'
+              - 'src/management/intellect-config.js'
+              - 'src/management/client.js'
+              - 'src/core/stream.js'
               - '.github/workflows/live-verify.yml'
               - *shared
             lifecycle-audit:
@@ -784,7 +797,7 @@ jobs:
           has() { [ "$RUN_ALL" = true ] || [ "$(jq -r --arg k "$1" '.[$k]' <<<"$FLAGS")" = true ]; }
           any() { local k; for k in "$@"; do has "$k" && return 0; done; return 1; }
           api=false
-          any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents lifecycle-audit avatars catalog intellects-conversations knowledge skills tools mcp && api=true
+          any smoke conversation-surface threads-messages-feedback request-vars site-nav session-types capabilities agents lifecycle-audit doctor avatars catalog intellects-conversations knowledge skills tools mcp && api=true
           engines=()
           any browser avatar-media session-complete feature-pages opening-phrase avatar-flag kickoff startup-faults reconnect unload prepare set-forced-language context-fields && engines+=(chromium)
           any browser avatar-media session-complete feature-pages startup-faults reconnect unload && engines+=(firefox)
@@ -914,6 +927,16 @@ jobs:
           AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: node scripts/live-step.mjs --log live-verify-lifecycle-audit-output.log -- npm run live-verify:lifecycle-audit
+
+      # Scratch agent → planted ASR and token-limit defects → doctor, doctorFix (dry run, apply, undo), doctorProbe and the doctor CLI → cleanup
+      - name: Resources · Doctor
+        id: live_verify_doctor
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['doctor'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: node scripts/live-step.mjs --log live-verify-doctor-output.log -- npm run live-verify:doctor
 
       # Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
       - name: Resources · Avatars
@@ -1158,6 +1181,16 @@ jobs:
               echo
               echo '```'
               tail -n 40 live-verify-lifecycle-audit-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-doctor-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Doctor — ${{ steps.live_verify_doctor.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-doctor-output.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
