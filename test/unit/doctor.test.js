@@ -188,7 +188,7 @@ test('doctor: only and skip pick groups and checks by id or category', async () 
 });
 
 // Agents with avatars: the voice and visual reads.
-const VOICE = (language, extra = {}) => ({ itemId: 'v1', type: 'Voice', name: 'Maya', language, ...extra });
+const VOICE = (language, extra = {}) => ({ itemId: 'v1', type: 'Voice', adminTags: ['preset'], attributes: { voice: { name: 'Maya', language } }, ...extra });
 function avatarHarness({ voice = VOICE('he'), voiceListed = true, asr = { language: 'en', provider: 'kaltura' }, intellect = { id: 10, type: 'brain', force_language: 'Hebrew' } } = {}) {
   const agents = [{ agentId: 'a1', intellect: { id: 10 }, avatarIds: ['av1'], asr }];
   const ff = fakeFetch([

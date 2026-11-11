@@ -9,7 +9,8 @@ import { DEFAULT_THRESHOLDS } from '../../src/management/doctor/model.js';
 
 /** Pure checks over hand-built views. No network, no fakes. */
 
-const voice = (language, extra = {}) => ({ id: `v-${language}`, state: 'found', item: { itemId: `v-${language}`, name: `Voice ${language}`, language, ...extra } });
+// Live shape: name and language sit under attributes.voice. Presets carry the `preset` tag.
+const voice = (language, extra = {}) => ({ id: `v-${language}`, state: 'found', item: { itemId: `v-${language}`, adminTags: ['preset'], attributes: { voice: { name: `Voice ${language}`, language } }, ...extra } });
 const avatar = (id, v, extra = {}) => ({ id, state: 'found', avatar: { id, voice: { id: v?.id }, visual: { id: 'vis1' }, ...extra }, voice: v, visual: { id: 'vis1', state: 'found', item: { itemId: 'vis1' } } });
 const view = ({ agent = {}, intellect = { id: 10, type: 'brain' }, avatars = [] } = {}) => ({
   agentId: 'a1', agent: { agentId: 'a1', avatarIds: avatars.map((a) => a.id), asr: { language: 'en', provider: 'kaltura' }, ...agent },
@@ -82,14 +83,14 @@ test('voice_reply_language_mismatch: reports each avatar whose voice is wrong, n
 });
 
 test('voice_language_default: a custom voice that kept en on a Hebrew agent is info', () => {
-  const v = view({ agent: { asr: { language: 'he' } }, avatars: [avatar('av1', voice('en', { adminTags: ['custom'] }))] });
+  const v = view({ agent: { asr: { language: 'he' } }, avatars: [avatar('av1', voice('en', { adminTags: [] }))] });
   assert.deepEqual(codes(run(voiceLanguageDefault, v)), ['info:voice_language_default']);
 });
 
 test('voice_language_default: silent for a preset en voice, an en agent, or a custom voice in another language', () => {
   assert.deepEqual(run(voiceLanguageDefault, view({ agent: { asr: { language: 'he' } }, avatars: [avatar('av1', voice('en'))] })), [], 'preset');
-  assert.deepEqual(run(voiceLanguageDefault, view({ avatars: [avatar('av1', voice('en', { adminTags: ['custom'] }))] })), [], 'en agent');
-  assert.deepEqual(run(voiceLanguageDefault, view({ agent: { asr: { language: 'he' } }, avatars: [avatar('av1', voice('he', { adminTags: ['custom'] }))] })), []);
+  assert.deepEqual(run(voiceLanguageDefault, view({ avatars: [avatar('av1', voice('en', { adminTags: [] }))] })), [], 'en agent');
+  assert.deepEqual(run(voiceLanguageDefault, view({ agent: { asr: { language: 'he' } }, avatars: [avatar('av1', voice('he', { adminTags: [] }))] })), []);
 });
 
 test('voice_not_in_catalog and visual_not_in_catalog: warn on a missing item, say a raw id can be valid', () => {

@@ -20,17 +20,21 @@ const brain = (view) => (view.intellect && view.intellect.type !== 'external' ? 
 /** The language the agent is told to reply in, as a code, or `null`. @param {AgentView} view */
 const forcedLanguage = (view) => normalizeLanguage(brain(view)?.force_language);
 
+/** The `attributes.voice` block of a catalog voice item. @param {any} item */
+const voiceAttributes = (item) => item?.attributes?.voice ?? {};
+
 /**
- * The voices of an agent's found avatars, with their language.
+ * The voices of an agent's found avatars, with their language. A voice is
+ * custom when it is not a preset: uploads and clones carry no `preset` tag.
  * @param {AgentView} view
  * @returns {Array<{avatarId:string, voiceId:string, name:string, custom:boolean, raw:unknown, language:string|null}>}
  */
 function voicesOf(view) {
   return view.avatars.flatMap((a) => (a.voice?.state === 'found' && a.voice.item
     ? [{
-      avatarId: a.id, voiceId: a.voice.id, name: String(a.voice.item.name ?? a.voice.id),
-      custom: Array.isArray(a.voice.item.adminTags) && a.voice.item.adminTags.includes('custom'),
-      raw: a.voice.item.language, language: normalizeLanguage(a.voice.item.language),
+      avatarId: a.id, voiceId: a.voice.id, name: String(voiceAttributes(a.voice.item).name ?? a.voice.id),
+      custom: !(Array.isArray(a.voice.item.adminTags) && a.voice.item.adminTags.includes('preset')),
+      raw: voiceAttributes(a.voice.item).language, language: normalizeLanguage(voiceAttributes(a.voice.item).language),
     }]
     : []));
 }
@@ -168,12 +172,12 @@ export const openingPhraseLanguage = {
     for (const a of view.avatars) {
       const line = text(intellectLine) ? intellectLine : a.avatar?.openingPhrase;
       if (!text(line) || isSilentOpening(line)) continue;
-      const voiceScript = scriptOfLanguage(a.voice?.item?.language);
+      const voiceScript = scriptOfLanguage(voiceAttributes(a.voice?.item).language);
       const lineScript = dominantScript(line);
       if (!voiceScript || !lineScript || scriptFits(lineScript, voiceScript)) continue;
       out.push(found('info', 'opening_phrase_language_mismatch', view, {
         field: text(intellectLine) ? 'opening_phrase' : `avatar ${a.id} openingPhrase`,
-        message: `The opening line is written in ${lineScript}, but the voice "${a.voice?.item?.name ?? a.voice?.id}" speaks "${normalizeLanguage(a.voice?.item?.language)}" (${voiceScript}).`,
+        message: `The opening line is written in ${lineScript}, but the voice "${voiceAttributes(a.voice?.item).name ?? a.voice?.id}" speaks "${normalizeLanguage(voiceAttributes(a.voice?.item).language)}" (${voiceScript}).`,
         fix: 'Write the opening line in the voice language, or pick a voice made for the line.',
       }));
     }
