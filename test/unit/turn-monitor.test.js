@@ -272,3 +272,24 @@ test('session: tool_heavy_turn counts raw tool segments', async () => {
   await sleep(10);
   assert.equal(warnings.filter((w) => w.code === 'tool_heavy_turn').length, 1);
 });
+
+test('a send that never got a reply does not make a later server turn look slow', () => {
+  const r = rig();
+  r.m.sent();
+  r.advance(300000);
+  r.m.turnStart({ turnId: 't2', speechId: 's2', isNewTurn: true });
+  r.m.segment('Hello');
+  r.m.startedTalking();
+  r.m.finishedGenerating();
+  assert.equal(r.warns('slow_turn').length, 0);
+  assert.equal(r.out.find((e) => e.name === 'turnTimings').origin, 'turn_start');
+});
+
+test('config_language_differs: a changed configuration warns again, the same one does not', () => {
+  const r = rig();
+  r.m.configReady({ languageCode: 'he', asr: { language: 'en' } });
+  r.m.configReady({ languageCode: 'he', asr: { language: 'en' } });
+  assert.equal(r.warns('config_language_differs').length, 1);
+  r.m.configReady({ languageCode: 'fr', asr: { language: 'en' } });
+  assert.equal(r.warns('config_language_differs').length, 2);
+});

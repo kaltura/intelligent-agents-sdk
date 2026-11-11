@@ -11,6 +11,9 @@ import { dominantScript, normalizeLanguage, scriptFits, scriptOfLanguage } from 
 /** Defaults. 0 turns a check off. */
 export const TURN_MONITOR_DEFAULTS = Object.freeze({ speechStartGraceMs: 3000, slowTurnMs: 10000, toolHeavyLimit: 5 });
 
+/** A send older than this is not the origin of a server turn. It never got a reply. */
+const SENT_MAX_AGE_MS = 120000;
+
 /** Reply characters kept for the script check. */
 const SAMPLE_CHARS = 400;
 
@@ -53,7 +56,7 @@ export class TurnMonitor {
     this._toolHeavy = o.toolHeavyLimit ?? TURN_MONITOR_DEFAULTS.toolHeavyLimit;
     /** @type {Set<string>} */ this._warned = new Set();
     /** @type {any} */ this._timer = null;
-    /** Send time of the next turn, set by {@link TurnMonitor#sent}. @type {number|null} */ this._pendingSentAt = null;
+    /** Send time of the next turn, set by {@link TurnMonitor#sent}. A send with no reply expires. @type {number|null} */ this._pendingSentAt = null;
     /** @type {any} */ this._turn = null;
     /** @type {unknown} */ this._languageCode = undefined;
   }
@@ -66,7 +69,7 @@ export class TurnMonitor {
     if (this._turn && !p.isNewTurn) { this._addSpeech(p.speechId); return; }
     this._cancelTimer();
     const at = this._now();
-    const sentAt = this._pendingSentAt;
+    const sentAt = this._pendingSentAt !== null && at - this._pendingSentAt <= SENT_MAX_AGE_MS ? this._pendingSentAt : null;
     this._pendingSentAt = null;
     this._turn = {
       turnId: p.turnId, origin: sentAt === null ? 'turn_start' : 'sent', originAt: sentAt ?? at, fromSend: sentAt !== null,
@@ -165,7 +168,7 @@ export class TurnMonitor {
     this._languageCode = cc?.languageCode;
     const a = normalizeLanguage(cc?.languageCode);
     const b = normalizeLanguage(cc?.asr?.language);
-    if (!a || !b || a === b || this._once('config_language_differs')) return;
+    if (!a || !b || a === b || this._once(`config_language_differs:${a}:${b}`)) return;
     this._emit('warning', {
       code: 'config_language_differs', languageCode: a, asrLanguage: b,
       message: `The session language is "${a}" but speech recognition listens for "${b}". Callers are recognized as "${b}".`,
@@ -211,7 +214,7 @@ export class TurnMonitor {
     if (t.quiet) return;
     const want = scriptOfLanguage(this._languageCode);
     const got = dominantScript(t.sample);
-    if (!want || !got || scriptFits(got, want) || this._once('reply_language_differs_from_config')) return;
+    if (!want || !got || scriptFits(got, want) || this._once(`reply_language_differs_from_config:${got}:${want}`)) return;
     this._emit('warning', {
       code: 'reply_language_differs_from_config', replyScript: got, languageScript: want,
       message: `The reply is written in ${got} script and the session language uses ${want}. The voice may not speak it.`,
