@@ -61,7 +61,7 @@ function ignores(rule, finding) {
 /** Order: severity, then code, then the id the finding is about. @param {AuditFinding} a @param {AuditFinding} b */
 function byImportance(a, b) {
   const key = (/** @type {AuditFinding} */ f) => String(f.agentId ?? f.agentIds?.[0] ?? f.configId ?? f.ruleId ?? '');
-  return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.code.localeCompare(b.code) || key(a).localeCompare(key(b)) || (a.field ?? '').localeCompare(b.field ?? '');
+  return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.code.localeCompare(b.code) || key(a).localeCompare(key(b)) || (a.field ?? '').localeCompare(b.field ?? '') || a.message.localeCompare(b.message);
 }
 
 /** A short, safe description of a failed read. @param {any} e */
@@ -118,7 +118,7 @@ export class Doctor {
     const { agentIds, pageSize } = opts;
     const ignore = checkedIgnore(opts.ignore);
     const concurrency = opts.concurrency ?? 4;
-    const thresholds = { ...DEFAULT_THRESHOLDS, ...opts.thresholds };
+    const thresholds = { ...DEFAULT_THRESHOLDS, ...Object.fromEntries(Object.entries(opts.thresholds ?? {}).filter(([, v]) => v !== undefined)) };
     const on = (/** @type {string} */ group) => (!opts.only?.length || opts.only.includes(group)) && !opts.skip?.includes(group);
 
     const all = await agents.list(ks, { pageSize }).all();

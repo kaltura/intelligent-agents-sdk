@@ -233,22 +233,51 @@ test('doctor: skipping the avatar checks skips the avatar and catalog reads', as
   assert.equal(ff.calls.some((c) => /\/(avatar|catalog-item|intellect)\//.test(c.url)), false);
 });
 
-test('doctor: 500 agents sharing 5 intellects read each intellect once, never more than 4 at a time', async () => {
-  const agents = Array.from({ length: 500 }, (_, i) => ({ agentId: `a${i}`, intellect: { id: 100 + (i % 5) } }));
-  let inFlight = 0;
-  let peak = 0;
+test('doctor: 500 agents sharing 20 intellects read each intellect once, never more than 4 at a time', async () => {
+  const agents = Array.from({ length: 500 }, (_, i) => ({ agentId: `a${i}`, intellect: { id: 100 + (i % 20) } }));
   const ff = fakeFetch([
     { match: 'lifecycle/list', respond: pageOf([]) },
     { match: 'insight-settings/list', respond: pageOf([]) },
     { match: 'email-template/list', respond: pageOf([]) },
     { match: 'agent/list', respond: pageOf(agents) },
-    { match: 'v1/intellect/get', respond: (req) => { inFlight++; peak = Math.max(peak, inFlight); inFlight--; return { body: { id: req.body.id, type: 'brain' } }; } },
+    { match: 'v1/intellect/get', respond: (req) => ({ body: { id: req.body.id, type: 'brain' } }) },
   ]);
-  const report = await rpt(new Management({ partnerId: '123', fetch: ff }), { pageSize: 100 });
-  assert.equal(ff.calls.filter((c) => c.url.endsWith('v1/intellect/get')).length, 5);
+  // Hold every intellect read open for a few ms so overlapping reads are counted.
+  let inFlight = 0;
+  let peak = 0;
+  const slow = /** @type {typeof fetch} */ (async (url, init) => {
+    const held = String(url).endsWith('v1/intellect/get');
+    if (held) { inFlight++; peak = Math.max(peak, inFlight); }
+    try {
+      if (held) await new Promise((r) => setTimeout(r, 5));
+      return await ff(url, init);
+    } finally { if (held) inFlight--; }
+  });
+  const report = await rpt(new Management({ partnerId: '123', fetch: slow }), { pageSize: 100 });
+  assert.equal(ff.calls.filter((c) => c.url.endsWith('v1/intellect/get')).length, 20);
   assert.equal(report.checked.agents, 500);
-  assert.equal(report.checked.agentIntellects, 5);
-  assert.ok(peak <= 4);
+  assert.equal(report.checked.agentIntellects, 20);
+  assert.equal(peak, 4, 'reads overlap up to the limit and never beyond');
+});
+
+test('doctor: an undefined threshold keeps the default', async () => {
+  const ff = fakeFetch([
+    { match: 'lifecycle/list', respond: pageOf([]) },
+    { match: 'insight-settings/list', respond: pageOf([]) },
+    { match: 'email-template/list', respond: pageOf([]) },
+    { match: 'agent/list', respond: pageOf([{ agentId: 'a1', maxConversationLength: 30 }]) },
+  ]);
+  const mgmt = new Management({ partnerId: '123', fetch: ff });
+  const codes = async (/** @type {any} */ thresholds) => (await rpt(mgmt, { thresholds })).findings.map((f) => f.code);
+  assert.deepEqual(await codes({ minConversationSeconds: undefined }), ['max_conversation_short']);
+  assert.deepEqual(await codes({ minConversationSeconds: 10 }), []);
+});
+
+test('doctor: findings that differ only by message keep a stable order', async () => {
+  const { mgmt } = harness();
+  const a = await rpt(mgmt);
+  const b = await rpt(harness().mgmt);
+  assert.deepEqual(a.findings.map((f) => f.message), b.findings.map((f) => f.message));
 });
 
 test('doctor: agentIds scopes the agent checks and skips the reads the other agents need', async () => {
