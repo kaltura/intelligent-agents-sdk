@@ -214,7 +214,7 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 
 The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_key_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented. Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
 
-`mgmt.doctor(ks, opts?)` runs the same check, then audits the intellect of each agent with `mgmt.intellectConfig.audit(configId, ks)`. It also reports `orphan_insight_setting` and `orphan_email_template` (both `info`) for entities no rule uses. It skips the orphan checks when you pass `agentIds`.
+`mgmt.doctor(ks, opts?)` runs the same check, then audits each intellect with `mgmt.intellectConfig.audit(configId, ks)` and checks each agent, its avatars and voices. Its options and its own codes are in [Doctor](../DOCTOR.md). A finding about an intellect that several agents share carries `agentIds`.
 
 | Intellect code | Severity | Meaning |
 |---|---|---|
@@ -235,7 +235,6 @@ The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_
 | `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches |
 | `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent |
 | `tool_name_builtin` | warn | A linked tool has the same name as a built-in tool (`async_search_knowledge_base`, `search_entries` or `search_web`) |
-| `intellect_not_found` | error | `doctor` only. An agent points at an intellect that does not exist |
 
 The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data. To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.
 
@@ -257,7 +256,7 @@ Calls go to your region's `agenticUrl` (default `https://api.avatar.us.kaltura.a
 | `lifecycle.listEvents(objectType, ks)` | `POST /v1/lifecycle/listEvents` | READ | |
 | `lifecycle.describeFields(objectType, eventType, ks)` | `POST /v1/lifecycle/describeFields` | READ | |
 | `lifecycle.audit(ks, opts?)` | reads only: lists rules, insight settings and agents, gets each pinned template and each `triggerDtcKai` intellect | READ | see [Audit your rules](#audit-your-rules). `opts.agentIds`, `opts.pageSize`. Admin KS |
-| `mgmt.doctor(ks, opts?)` | reads only | READ | rules, intellects, and unused settings and templates. See [Audit your rules](#audit-your-rules) |
+| `mgmt.doctor(ks, opts?)` | reads only | READ | rules, intellects, agents, avatars, voices, and unused settings and templates. See [Doctor](../DOCTOR.md) |
 
 `InsightSettings`, SDK: `mgmt.insightSettings`:
 

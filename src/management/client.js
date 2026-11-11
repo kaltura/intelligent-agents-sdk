@@ -259,17 +259,18 @@ export class Management {
     // The siblings are what `lifecycle.audit` reads.
     this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
     // Read-only health check behind `doctor()`.
-    this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, agents: this.agents, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates });
+    this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, intellects: this.intellects, agents: this.agents, avatars: this.avatars, catalog: this.catalog, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates });
   }
 
   /**
    * Health check over the partner's agents. READ only, it changes nothing. One
    * report with the lifecycle audit ({@link Lifecycle#audit}), the intellect
-   * audit of each agent's intellect ({@link IntellectConfig#audit}) and the
-   * insight settings and email templates no rule uses. See {@link Doctor#run}.
+   * audit of each agent's intellect ({@link IntellectConfig#audit}), checks on
+   * each agent and its avatars, and the insight settings and email templates
+   * no rule uses. See {@link Doctor#run} and docs/DOCTOR.md.
    * @param {string} ks (admin)
-   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` limits the check to those agents and the rules that run for them.
-   * @returns {Promise<import('./audit-report.js').AuditReport>} `{findings, summary:{error,warn,info}, checked, skipped}`
+   * @param {import('./doctor.js').DoctorOptions} [opts] `agentIds` limits the check to those agents and the rules that run for them. `only`, `skip`, `ignore` and `thresholds` are in {@link Doctor#run}.
+   * @returns {Promise<import('./audit-report.js').AuditReport>} `{findings, summary:{error,warn,info,suppressed?}, checked, skipped}`
    */
   doctor(ks, opts) {
     return this._doctor.run(ks, opts);
