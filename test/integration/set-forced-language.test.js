@@ -23,6 +23,7 @@ function fullDto(over = {}) {
 
 const updateEcho = { match: '/v1/intellect/update', respond: (req) => ({ body: req.body }) };
 const agentUpdateEcho = { match: '/agent/update', respond: (req) => ({ body: req.body }) };
+const agentGet = (asr) => ({ match: '/agent/get', respond: () => ({ body: { agentId: 'agent-1', ...(asr ? { asr } : {}) } }) });
 const getDto = (over) => ({ match: '/v1/intellect/get', respond: () => ({ body: fullDto(over) }) });
 
 function mkMgmt(routes) {
@@ -32,7 +33,7 @@ function mkMgmt(routes) {
 }
 
 test('setForcedLanguage writes force_language and asr.language, and leaves base_directive alone', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   const r = await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'he' }, ADMIN);
 
   const intellectSent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
@@ -50,7 +51,7 @@ test('setForcedLanguage writes force_language and asr.language, and leaves base_
 });
 
 test('setForcedLanguage strips a legacy marker block written by an older SDK', async () => {
-  const { m, f } = mkMgmt([getDto({ base_directive: `You are Ron, a helpful assistant.\n\n${LEGACY_BLOCK}` }), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto({ base_directive: `You are Ron, a helpful assistant.\n\n${LEGACY_BLOCK}` }), updateEcho, agentUpdateEcho, agentGet()]);
   await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'es' }, ADMIN);
 
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
@@ -59,7 +60,7 @@ test('setForcedLanguage strips a legacy marker block written by an older SDK', a
 });
 
 test('setForcedLanguage with language:null clears force_language and resets asr.language', async () => {
-  const { m, f } = mkMgmt([getDto({ base_directive: `You are Ron, a helpful assistant.\n\n${LEGACY_BLOCK}` }), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto({ base_directive: `You are Ron, a helpful assistant.\n\n${LEGACY_BLOCK}` }), updateEcho, agentUpdateEcho, agentGet()]);
   const r = await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: null }, ADMIN);
 
   const intellectSent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
@@ -74,7 +75,7 @@ test('setForcedLanguage with language:null clears force_language and resets asr.
 });
 
 test('setForcedLanguage accepts a languageName override for a listed code that has no built-in name', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'sw', languageName: 'Swahili' }, ADMIN);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
   assert.equal(sent.force_language, 'Swahili');
@@ -83,7 +84,7 @@ test('setForcedLanguage accepts a languageName override for a listed code that h
 });
 
 test('setForcedLanguage rejects a code outside LANGUAGE_CODES before any write, even with languageName', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await assert.rejects(
     () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'xx', languageName: 'Klingon' }, ADMIN),
     (e) => e.code === 'bad_request' && /LANGUAGE_CODES/.test(e.detail),
@@ -92,7 +93,7 @@ test('setForcedLanguage rejects a code outside LANGUAGE_CODES before any write, 
 });
 
 test('setForcedLanguage rejects el before any write', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await assert.rejects(
     () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'el', languageName: 'Greek' }, ADMIN),
     (e) => e.code === 'bad_request' && /"el"/.test(e.detail),
@@ -101,7 +102,7 @@ test('setForcedLanguage rejects el before any write', async () => {
 });
 
 test('setForcedLanguage asks for languageName when a listed code has no display name', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await assert.rejects(
     () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'sw' }, ADMIN),
     (e) => e.code === 'bad_request' && /languageName/.test(e.detail),
@@ -110,7 +111,7 @@ test('setForcedLanguage asks for languageName when a listed code has no display 
 });
 
 test('setForcedLanguage rejects an unknown language code with no override, before any network call', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await assert.rejects(
     () => m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'xx' }, ADMIN),
     (e) => e.code === 'bad_request',
@@ -122,7 +123,7 @@ test('setForcedLanguage strips every legacy marker block, not just the first', a
   const doubled = 'You are Ron, a helpful assistant.\n\n'
     + `${LEGACY_BLOCK}\n\n`
     + '<!-- sdk:forced-language --> Always respond in Arabic, regardless of what language the user writes or speaks in. <!-- /sdk:forced-language -->';
-  const { m, f } = mkMgmt([getDto({ base_directive: doubled }), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto({ base_directive: doubled }), updateEcho, agentUpdateEcho, agentGet()]);
   await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'es' }, ADMIN);
 
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
@@ -131,7 +132,7 @@ test('setForcedLanguage strips every legacy marker block, not just the first', a
 });
 
 test('setForcedLanguage trims/normalizes opts.language and ignores a whitespace-only opts.languageName override', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   const r = await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: ' HE ', languageName: '   ' }, ADMIN);
 
   const intellectSent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
@@ -142,8 +143,27 @@ test('setForcedLanguage trims/normalizes opts.language and ignores a whitespace-
   assert.equal(r.language, 'he');
 });
 
+test('setForcedLanguage keeps the ASR provider the agent already has', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet({ language: 'en', provider: 'kaltura-hebrew' })]);
+  await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'he' }, ADMIN);
+  const agentSent = f.calls.find((c) => c.url.includes('/agent/update')).body;
+  assert.deepEqual(agentSent, { agentId: 'agent-1', asr: { language: 'he', provider: 'kaltura-hebrew' } });
+});
+
+test('setForcedLanguage: an explicit asrProvider beats the agent\'s current one', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet({ language: 'en', provider: 'kaltura-hebrew' })]);
+  await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'fr', asrProvider: 'kaltura' }, ADMIN);
+  assert.equal(f.calls.find((c) => c.url.includes('/agent/update')).body.asr.provider, 'kaltura');
+});
+
+test('setForcedLanguage fails on an unknown agent before it writes the intellect', async () => {
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, { match: '/agent/get', respond: () => ({ status: 404, body: { code: 'agent_not_found' } }) }]);
+  await assert.rejects(() => m.setForcedLanguage({ configId: 1481, agentId: 'nope', language: 'he' }, ADMIN));
+  assert.equal(f.calls.some((c) => c.url.includes('/v1/intellect/update')), false);
+});
+
 test('setForcedLanguage respects a custom asrProvider', async () => {
-  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho]);
+  const { m, f } = mkMgmt([getDto(), updateEcho, agentUpdateEcho, agentGet()]);
   await m.setForcedLanguage({ configId: 1481, agentId: 'agent-1', language: 'fr', asrProvider: 'other' }, ADMIN);
   const agentSent = f.calls.find((c) => c.url.includes('/agent/update')).body;
   assert.deepEqual(agentSent, { agentId: 'agent-1', asr: { language: 'fr', provider: 'other' } });

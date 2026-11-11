@@ -44,7 +44,7 @@ function bad(detail, code = 'bad_request') {
  * @param {string} opts.agentId
  * @param {string|null} opts.language ISO 639-1 code from `LANGUAGE_CODES` (e.g. `'he'`), or `null` to clear a previously-forced language.
  * @param {string} [opts.languageName] Display name written to `force_language` (required if `language` is not in {@link LANGUAGE_NAMES}; ignored when clearing).
- * @param {string} [opts.asrProvider] ASR provider passed through to `agents.update`. Defaults to `'kaltura'`.
+ * @param {string} [opts.asrProvider] ASR provider to write. Defaults to the agent's current `asr.provider`, then `'kaltura'`.
  * @param {string} ks (admin)
  * @returns {Promise<{configId:number, agentId:string, language:string|null, languageName?:string, applied:{intellect:object, agent:object}, _meta:object}>}
  */
@@ -71,7 +71,9 @@ export async function setForcedLanguage(mgmt, opts, ks) {
       throw bad(`setForcedLanguage: no display name known for language code "${language}". Pass opts.languageName explicitly (e.g. "Hebrew").`);
     }
   }
-  const asrProvider = opts.asrProvider || 'kaltura';
+  // Read first: an unknown agent fails before any write, and its provider is kept.
+  const current = await mgmt.agents.get(agentId, ks);
+  const asrProvider = opts.asrProvider || current?.asr?.provider || 'kaltura';
 
   const intellectResult = await mgmt.intellectConfig.patch(configId, (cur) => {
     const changes = { force_language: language === null ? null : languageName };
