@@ -53,6 +53,7 @@ export {
   EXPERIENCES, MODEL_TYPES, modelTypeWire, classifyAgentAction,
 } from './wire.js';
 export { Emitter } from './emitter.js';
+export { formatDiagnostics } from './diagnostics.js';
 export { KalturaError } from '../core/errors.js';
 // Verified base URLs per region. Pass `region` to a session rather than reading this directly.
 export { REGIONS } from '../core/endpoints.js';

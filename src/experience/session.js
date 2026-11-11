@@ -54,6 +54,7 @@ import {
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
 import { TurnMonitor } from './turn-monitor.js';
+import { DiagnosticsLog } from './diagnostics.js';
 import { KalturaError } from '../core/errors.js';
 import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
@@ -354,6 +355,7 @@ export class KalturaAvatarSession extends Emitter {
     this._maxReconnect = cfg.maxReconnectAttempts ?? 5;
     // Clock for `timings`: `performance.now()` in a browser, `cfg.now` when injected.
     this._clock = cfg.now || (typeof globalThis.performance?.now === 'function' ? () => globalThis.performance.now() : () => Date.now());
+    this._diagnostics = new DiagnosticsLog(this._clock);
     /** @type {{socket:any, roomId:string, onConn:any, cc:any, ready:boolean, idleTimer:any, done:Promise<void>}|null} */ this._prep = null;   // a prepare() that connect() has not consumed yet
     /** @type {Record<string, number>|null} */ this._timings = null;   // open only while connect() runs
     /** @type {Record<string, number>|null} */ this._lastTimings = null;
@@ -777,6 +779,29 @@ export class KalturaAvatarSession extends Emitter {
   async getIceReport() {
     const [asr, stv] = await Promise.all([this._ice.asr?.report() ?? null, this._ice.stv?.report() ?? null]);
     return { asr, stv };
+  }
+
+  /**
+   * A content-free record of this session for a bug report: state, language settings, connect
+   * timings, warning counts, the last 200 events and the ICE report. It holds no speech, names,
+   * URLs, tokens or tool arguments. Read-only. Never rejects. Format it with `formatDiagnostics`.
+   * @returns {Promise<import('./diagnostics.js').SessionDiagnostics>}
+   */
+  async diagnostics() {
+    const cc = this._clientConfig;
+    return {
+      schemaVersion: 1,
+      session: { state: String(this.state), mode: this.mode ?? null, paused: !!this.paused },
+      config: cc ? {
+        ...(typeof cc.languageCode === 'string' ? { languageCode: cc.languageCode } : {}),
+        ...(cc.asr && typeof cc.asr === 'object' ? { asr: { language: typeof cc.asr.language === 'string' ? cc.asr.language : undefined, provider: typeof cc.asr.provider === 'string' ? cc.asr.provider : undefined } } : {}),
+        ...(typeof cc.isTapToTalk === 'boolean' ? { isTapToTalk: cc.isTapToTalk } : {}),
+      } : null,
+      connectTimings: this.timings,
+      warnings: this._diagnostics.warningCounts(),
+      events: this._diagnostics.events(),
+      ice: await this.getIceReport(),
+    };
   }
 
   /** The typed error for a peer that never connected. @param {'asr'|'stv'} channel */
@@ -1637,6 +1662,12 @@ export class KalturaAvatarSession extends Emitter {
   mute() { this._setMic(false); }
   /** Unmute the user's mic (resume sending audio) + tell the server. */
   unmute() { this._setMic(true); }
+
+  /** Records the event for `diagnostics()`, then calls the listeners. @param {string} event @param {...any} args */
+  emit(event, ...args) {
+    this._diagnostics?.record(event, args[0]);
+    super.emit(event, ...args);
+  }
 
   /**
    * Overridden so a local VAD (client-side `localSpeakingChanged`/`localMicLevel`,
