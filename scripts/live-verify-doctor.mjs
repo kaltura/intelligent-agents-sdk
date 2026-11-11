@@ -73,7 +73,7 @@ try {
   const applied = await kaltura.doctorFix(admin.ks, planted, { apply: true, codes: ['asr_language_mismatch'] });
   const done = applied.results.find((r) => r.agentId === agentId);
   const after = (await kaltura.agents.get(agentId, admin.ks)).asr;
-  report.check('3-apply-sets-the-asr-language', done?.status === 'applied' && after?.language === 'he' && after?.provider === before?.provider, { status: done?.status, after });
+  report.check('3-apply-sets-the-asr-language', applied.applied === true && done?.status === 'applied' && after?.language === 'he' && after?.provider === before?.provider, { status: done?.status, after });
   const again = await kaltura.doctorFix(admin.ks, planted, { apply: true, codes: ['asr_language_mismatch'] });
   report.check('3-second-apply-is-already-applied', again.results.find((r) => r.agentId === agentId)?.status === 'already_applied');
   const fixed = await kaltura.doctor(admin.ks, { agentIds: [agentId] });
@@ -82,7 +82,10 @@ try {
   report.check('3-undo-restores-the-old-setting', (await kaltura.agents.get(agentId, admin.ks)).asr?.language === before?.language);
 
   // 4: probe
-  const probe = await kaltura.doctorProbe(admin.ks, { agentId, message: 'Say hello in one short sentence.', allowSideEffects: true, timeoutMs: 90000 });
+  const probeOpts = { agentId, message: 'Say hello in one short sentence.', timeoutMs: 90000 };
+  const guarded = await kaltura.doctorProbe(admin.ks, probeOpts);
+  report.check('4-probe-runs-only-when-no-rule-matches', guarded.ran === (guarded.rules.length === 0), { ran: guarded.ran, rules: guarded.rules.length });
+  const probe = guarded.ran ? guarded : await kaltura.doctorProbe(admin.ks, { ...probeOpts, allowSideEffects: true });
   report.check('4-probe-ran-without-error', probe.ran && probe.error === null, { error: probe.error });
   report.check('4-probe-has-timings', Number.isFinite(probe.timings?.totalMs) && probe.timings.totalMs > 0, probe.timings);
   report.check('4-probe-reply-facts', probe.reply && typeof probe.reply.replyChars === 'number' && probe.reply.spiralStopped === false, probe.reply);
@@ -97,7 +100,7 @@ try {
   const json = cli(['--agent', agentId, '--json', '--fix']);
   const doc = json.stdout ? JSON.parse(json.stdout) : {};
   report.check('5-cli-json-shape', doc.schemaVersion === 1 && doc.target === target.name && Array.isArray(doc.report?.findings), { exit: json.code });
-  report.check('5-cli-dry-fix-lists-no-writes', !doc.fix || doc.fix.applied === false);
+  report.check('5-cli-dry-fix-plans-and-writes-nothing', doc.fix?.applied === false && doc.fix.results.some((r) => r.agentId === agentId && r.status === 'planned') && (await kaltura.agents.get(agentId, admin.ks)).asr?.language === before?.language, doc.fix);
   report.check('5-cli-usage-error-exits-2', cli(['--probe']).code === 2);
   report.check('5-cli-never-prints-the-secret', !(json.stdout + json.stderr).includes(target.adminSecret));
   const probed = cli(['--agent', agentId, '--only', 'orphans', '--probe', '--allow-side-effects']);
