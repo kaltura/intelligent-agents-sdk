@@ -1375,8 +1375,8 @@ describe('17. Content pages', () => {
     for (const t of ['force_language', 'asr.language', 'LANGUAGE_CODES', 'LANGUAGE_NAMES', 'language: null']) {
       assert.ok(page.includes(t), `LANGUAGES.md does not mention ${t}`);
     }
-    assert.match(src, /opts\.asrProvider \|\| 'kaltura'/);
-    assert.match(page, /Defaults to `"kaltura"`/);
+    assert.match(src, /opts\.asrProvider \|\| current\?\.asr\?\.provider \|\| 'kaltura'/);
+    assert.match(page, /defaults to the agent's current provider, then `"kaltura"`/i);
   });
 
   test('the structured-data forms page names every FORM_FIELD_TYPES value and the title keys', async () => {

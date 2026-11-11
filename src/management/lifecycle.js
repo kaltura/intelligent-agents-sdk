@@ -164,11 +164,15 @@ export class Lifecycle {
 
     let findings = auditLifecycleRules(rules, { insightSettings, agents, emailTemplates, intellects });
     const only = opts.agentIds;
+    let checkedRules = rules.length;
+    let checkedAgents = agents.length;
     if (only) {
       const keep = new Set(rules.filter((r) => { const ids = scopedAgentIds(r.eventConditions); return ids.length === 0 || ids.some((id) => only.includes(id)); }).map((r) => r.id));
       findings = findings.filter((f) => keep.has(/** @type {string} */ (f.ruleId)));
+      checkedRules = keep.size;
+      checkedAgents = agents.filter((a) => only.includes(a.agentId ?? a.id)).length;
     }
-    return auditReport(findings, { rules: rules.length, insightSettings: insightSettings.length, agents: agents.length, emailTemplates: emailTemplates?.length ?? 0, intellects: fetched.size }, skipped);
+    return auditReport(findings, { rules: checkedRules, insightSettings: insightSettings.length, agents: checkedAgents, emailTemplates: emailTemplates?.length ?? 0, intellects: fetched.size }, skipped);
   }
 
   /**

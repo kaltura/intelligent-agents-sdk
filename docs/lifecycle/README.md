@@ -191,6 +191,7 @@ A rule can be valid when you save it and still do nothing later. An insight sett
 const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); // agentIds is optional
 // { findings: [{ severity, code, ruleId, message, fix }], summary: { error, warn, info }, checked: { rules, ... }, skipped: [] }
 // agentIds limits the check to those agents and the rules that run for them. Rules with no agent scope are always included.
+// checked.rules and checked.agents then count only what was kept.
 ```
 
 | Code | Severity | Meaning |
