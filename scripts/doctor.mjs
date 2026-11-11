@@ -145,4 +145,4 @@ if (values.json) {
 }
 
 const worst = report.findings.reduce((n, f) => Math.max(n, LEVELS[f.severity] ?? 0), 0);
-process.exit(worst >= LEVELS[failOn] ? 1 : 0);
+process.exitCode = worst >= LEVELS[failOn] ? 1 : 0;
