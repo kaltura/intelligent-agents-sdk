@@ -59,6 +59,11 @@ module.exports = [
         "children": []
       },
       {
+        "title": "Doctor",
+        "url": "/guides/doctor/",
+        "children": []
+      },
+      {
         "title": "Live Demos",
         "url": "/guides/live-demos/",
         "children": []

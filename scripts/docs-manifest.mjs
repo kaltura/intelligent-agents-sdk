@@ -144,6 +144,18 @@ export const manifest = [
     generated: true,
   },
   {
+    source: 'docs/DOCTOR.md',
+    target: 'guides/doctor.md',
+    url: '/guides/doctor/',
+    title: 'Doctor',
+    description: 'Find what is misconfigured on your agents with mgmt.doctor, apply the one safe fix, and time a real turn with mgmt.doctorProbe. Start from a symptom.',
+    eyebrow: 'How-to Guide',
+    h1: 'Doctor: find what is wrong with your agents',
+    group: 'How-to Guides',
+    navTitle: 'Doctor',
+    generated: true,
+  },
+  {
     source: 'docs/LIVE-DEMOS.md',
     target: 'guides/live-demos.md',
     url: '/guides/live-demos/',
