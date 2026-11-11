@@ -1,6 +1,6 @@
 # Doctor: find what is wrong with your agents
 
-`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. Use it when an agent behaves oddly, and before you ship one.
+`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. [`mgmt.doctorFix`](#fix-what-it-can) applies the one fix that is safe to automate. Use it when an agent behaves oddly, and before you ship one.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -119,6 +119,26 @@ An external intellect has no brain config, so these are skipped for it.
 | `orphan_email_template` | info | No rule uses the email template |
 
 An expired or non-admin token (401, `wrong_token_scope`) stops the run. Every other failed read becomes `read_failed`. If the Messaging host is not available in your region, the template checks are skipped and the report says `skipped: ['templates']`.
+
+## Fix what it can
+
+One finding has a guided fix: `asr_language_mismatch` at `error` carries `autofix`. It sets the agent's `asr.language` to the language its intellect forces replies in. The ASR provider stays as it is. No other finding has a safe automatic fix, because the right value cannot be known from the config.
+
+```js
+const plan = await mgmt.doctorFix(adminKs, report);                 // dry run: reads, writes nothing
+console.log(plan.results);                                          // status "planned", plus an undo body
+
+await mgmt.doctorFix(adminKs, report, { apply: true, codes: ['asr_language_mismatch'] });
+```
+
+| Rule | Behavior |
+|---|---|
+| Dry run first | Without `apply: true`, nothing is written |
+| Named codes | `apply` needs `codes`. There is no "fix everything" |
+| Fresh read | Each agent is read again before the write. If `asr.language` is not what the report saw, the result is `refused` |
+| Undo | Every result has `undo`, a body for `mgmt.agents.update` that restores the old setting |
+
+Statuses: `planned`, `applied`, `already_applied`, `refused`, `failed`. A `failed` or `refused` result does not stop the others. An expired or non-admin token rejects the call.
 
 ## Thresholds
 
