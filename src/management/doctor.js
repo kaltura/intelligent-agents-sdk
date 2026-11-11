@@ -30,7 +30,7 @@ import { DEFAULT_THRESHOLDS } from './doctor/model.js';
  * @typedef {object} DoctorOptions
  * @property {string[]} [agentIds] Limit the check to these agents, plus the rules that run for them.
  * @property {number} [pageSize] Page size of every list read.
- * @property {string[]} [only] Run only these checks. A name is a check id or a category: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`.
+ * @property {string[]} [only] Run only these checks. A name is a check id or a category: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speed`.
  * @property {string[]} [skip] Do not run these. Wins over `only`.
  * @property {DoctorIgnore[]} [ignore] Findings to hide. The report counts them in `summary.suppressed`.
  * @property {import('./doctor/model.js').DoctorThresholds} [thresholds] Limits the hint checks compare against.
@@ -83,7 +83,7 @@ function readFailed(f) {
 export class Doctor {
   /**
    * @param {import('./client.js').Ctx} ctx
-   * @param {{lifecycle:import('./lifecycle.js').Lifecycle, intellectConfig:import('./intellect-config.js').IntellectConfig, intellects:import('./intellects.js').Intellects, agents:import('./agents.js').Agents, avatars:import('./avatars.js').Avatars, catalog:import('./catalog.js').Catalog, insightSettings:import('./insight-settings.js').InsightSettings, emailTemplates:import('./email-templates.js').EmailTemplates}} deps
+   * @param {{lifecycle:import('./lifecycle.js').Lifecycle, intellectConfig:import('./intellect-config.js').IntellectConfig, intellects:import('./intellects.js').Intellects, agents:import('./agents.js').Agents, avatars:import('./avatars.js').Avatars, catalog:import('./catalog.js').Catalog, insightSettings:import('./insight-settings.js').InsightSettings, emailTemplates:import('./email-templates.js').EmailTemplates, tools:import('./tools.js').Tools, skills:import('./skills.js').Skills}} deps
    */
   constructor(ctx, deps) {
     this._ = ctx;
