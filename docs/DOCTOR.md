@@ -135,7 +135,7 @@ await mgmt.doctorFix(adminKs, report, { apply: true, codes: ['asr_language_misma
 |---|---|
 | Dry run first | Without `apply: true`, nothing is written |
 | Named codes | `apply` needs `codes`. There is no "fix everything" |
-| Fresh read | The agent and its intellect are read again before the write. If `asr.language` is not what the report saw, or the intellect no longer forces that language, the result is `refused` |
+| Fresh read | The agent and its intellect are read again before the write. If `asr.language` differs from what the report saw, or the intellect does not force that language now, the result is `refused` |
 | Undo | A `planned`, `applied` or `failed` result has `undo`, a body for `mgmt.agents.update` that restores the old setting |
 
 Statuses: `planned`, `applied`, `already_applied`, `refused`, `failed`. A `failed` or `refused` result does not stop the others. An expired or non-admin token rejects the call.
