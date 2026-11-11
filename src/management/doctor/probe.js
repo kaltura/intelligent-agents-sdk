@@ -13,6 +13,8 @@ import { isTokenError } from './gather.js';
 const PROBE_USER_ID = 'sdk-doctor-probe';
 const DEFAULT_MESSAGE = 'Hello, what can you help me with?';
 const DEFAULT_TIMEOUT_MS = 60000;
+/** The largest delay `setTimeout` accepts. */
+const MAX_TIMEOUT_MS = 2147483647;
 const MAX_MESSAGE_CHARS = 500;
 
 /** What the probe cannot show. Added to every result. */
@@ -71,7 +73,7 @@ export class DoctorProbe {
     const { agentId, message = DEFAULT_MESSAGE, allowSideEffects = false, timeoutMs = DEFAULT_TIMEOUT_MS } = opts ?? {};
     if (typeof agentId !== 'string' || !agentId.trim()) throw badRequest('doctorProbe needs opts.agentId.');
     if (typeof message !== 'string' || !message.trim() || message.length > MAX_MESSAGE_CHARS) throw badRequest(`doctorProbe message must be 1 to ${MAX_MESSAGE_CHARS} characters.`);
-    if (!(timeoutMs > 0)) throw badRequest('doctorProbe timeoutMs must be a positive number.');
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw badRequest(`doctorProbe timeoutMs must be a number from 1 to ${MAX_TIMEOUT_MS}.`);
 
     const agent = await this._d.agents.get(agentId, ks);
     const configId = resolveIntellectId(agent.intellect) ?? null;

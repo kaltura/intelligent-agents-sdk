@@ -87,7 +87,7 @@ test('doctorProbe: counts tool segments and reports a spiral', async () => {
 test('doctorProbe: needs an admin token and valid options, and sends nothing otherwise', async () => {
   const { mgmt, ff } = harness();
   await assert.rejects(() => mgmt.doctorProbe({ ks: 'x', kind: 'conversation' }, { agentId: 'a1' }), (e) => e.code === 'wrong_token_scope');
-  for (const opts of [undefined, {}, { agentId: '' }, { agentId: 'a1', message: '' }, { agentId: 'a1', message: 'x'.repeat(501) }, { agentId: 'a1', timeoutMs: 0 }]) {
+  for (const opts of [undefined, {}, { agentId: '' }, { agentId: 'a1', message: '' }, { agentId: 'a1', message: 'x'.repeat(501) }, { agentId: 'a1', timeoutMs: 0 }, { agentId: 'a1', timeoutMs: Infinity }, { agentId: 'a1', timeoutMs: NaN }, { agentId: 'a1', timeoutMs: 2147483648 }, { agentId: 'a1', timeoutMs: '5' }]) {
     await assert.rejects(() => mgmt.doctorProbe(ADMIN_KS, opts), (e) => e.code === 'bad_request');
   }
   assert.equal(ff.calls.length, 0);

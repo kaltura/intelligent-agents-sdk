@@ -159,7 +159,7 @@ console.log(probe.timings, probe.reply, probe.config);
 
 The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
 
-The text path uses no speech recognition, no voice and no avatar. It cannot show a silent avatar or a slow voice. `timeoutMs` (default 60000) and `message` (up to 500 characters) are the other options.
+The text path uses no speech recognition, no voice and no avatar. It cannot show a silent avatar or a slow voice. `timeoutMs` (default 60000, at most 2147483647) and `message` (up to 500 characters) are the other options.
 
 ## Thresholds
 
