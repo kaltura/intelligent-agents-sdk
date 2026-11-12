@@ -5,6 +5,7 @@
  *   node scripts/doctor.mjs [--agent <id>]... [--only <name>]... [--skip <name>]...
  *                           [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown]
  *                           [--fix [--apply --code <code>...]]
+ *                           [--probe --agent <id> [--message <text>] [--allow-side-effects]]
  *
  *   --agent <id>        Check only that agent and the rules that run for it. Repeatable.
  *   --only, --skip      Run only, or leave out, these check ids or categories. Repeatable.
@@ -14,8 +15,12 @@
  *   --format <f>        text (default) or markdown.
  *   --fix               Also plan the guided fixes (dry run). Writes nothing.
  *   --apply --code <c>  With --fix: write the fixes for these finding codes. Repeatable.
+ *   --probe             Also send one text message to the one --agent and time the reply. It sends a message.
+ *   --message <text>    The probe message. Default: a short greeting.
+ *   --allow-side-effects  Probe even when active lifecycle rules match the agent. Without it the probe stops and lists them.
  *
- * Exit codes: 0 nothing at or above --fail-on, 1 findings at or above it, 2 usage, auth or request error.
+ * Exit codes: 0 nothing at or above --fail-on, 1 findings at or above it, 2 usage, auth or request error,
+ * or a probe that did not run or failed.
  * The exit code comes from the report, not from the fixes. Run the doctor again after --apply.
  * Target: TARGET=prod (default) or <name>[:<account>], see scripts/lib/target.mjs. Credentials come
  * from the environment or a .env file. Secret values are never printed.
@@ -25,7 +30,7 @@ import { parseArgs } from 'node:util';
 import { redact } from '../src/management/index.js';
 import { resolveTarget, managementFor } from './lib/target.mjs';
 
-const USAGE = 'usage: node scripts/doctor.mjs [--agent <id>]... [--only <name>]... [--skip <name>]... [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown] [--fix [--apply --code <code>...]]';
+const USAGE = 'usage: node scripts/doctor.mjs [--agent <id>]... [--only <name>]... [--skip <name>]... [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown] [--fix [--apply --code <code>...]] [--probe --agent <id> [--message <text>] [--allow-side-effects]]';
 const LEVELS = { info: 0, warn: 1, error: 2 };
 /** Bump when the --json shape changes. */
 const SCHEMA_VERSION = 1;
@@ -50,6 +55,9 @@ try {
       fix: { type: 'boolean', default: false },
       apply: { type: 'boolean', default: false },
       code: { type: 'string', multiple: true },
+      probe: { type: 'boolean', default: false },
+      message: { type: 'string' },
+      'allow-side-effects': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
     strict: true,
@@ -71,6 +79,9 @@ for (const [flag, list] of [['--agent', values.agent], ['--only', values.only], 
 if (values.apply && !values.fix) usageError('--apply needs --fix.');
 if (values.apply && !values.code?.length) usageError('--apply needs at least one --code, for example --code asr_language_mismatch.');
 if (values.code?.length && !values.fix) usageError('--code needs --fix.');
+if (values.probe && values.agent?.length !== 1) usageError('--probe needs exactly one --agent.');
+if ((values.message !== undefined || values['allow-side-effects']) && !values.probe) usageError('--message and --allow-side-effects need --probe.');
+if (values.message !== undefined && !values.message.trim()) usageError('--message needs a non-empty value.');
 
 /** @type {object[]|undefined} */
 let ignore;
@@ -89,6 +100,7 @@ const kaltura = managementFor(target);
 
 let report;
 let fix;
+let probe;
 try {
   const admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-doctor' });
   report = await kaltura.doctor(admin.ks, {
@@ -98,6 +110,7 @@ try {
     ...(ignore ? { ignore } : {}),
   });
   if (values.fix) fix = await kaltura.doctorFix(admin.ks, report, values.apply ? { apply: true, codes: values.code } : {});
+  if (values.probe) probe = await kaltura.doctorProbe(admin.ks, { agentId: /** @type {string[]} */ (values.agent)[0], ...(values.message ? { message: values.message } : {}), allowSideEffects: values['allow-side-effects'] });
 } catch (e) {
   const err = /** @type {any} */ (e);
   console.error(`doctor failed (${err?.code ?? err?.status ?? 'error'}): ${redact(String(err?.detail ?? err?.message ?? err))}`);
@@ -114,6 +127,22 @@ const where = (f) => [
 /** @param {any} r */
 const fixLine = (r) => `${r.status}: agent ${r.agentId} asr.language ${r.before.language ?? '?'} -> ${r.after.language}${r.reason ? ` (${r.reason})` : ''}`;
 
+/** @param {any} p @returns {string[]} The probe as lines of text. */
+function probeLines(p) {
+  const ms = (/** @type {number|null} */ n) => (n === null ? 'none' : `${Math.round(n)} ms`);
+  const out = [`probe, agent ${p.agentId}:`];
+  if (p.rules.length) out.push(`  ${p.rules.length} active lifecycle rule(s) run for this agent: ${p.rules.map((r) => `${r.systemName ?? r.id} (${r.eventType}, ${r.actionType})`).join(', ')}`);
+  if (!p.ran) out.push('  not run: the rules above may react to the probe. Add --allow-side-effects to run it anyway.');
+  else {
+    if (p.config) out.push(`  config: ${p.config.type}, thinking_level ${p.config.thinkingLevel ?? 'unset'}, include_thoughts ${p.config.includeThoughts ?? 'unset'}, max_output_tokens ${p.config.maxOutputTokens ?? 'unset'}`);
+    out.push(`  first segment ${ms(p.timings.firstSegmentMs)}, first text ${ms(p.timings.firstTextMs)}, total ${ms(p.timings.totalMs)}`);
+    if (p.reply) out.push(`  ${p.reply.toolCalls} tool segment(s), ${p.reply.replyChars} reply characters${p.reply.spiralStopped ? ', stopped as a tool spiral' : ''}${p.reply.errorSegments ? `, ${p.reply.errorSegments} error segment(s)` : ''}`);
+    if (p.error) out.push(`  failed (${p.error.code}): ${redact(p.error.message)}`);
+  }
+  out.push(`  ${p.limits}`);
+  return out;
+}
+
 /** @param {any} r @returns {string} */
 function counts(r) {
   const { error, warn, info, suppressed } = r.summary;
@@ -121,7 +150,7 @@ function counts(r) {
 }
 
 if (values.json) {
-  console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, target: target.name, report, ...(fix ? { fix } : {}) }, null, 2));
+  console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, target: target.name, report, ...(fix ? { fix } : {}), ...(probe ? { probe } : {}) }, null, 2));
 } else if (values.format === 'markdown') {
   const lines = [`# Doctor report: ${target.name}`, '', `${counts(report)}.`, ''];
   if (report.findings.length) {
@@ -132,6 +161,7 @@ if (values.json) {
   }
   if (report.skipped.length) lines.push(`Skipped: ${report.skipped.join(', ')}`, '');
   if (fix) lines.push('## Fixes', '', ...(fix.results.length ? fix.results.map((r) => `- ${fixLine(r)}`) : ['None available.']), '');
+  if (probe) lines.push('## Probe', '', ...probeLines(probe).map((l) => `- ${l.trim()}`), '');
   console.log(lines.join('\n').trimEnd());
 } else {
   for (const f of report.findings) console.log(`[${f.severity.toUpperCase()}] ${f.code}${where(f) ? ` (${where(f)})` : ''}\n  ${f.message}\n  fix: ${f.fix}`);
@@ -142,7 +172,9 @@ if (values.json) {
     console.log(fix.results.length ? `\nfixes${values.apply ? '' : ' (dry run, nothing written)'}:` : '\nfixes: none available.');
     for (const r of fix.results) console.log(`  ${fixLine(r)}`);
   }
+  if (probe) console.log(`\n${probeLines(probe).join('\n')}`);
 }
 
 const worst = report.findings.reduce((n, f) => Math.max(n, LEVELS[f.severity] ?? 0), 0);
-process.exitCode = worst >= LEVELS[failOn] ? 1 : 0;
+if (probe && (!probe.ran || probe.error)) process.exitCode = 2;
+else process.exitCode = worst >= LEVELS[failOn] ? 1 : 0;

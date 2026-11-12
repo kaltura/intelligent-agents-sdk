@@ -18,7 +18,7 @@ const SECRET = 'cli-test-secret-value-9f3';
 const VOICE = { itemId: 'v1', type: 'Voice', adminTags: ['preset'], attributes: { voice: { name: 'Maya', language: 'he' } } };
 
 const fresh = () => ({
-  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [],
+  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [], rules: [], converseBodies: [],
 });
 const state = fresh();
 
@@ -37,9 +37,15 @@ before(async () => {
       const send = (b, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)); };
       const page = (all) => { const { offset = 0, limit = 30 } = body.pager ?? {}; send({ objects: all.slice(offset, offset + limit), totalCount: all.length }); };
       if (path.endsWith('/session/action/start')) return send(state.mintOk ? `djJ8${'A'.repeat(40)}` : { objectType: 'KalturaAPIException', message: 'denied', code: 'DENIED' });
-      if (path.endsWith('/lifecycle/list') || path.endsWith('/insight-settings/list') || path.endsWith('/email-template/list')) return page([]);
+      if (path.endsWith('/lifecycle/list')) return page(state.rules);
+      if (path.endsWith('/assistant/converse')) {
+        state.converseBodies.push(body);
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        return res.end(`${JSON.stringify({ type: 'think', content: '', threadId: 't', messageId: 'm' })}\n${JSON.stringify({ type: 'text', content: 'Hello there' })}\n`);
+      }
+      if (path.endsWith('/insight-settings/list') || path.endsWith('/email-template/list')) return page([]);
       if (path.endsWith('/agent/list')) return page([{ agentId: 'a1', intellect: { id: 10 }, avatarIds: ['av1'], asr: state.asr }]);
-      if (path.endsWith('/agent/get')) return send({ agentId: 'a1', asr: state.asr });
+      if (path.endsWith('/agent/get')) return send({ agentId: 'a1', intellect: { id: 10 }, asr: state.asr });
       if (path.endsWith('/agent/update')) { state.writes.push(body); state.asr = body.asr; return send({ agentId: 'a1', ...body }); }
       if (path.endsWith('/intellect/get')) return send({ id: 10, type: 'brain', force_language: state.forced });
       if (path.endsWith('/avatar/list')) return page([{ id: 'av1', voice: { id: 'v1' }, visual: { id: 'vis1' } }]);
@@ -160,4 +166,46 @@ test('--help prints usage and exits 0', async () => {
   const r = await run(['--help']);
   assert.equal(r.code, 0);
   assert.match(r.stdout, /usage: node scripts\/doctor\.mjs/);
+});
+
+const RULE = { id: 'r1', systemName: 'insights', status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: [{ field: 'object.agent_id', operator: 'eq', value: 'a1' }], action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['s1'] } };
+
+test('--probe sends one unstored message and prints timings and the limits', async () => {
+  const r = await run(['--agent', 'a1', '--only', 'orphans', '--probe', '--message', 'Hi']);
+  assert.match(r.stdout, /probe, agent a1:/);
+  assert.match(r.stdout, /first segment \d+ ms, first text \d+ ms, total \d+ ms/);
+  assert.match(r.stdout, /0 tool segment\(s\), 11 reply characters/);
+  assert.match(r.stdout, /no speech recognition/);
+  assert.equal(r.code, 0);
+  assert.deepEqual(state.converseBodies, [{ userMessage: 'Hi', sse: false, add_message_in_db: false }]);
+});
+
+test('--probe stops and lists the rules that match the agent, exit 2, nothing sent', async () => {
+  const r = await run(['--agent', 'a1', '--only', 'orphans', '--probe'], { set: { rules: [RULE] } });
+  assert.equal(r.code, 2);
+  assert.match(r.stdout, /1 active lifecycle rule\(s\) run for this agent: insights/);
+  assert.match(r.stdout, /not run/);
+  assert.deepEqual(state.converseBodies, []);
+});
+
+test('--probe --allow-side-effects runs despite the rules', async () => {
+  const r = await run(['--agent', 'a1', '--only', 'orphans', '--probe', '--allow-side-effects'], { set: { rules: [RULE] } });
+  assert.equal(r.code, 0);
+  assert.equal(state.converseBodies.length, 1);
+});
+
+test('--probe with --json adds a probe object', async () => {
+  const r = await run(['--agent', 'a1', '--only', 'orphans', '--probe', '--json']);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.probe.ran, true);
+  assert.equal(out.probe.reply.replyChars, 11);
+});
+
+test('probe flags are checked before any request', async () => {
+  for (const args of [['--probe'], ['--probe', '--agent', 'a1', '--agent', 'a2'], ['--message', 'x'], ['--allow-side-effects'], ['--probe', '--agent', 'a1', '--message', ' ']]) {
+    const r = await run(args);
+    assert.equal(r.code, 2, args.join(' '));
+    assert.match(r.stderr, /usage:/);
+  }
+  assert.deepEqual(state.requests, []);
 });

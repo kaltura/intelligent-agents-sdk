@@ -1,6 +1,6 @@
 # Doctor: find what is wrong with your agents
 
-`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. [`mgmt.doctorFix`](#fix-what-it-can) applies the one fix that is safe to automate. Use it when an agent behaves oddly, and before you ship one.
+`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. [`mgmt.doctorFix`](#fix-what-it-can) applies the one fix that is safe to automate. Use it when an agent behaves oddly, and before you ship one. [`mgmt.doctorProbe`](#time-a-real-turn) times a real turn.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';
@@ -139,6 +139,27 @@ await mgmt.doctorFix(adminKs, report, { apply: true, codes: ['asr_language_misma
 | Undo | A `planned`, `applied` or `failed` result has `undo`, a body for `mgmt.agents.update` that restores the old setting |
 
 Statuses: `planned`, `applied`, `already_applied`, `refused`, `failed`. A `failed` or `refused` result does not stop the others. An expired or non-admin token rejects the call.
+
+## Time a real turn
+
+The speed findings read config. `mgmt.doctorProbe` measures: it sends one text message to an agent and times the reply.
+
+```js
+const probe = await mgmt.doctorProbe(adminKs, { agentId, message: 'What can you help me with?' });
+console.log(probe.timings, probe.reply, probe.config);
+```
+
+| Field | Meaning |
+|---|---|
+| `timings` | `firstSegmentMs`, `firstTextMs` and `totalMs` |
+| `reply` | `toolCalls` (raw tool segments), `spiralStopped`, `replyChars`, `errorSegments`. `null` if the request failed |
+| `config` | Model settings in effect: `type`, `thinkingLevel`, `includeThoughts`, `maxOutputTokens` |
+| `rules` | Active thread rules that run for this agent |
+| `error` | `{ code, message }` when the request failed or timed out (`probe_timeout`) |
+
+The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
+
+The text path uses no speech recognition, no voice and no avatar. It cannot show a silent avatar or a slow voice. `timeoutMs` (default 60000, at most 2147483647) and `message` (up to 500 characters) are the other options.
 
 ## Thresholds
 

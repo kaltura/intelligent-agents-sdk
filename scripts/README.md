@@ -127,7 +127,7 @@ Every one of these has an `npm run live-verify:<name>` script except `live-verif
 `doctor.mjs` (`npm run doctor`) finds misconfigured agents on a target. It is read-only unless you pass `--fix --apply`. Same `TARGET` rules as the live scripts. Finding codes and the fix rules: [Doctor](../docs/DOCTOR.md).
 
 ```bash
-npm run doctor -- [--agent <id>]... [--only <name>]... [--skip <name>]... [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown] [--fix [--apply --code <code>...]]
+npm run doctor -- [--agent <id>]... [--only <name>]... [--skip <name>]... [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown] [--fix [--apply --code <code>...]] [--probe --agent <id> [--message <text>] [--allow-side-effects]]
 ```
 
 | Flag | Effect |
@@ -140,8 +140,11 @@ npm run doctor -- [--agent <id>]... [--only <name>]... [--skip <name>]... [--ign
 | `--format markdown` | A findings table for a ticket or PR comment |
 | `--fix` | Also plan the guided fixes. Writes nothing |
 | `--apply --code <code>` | With `--fix`: write the fixes for these codes. Repeatable |
+| `--probe` | Send one text message to the one `--agent` and time the reply. It sends a message |
+| `--message <text>` | The probe message |
+| `--allow-side-effects` | Probe even when active lifecycle rules match the agent. Otherwise the probe lists them and stops |
 
-Exit codes: 0 clean, 1 findings at or above `--fail-on`, 2 usage, auth or request error. The code comes from the report, so run the doctor again after `--apply`.
+Exit codes: 0 clean, 1 findings at or above `--fail-on`, 2 usage, auth or request error, or a probe that did not run or failed. The code comes from the report, so run the doctor again after `--apply`.
 
 ### Lifecycle audit CLI
 

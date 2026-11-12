@@ -34,6 +34,7 @@ import { InsightSettings } from './insight-settings.js';
 import { EmailTemplates } from './email-templates.js';
 import { Doctor } from './doctor.js';
 import { DoctorFix } from './doctor/fix.js';
+import { DoctorProbe } from './doctor/probe.js';
 import { Conversations, Threads, Messages, Feedback, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -261,6 +262,7 @@ export class Management {
     this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
     // Read-only health check behind `doctor()`.
     this._doctorFix = new DoctorFix(ctx, { agents: this.agents, intellects: this.intellects });
+    this._doctorProbe = new DoctorProbe(ctx, { agents: this.agents, lifecycle: this.lifecycle, intellects: this.intellects, conversations: this.conversations, sessions: this.sessions });
     this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, intellects: this.intellects, agents: this.agents, avatars: this.avatars, catalog: this.catalog, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates, tools: this.tools, skills: this.skills });
   }
 
@@ -288,6 +290,21 @@ export class Management {
    */
   doctorFix(ks, report, opts) {
     return this._doctorFix.run(ks, report, opts);
+  }
+
+  /**
+   * Send one text message to an agent and measure the turn: time to the first
+   * segment and to the first text, total time, tool calls and `spiralStopped`.
+   * Also returns the model settings in effect. WRITE: it mints a user token and
+   * sends a message with `add_message_in_db: false`. It does not run when active
+   * lifecycle rules match the agent, unless `allowSideEffects` is true. The text
+   * path uses no speech recognition and no voice. See {@link DoctorProbe#run} and docs/DOCTOR.md.
+   * @param {string} ks  Admin token.
+   * @param {import('./doctor/probe.js').DoctorProbeOptions} opts
+   * @returns {Promise<import('./doctor/probe.js').DoctorProbeResult>}
+   */
+  doctorProbe(ks, opts) {
+    return this._doctorProbe.run(ks, opts);
   }
 
   /**
