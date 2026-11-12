@@ -16,6 +16,16 @@
  * @property {string} [field] The intellect field the finding is about, for example `tool_ids`.
  * @property {string} message What is wrong, in plain words.
  * @property {string} fix What to do about it.
+ * @property {DoctorAutofix} [autofix] Set when `mgmt.doctorFix` can apply the fix. See {@link import('./doctor/fix.js').DoctorFix}.
+ */
+
+/**
+ * A fix `mgmt.doctorFix` can apply: set an agent's `asr.language`.
+ * @typedef {object} DoctorAutofix
+ * @property {'set_asr_language'} action
+ * @property {string} agentId
+ * @property {string} from The `asr.language` the report saw. The fix is refused if the agent no longer has it.
+ * @property {string} to The language code to set.
  */
 
 /**

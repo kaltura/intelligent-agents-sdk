@@ -62,6 +62,7 @@ export const asrLanguage = {
         field: 'asr.language',
         message: `asr.language is "${asr}", but the intellect forces replies in "${brain(view)?.force_language}". Speech in that language is recognized as "${asr}".`,
         fix: `Set the recognition language to match: ${setAsrFix(view, forced)}`,
+        autofix: { action: 'set_asr_language', agentId: view.agentId, from: String(asr), to: forced },
       })];
     }
     const other = voicesOf(view).find((v) => v.language !== null && v.language !== normalizeLanguage(asr));

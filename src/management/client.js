@@ -33,6 +33,7 @@ import { Lifecycle } from './lifecycle.js';
 import { InsightSettings } from './insight-settings.js';
 import { EmailTemplates } from './email-templates.js';
 import { Doctor } from './doctor.js';
+import { DoctorFix } from './doctor/fix.js';
 import { Conversations, Threads, Messages, Feedback, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -259,6 +260,7 @@ export class Management {
     // The siblings are what `lifecycle.audit` reads.
     this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
     // Read-only health check behind `doctor()`.
+    this._doctorFix = new DoctorFix(ctx, { agents: this.agents, intellects: this.intellects });
     this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, intellects: this.intellects, agents: this.agents, avatars: this.avatars, catalog: this.catalog, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates, tools: this.tools, skills: this.skills });
   }
 
@@ -274,6 +276,18 @@ export class Management {
    */
   doctor(ks, opts) {
     return this._doctor.run(ks, opts);
+  }
+
+  /**
+   * Apply the guided fixes in a doctor report. A dry run by default. WRITE only with
+   * `apply: true`. See {@link DoctorFix#run} and docs/DOCTOR.md.
+   * @param {string} ks (admin)
+   * @param {import('./audit-report.js').AuditReport} report The result of {@link Management#doctor}.
+   * @param {import('./doctor/fix.js').DoctorFixOptions} [opts] `apply` writes. `codes` names the findings to fix and is required with `apply`.
+   * @returns {Promise<import('./doctor/fix.js').DoctorFixReport>}
+   */
+  doctorFix(ks, report, opts) {
+    return this._doctorFix.run(ks, report, opts);
   }
 
   /**
