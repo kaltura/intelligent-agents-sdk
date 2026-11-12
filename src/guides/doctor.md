@@ -7,7 +7,7 @@ eyebrow: How-to Guide
 
 # Doctor: find what is wrong with your agents
 
-`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. [`mgmt.doctorFix`](#fix-what-it-can) applies the one fix that is safe to automate. Use it when an agent behaves oddly, and before you ship one. [`mgmt.doctorProbe`](#time-a-real-turn) times a real turn.
+`mgmt.doctor(ks)` reads your agents, intellects, avatars, voices and lifecycle rules, and reports what is misconfigured. It changes nothing. [`mgmt.doctorFix`](#fix-what-it-can) applies the one fix that is safe to automate. Use it when an agent behaves oddly, and before you ship one. New to this? Start with the [first-timer's guide](/guides/doctor-quickstart/). [`mgmt.doctorProbe`](#time-a-real-turn) times a real turn.
 
 ```js
 import { Management } from '@kaltura/intelligent-agents/management';

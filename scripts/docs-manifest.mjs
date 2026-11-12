@@ -144,6 +144,18 @@ export const manifest = [
     generated: true,
   },
   {
+    source: 'docs/DOCTOR-QUICKSTART.md',
+    target: 'guides/doctor-quickstart.md',
+    url: '/guides/doctor-quickstart/',
+    title: 'Doctor quickstart',
+    description: 'A first-timer guide to the doctor. Run one command, read the result in plain words, and fix the most common setup mistakes.',
+    eyebrow: 'How-to Guide',
+    h1: 'Check your agent with the doctor: a first-timer\'s guide',
+    group: 'How-to Guides',
+    navTitle: 'Doctor quickstart',
+    generated: true,
+  },
+  {
     source: 'docs/DOCTOR.md',
     target: 'guides/doctor.md',
     url: '/guides/doctor/',

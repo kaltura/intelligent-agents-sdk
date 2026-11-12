@@ -136,6 +136,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | If you want to… | Read this |
 |-----------------|-----------|
 | See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [Use-Case Catalog](/reference/use-cases/) |
+| Check your agent for setup mistakes (wrong language, slow answers, missing greeting) | [Doctor quickstart](/guides/doctor-quickstart/) |
 | Look up the exact API call for something | [Backend API Reference](/reference/api-reference/#contents) |
 | Put a talking video avatar on a web page | [Use-Case Catalog](/reference/use-cases/) → UC-12 |
 | Make the avatar greet the user first, interruptibly, as fast as possible | [Start the Conversation](/guides/start-the-conversation/) |
