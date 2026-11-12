@@ -221,12 +221,13 @@ export class IntellectConfig {
    * is looked up in `skills.list`. Then it runs {@link auditIntellectConfig},
    * which lists the finding codes.
    * @param {number} configId @param {string} ks (admin)
+   * @param {{config?:Record<string, any>}} [opts] `config` is the intellect you already read with `intellects.get`. It saves that read.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
-  async audit(configId, ks) {
+  async audit(configId, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellectConfig.audit');
     requireInt(configId, 'intellectConfig.audit configId');
-    const config = await this._intellects.get(configId, ks);
+    const config = opts.config ?? await this._intellects.get(configId, ks);
     const { tools, skills } = this._siblings;
     /** @param {{get:(id:string, ks:string)=>Promise<any>}|undefined} resource @param {unknown[]} ids @param {(id:string)=>Promise<any>} [fallback] Tried for an id that `get` does not find. */
     const fetchAll = async (resource, ids, fallback) => {

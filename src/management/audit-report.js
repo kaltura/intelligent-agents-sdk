@@ -11,6 +11,7 @@
  * @property {string} [ruleId] The lifecycle rule the finding is about.
  * @property {string} [systemName] That rule's `systemName`.
  * @property {string} [agentId] The agent the finding is about.
+ * @property {string[]} [agentIds] The agents the finding is about, when it is about a thing they share, such as an intellect or an avatar. Sorted.
  * @property {number} [configId] The intellect the finding is about.
  * @property {string} [field] The intellect field the finding is about, for example `tool_ids`.
  * @property {string} message What is wrong, in plain words.
@@ -21,7 +22,7 @@
  * What an audit method resolves to.
  * @typedef {object} AuditReport
  * @property {AuditFinding[]} findings
- * @property {{error:number, warn:number, info:number}} summary Finding counts by severity.
+ * @property {{error:number, warn:number, info:number, suppressed?:number}} summary Finding counts by severity. `suppressed` is how many findings the `ignore` list hid, and is set only when you pass one.
  * @property {Record<string, number>} checked How many of each thing the audit read, for example `{rules: 4, insightSettings: 2}`.
  * @property {string[]} skipped Checks the audit could not run, for example `['templates']`.
  */

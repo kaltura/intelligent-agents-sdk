@@ -118,7 +118,7 @@ export class Lifecycle {
    * `template_missing_or_deleted`, `template_tokens_unproduced`,
    * `dtc_without_forms`, `rule_disabled`.
    * @param {string} ks (admin)
-   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope.
+   * @param {{agentIds?:string[], pageSize?:number, agents?:any[]}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope. `agents` is the agent list you already read with `agents.list`. It saves that read.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
   async audit(ks, opts = {}) {
@@ -127,7 +127,7 @@ export class Lifecycle {
     if (!s) throw new KalturaError({ type: 'about:blank', title: 'audit unavailable', code: 'bad_request', detail: 'lifecycle.audit needs the sibling resources. Use mgmt.lifecycle from a Management instance.' });
     const { pageSize } = opts;
     const [rules, insightSettings, agents] = await Promise.all([
-      this.list(ks, { pageSize }).all(), s.insightSettings.list(ks, { pageSize }).all(), s.agents.list(ks, { pageSize }).all(),
+      this.list(ks, { pageSize }).all(), s.insightSettings.list(ks, { pageSize }).all(), opts.agents ?? s.agents.list(ks, { pageSize }).all(),
     ]);
     const live = rules.filter((r) => r.status === undefined || r.status === 'active');
     /** @type {string[]} */

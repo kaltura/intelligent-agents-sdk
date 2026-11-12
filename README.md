@@ -1120,7 +1120,7 @@ await session.sendText('Look up open tickets for this account.');
 
 `patch()` only accepts keys in `EDITABLE_FIELDS` and rejects anything else before the network call. `describe()`'s `editable` map is exactly that set. For event-driven session and thread rules, see [docs/lifecycle/README.md](docs/lifecycle/README.md).
 
-`intellectConfig.audit(configId, ks)` checks a saved intellect for mistakes, `lifecycle.audit(ks)` does the same for lifecycle rules, and `mgmt.doctor(ks)` runs both across every agent. All three only read and return findings with a `severity`, `code` and `fix`. See [Audit your rules](docs/lifecycle/README.md#audit-your-rules).
+`intellectConfig.audit(configId, ks)` checks a saved intellect for mistakes, `lifecycle.audit(ks)` does the same for lifecycle rules, and `mgmt.doctor(ks)` runs both across every agent and also checks avatars, voices and languages. All three only read and return findings with a `severity`, `code` and `fix`. See [Doctor](docs/DOCTOR.md) and [Audit your rules](docs/lifecycle/README.md#audit-your-rules).
 
 ### Forcing the reply language (`setForcedLanguage`)
 

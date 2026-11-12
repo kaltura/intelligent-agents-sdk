@@ -69,7 +69,8 @@ The shared leaf layer. Core never imports from `management/` or `experience/`.
 | `lifecycle-audit.js` | `auditLifecycleRules`: pure audit of existing rules | none |
 | `insight-settings.js` | `InsightSettings`: reusable insight definitions. A rule references them through `action.insightSettingsIds` | `insight-settings/*` |
 | `email-templates.js` | `EmailTemplates` (`mgmt.emailTemplates`): template CRUD. A rule references a template by `id` | `email-template/*` (messaging API) |
-| `doctor.js` | `Doctor`: read-only health check over a partner's agents (lifecycle audit, then intellect audit per agent) | reads only |
+| `doctor.js` | `Doctor`: read-only health check over a partner's agents. Runs the lifecycle audit, the intellect audit once per intellect, the check registry, and the orphan checks | reads only |
+| `doctor/` | `gather.js` (read phase, capped concurrency, builds the views), `checks/` (pure checks and the `CHECKS` registry), `language.js` (language and script helpers), `model.js` (view typedefs, `DEFAULT_THRESHOLDS`) | `agent/list`, `avatar/list`, `catalog-item/list`, `catalog-item/get`, `v1/intellect/get` |
 | `audit-report.js` | Report shape shared by `lifecycle.audit`, `intellectConfig.audit` and `doctor` | none |
 | `ks-inspect.js` | Local KS header decode, no network | none |
 | `crm-recipes.js` | Validated `api` tool configs for common CRM lead and contact capture | none |

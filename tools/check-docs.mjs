@@ -44,7 +44,7 @@ const DOCS = [
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md', 'docs/MCP-INTEGRATIONS.md',
   'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
-  'docs/GLOSSARY.md', 'docs/LANGUAGES.md', 'docs/LIVE-DEMOS.md',
+  'docs/GLOSSARY.md', 'docs/LANGUAGES.md', 'docs/LIVE-DEMOS.md', 'docs/DOCTOR.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
@@ -1355,7 +1355,7 @@ describe('15. App-builder skill', () => {
 // 17. Content pages — languages, glossary, live demos, KS wording
 // ═══════════════════════════════════════════════════════════════════════
 describe('17. Content pages', () => {
-  const NEW_PAGES = ['docs/LANGUAGES.md', 'docs/GLOSSARY.md', 'docs/LIVE-DEMOS.md'];
+  const NEW_PAGES = ['docs/LANGUAGES.md', 'docs/GLOSSARY.md', 'docs/LIVE-DEMOS.md', 'docs/DOCTOR.md'];
 
   test('every new page exists, is in the DOCS list and is linked from the README', () => {
     const readme = read('README.md');
@@ -1437,7 +1437,7 @@ describe('18. Doc tiers and style', () => {
   const LINE_BUDGET = 250;
   // Ratchet: pages already over budget may not grow. Remove an entry once the page is under budget.
   const OVER_BUDGET = {
-    'README.md': 1232, 'docs/SITE-NAV.md': 430, 'SECURITY.md': 353, 'docs/lifecycle/README.md': 289,
+    'README.md': 1232, 'docs/SITE-NAV.md': 430, 'SECURITY.md': 353, 'docs/lifecycle/README.md': 288,
   };
   const userDocs = () => trackedFiles().filter((f) => f.endsWith('.md')
     && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/contributor/'))));
