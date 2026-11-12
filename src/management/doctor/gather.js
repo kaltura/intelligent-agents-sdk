@@ -6,6 +6,7 @@
  */
 import { resolveIntellectId } from '../agents.js';
 import { isNotFound } from '../audit-report.js';
+import { toolRefId } from '../tools.js';
 
 /** @typedef {import('./model.js').AgentView} AgentView */
 /** @typedef {import('./model.js').AvatarView} AvatarView */
@@ -53,10 +54,11 @@ const idOf = (agent) => agent.agentId ?? agent.id;
 /**
  * Read what the checks need.
  * @param {string} ks (admin)
- * @param {{agents:import('../agents.js').Agents, avatars:import('../avatars.js').Avatars, catalog:import('../catalog.js').Catalog, intellects:import('../intellects.js').Intellects, intellectConfig:import('../intellect-config.js').IntellectConfig}} deps
+ * @param {{agents:import('../agents.js').Agents, avatars:import('../avatars.js').Avatars, catalog:import('../catalog.js').Catalog, intellects:import('../intellects.js').Intellects, intellectConfig:import('../intellect-config.js').IntellectConfig, tools:import('../tools.js').Tools, skills:import('../skills.js').Skills}} deps
  * @param {{agents:any[], selected:Set<string>, needs:Set<string>, audit:boolean, pageSize?:number, concurrency:number}} plan
  * `agents` is the full agent list. `selected` is the ids the run covers. `needs`
- * holds `intellect`, `avatars` and `catalog`. `audit` asks for the intellect config audit too.
+ * holds `intellect`, `avatars`, `catalog` and `refs`. `audit` asks for the intellect config audit too,
+ * which reads the same tools and skills as `refs`.
  * @returns {Promise<{agents:AgentView[], intellects:IntellectView[], intellectFindings:AuditFinding[], failures:ReadFailure[], checked:Record<string, number>}>}
  */
 export async function gather(ks, deps, plan) {
@@ -97,18 +99,34 @@ export async function gather(ks, deps, plan) {
     });
   }
 
-  // The intellect config audit, once per intellect.
   /** @type {IntellectView[]} */
   const intellects = [...configs].map(([configId, config]) => {
     const agentViews = byConfig.get(configId) ?? [];
     return { configId, config, agentIds: agentViews.map((v) => v.agentId).sort(), agents: agentViews };
   });
+
+  // The tools and skills each intellect lists, one read per distinct id.
+  if (plan.audit || plan.needs.has('refs')) {
+    const refs = refReader(ks, deps);
+    const reported = new Set();
+    await mapLimit(intellects, concurrency, async (iv) => {
+      try {
+        Object.assign(iv, await refs.read(iv.config), { refs: 'ok' });
+      } catch (e) {
+        const key = `${e.area}:${e.id}`;
+        if (!reported.has(key)) { reported.add(key); fail(e.area ?? 'tools', e.cause ?? e, e.id); }
+        Object.assign(iv, { tools: [], skills: [], refs: 'unread' });
+      }
+    });
+  }
+
+  // The intellect config audit, once per intellect.
   /** @type {AuditFinding[]} */
   const intellectFindings = [];
   if (plan.audit) {
-    await mapLimit(intellects, concurrency, async (iv) => {
+    await mapLimit(intellects.filter((iv) => iv.refs === 'ok'), concurrency, async (iv) => {
       try {
-        const report = await deps.intellectConfig.audit(iv.configId, ks, { config: iv.config });
+        const report = await deps.intellectConfig.audit(iv.configId, ks, { config: iv.config, tools: iv.tools, skills: iv.skills });
         intellectFindings.push(...report.findings.map((f) => ({ ...f, agentIds: iv.agentIds })));
       } catch (e) {
         fail('intellect audit', e, String(iv.configId));
@@ -150,6 +168,61 @@ export async function gather(ks, deps, plan) {
   return {
     agents: views, intellects, intellectFindings, failures,
     checked: { agentIntellects: needsIntellect ? byConfig.size : 0, avatars: avatarCount },
+  };
+}
+
+/**
+ * Reads the tool and skill entities an intellect lists. Each id is read once
+ * for the whole run, however many intellects list it. A read that fails
+ * rejects with `{ area, id, cause }`. A missing entity is left out.
+ * @param {string} ks @param {{tools:import('../tools.js').Tools, skills:import('../skills.js').Skills}} deps
+ * @returns {{read:(config:Record<string, any>)=>Promise<{tools:any[], skills:any[]}>}}
+ */
+function refReader(ks, deps) {
+  /** @type {Map<string, Promise<any>>} */
+  const toolCache = new Map();
+  /** @type {Map<string, Promise<any>>} */
+  const skillCache = new Map();
+  /** @type {Promise<any[]>|undefined} */
+  let skillList;
+  const once = (/** @type {Map<string, Promise<any>>} */ cache, /** @type {string} */ id, /** @type {()=>Promise<any>} */ load) => {
+    if (!cache.has(id)) cache.set(id, load());
+    return /** @type {Promise<any>} */ (cache.get(id));
+  };
+  // A shared skill is attachable and listed, but `skills.get` answers not found.
+  const loadSkill = async (/** @type {string} */ id) => {
+    try { return await deps.skills.get(id, ks); } catch (e) {
+      if (!isNotFound(e)) throw e;
+      skillList ??= deps.skills.list(ks).all();
+      return (await skillList).find((/** @type {any} */ s) => String(s.id) === id) ?? null;
+    }
+  };
+  const loadTool = async (/** @type {string} */ id) => {
+    try { return await deps.tools.get(id, ks); } catch (e) {
+      if (isNotFound(e)) return null;
+      throw e;
+    }
+  };
+  /** @param {string} area @param {Map<string, Promise<any>>} cache @param {string[]} ids @param {(id:string)=>Promise<any>} load */
+  const readAll = async (area, cache, ids, load) => {
+    const out = [];
+    for (const id of new Set(ids)) {
+      try {
+        const entity = await once(cache, id, () => load(id));
+        if (entity) out.push(entity);
+      } catch (cause) { throw Object.assign(new Error('ref read failed'), { area, id, cause }); }
+    }
+    return out;
+  };
+  return {
+    async read(config) {
+      const toolIds = [...(config.tool_ids ?? []), ...(config.thread_start_tools ?? [])].map(toolRefId).filter((/** @type {any} */ id) => id);
+      const skillIds = (config.skill_ids ?? []).map((/** @type {any} */ s) => String(s?.id ?? s));
+      return {
+        tools: await readAll('tools', toolCache, toolIds, loadTool),
+        skills: await readAll('skills', skillCache, skillIds, loadSkill),
+      };
+    },
   };
 }
 

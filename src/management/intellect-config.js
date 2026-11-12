@@ -221,7 +221,7 @@ export class IntellectConfig {
    * is looked up in `skills.list`. Then it runs {@link auditIntellectConfig},
    * which lists the finding codes.
    * @param {number} configId @param {string} ks (admin)
-   * @param {{config?:Record<string, any>}} [opts] `config` is the intellect you already read with `intellects.get`. It saves that read.
+   * @param {{config?:Record<string, any>, tools?:any[], skills?:any[]}} [opts] `config` is the intellect you already read with `intellects.get`. `tools` and `skills` are the entities you already read for it (the ones that exist). Each saves its reads.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
   async audit(configId, ks, opts = {}) {
@@ -251,7 +251,8 @@ export class IntellectConfig {
     };
     const toolIds = [...(config?.tool_ids ?? []), ...(config?.thread_start_tools ?? [])].map(toolRefId).filter(Boolean);
     const skillIds = (config?.skill_ids ?? []).map((/** @type {any} */ s) => s?.id ?? s);
-    const [toolList, skillList] = [await fetchAll(tools, toolIds), await fetchAll(skills, skillIds, fromList)];
+    const toolList = opts.tools ?? await fetchAll(tools, toolIds);
+    const skillList = opts.skills ?? await fetchAll(skills, skillIds, fromList);
     const findings = auditIntellectConfig(config, { tools: toolList, skills: skillList });
     return auditReport(findings, { intellects: 1, tools: toolList?.length ?? 0, skills: skillList?.length ?? 0 });
   }

@@ -45,7 +45,7 @@ A value the doctor does not recognize is skipped. It is never reported as an err
 | `pageSize` | Page size of every list read |
 | `concurrency` | Most reads in flight at once. Default 4 |
 
-Categories: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`.
+Categories: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speed`.
 
 ```js
 // Only the language checks, for one agent.
@@ -83,6 +83,30 @@ The fix for `voice_reply_language_mismatch` is a voice made for the reply langua
 | `capability_disabled_vetoes_avatar` | error | The intellect stores the `avatar` capability as `disabled` and the agent has avatars. A per-request `on` does not turn it back on |
 | `avatar_shared` | info | Several agents use one avatar. A change to it changes all of them |
 
+### Speed and tools
+
+These read the config, not a real turn. They show what makes slow or looping turns likely. Measure a real turn before you change anything. A finding about an intellect carries `agentIds`.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `latency_thinking` | info | `thinking_level` is `medium` or `high`, `include_thoughts` is true, or `think_process` is on, on an agent with an avatar. Reasoning time is silence before speech |
+| `latency_output_tokens` | info | `max_output_tokens` is above the limit. Long replies mean long speech |
+| `latency_preloaded_skills` | info | The `preloaded` skills add more characters than the limit to the system prompt on every turn |
+| `latency_prompt_size` | info | The prompt blocks hold more characters than the limit |
+| `thread_start_tool_blocks` | warn | A `thread_start_tools` api tool waits for its response and its `request.timeout` is over 10 s. The first turn waits for it |
+| `tool_surface_large` | info | Tools, `adhoc` skills, MCP servers and built-in tools that are on add up to more than the limit. More choices raise the risk of repeated tool calls |
+| `client_tool_wait_blocks` | info | A client tool leaves `wait_for_response` unset. Unset means the turn waits for your app, 30 s by default |
+| `client_tool_fire_and_forget_unbudgeted` | info | A client tool has `wait_for_response: false` and its description does not say it is called once per turn |
+
+An external intellect has no brain config, so these are skipped for it.
+
+### Prompts and openings
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `condition_unquoted_name` | info | A condition compares with a bare word, such as `plan == pro`. A name is read as a variable, not as text. Ignore it if the word is a variable |
+| `opening_phrase_may_render_empty` | info | The whole opening sits in one `{% if %}` with no `{% else %}`. When it is false the agent speaks its default greeting |
+
 ### Run
 
 | Code | Severity | Meaning |
@@ -99,6 +123,9 @@ An expired or non-admin token (401, `wrong_token_scope`) stops the run. Every ot
 | Key | Default | Used by |
 |---|---|---|
 | `minConversationSeconds` | 60 | `max_conversation_short` |
+| `maxOutputTokens` | 1024 | `latency_output_tokens` |
+| `promptChars` | 8000 | `latency_prompt_size`, `latency_preloaded_skills` |
+| `toolSurface` | 8 | `tool_surface_large` |
 
 ```js
 await mgmt.doctor(adminKs, { thresholds: { minConversationSeconds: 120 } });

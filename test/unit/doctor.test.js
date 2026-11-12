@@ -285,3 +285,86 @@ test('doctor: agentIds scopes the agent checks and skips the reads the other age
   await rpt(mgmt, { agentIds: ['a4'] });
   assert.equal(ff.calls.some((c) => c.url.endsWith('v1/intellect/get')), false, 'a4 has no intellect');
 });
+
+// Tool and skill reads: one per id for the whole run, shared by the audit and the checks.
+function refsHarness({ intellects, toolGet, skills = {}, listed = [] }) {
+  const agents = [
+    { agentId: 'a1', intellect: { id: 10 }, avatarIds: [] },
+    { agentId: 'a2', intellect: { id: 11 }, avatarIds: [] },
+  ];
+  const ff = fakeFetch([
+    { match: 'lifecycle/list', respond: pageOf([]) },
+    { match: 'insight-settings/list', respond: pageOf([]) },
+    { match: 'email-template/list', respond: pageOf([]) },
+    { match: 'agent/list', respond: pageOf(agents) },
+    { match: 'v1/intellect/get', respond: (req) => ({ body: intellects[req.body.id] }) },
+    { match: 'v1/tool/get', respond: toolGet },
+    { match: 'v1/skill/get', respond: (req) => (skills[req.body.id] ? { body: skills[req.body.id] } : notFound) },
+    { match: 'v1/skill/list', respond: pageOf(listed) },
+  ]);
+  return { mgmt: new Management({ partnerId: '123', fetch: ff }), ff };
+}
+const slowStart = (id) => ({ id, name: 'slow', config: { type: 'api', request: { url: 'https://example.com', timeout: 30 } } });
+const calls = (ff, suffix) => ff.calls.filter((c) => c.url.endsWith(suffix)).length;
+
+test('doctor: a tool and skill that two intellects list are read once, and the audit adds no reads', async () => {
+  const brain = { type: 'brain', thread_start_tools: ['t1'], tool_ids: ['t1'], skill_ids: [{ id: 'shared', mode: 'preloaded' }] };
+  const { mgmt, ff } = refsHarness({
+    intellects: { 10: { id: 10, ...brain }, 11: { id: 11, ...brain } },
+    toolGet: (req) => ({ body: slowStart(req.body.id) }),
+    listed: [{ id: 'shared', instructions: 'x'.repeat(9000) }],
+  });
+  const report = await mgmt.doctor(ADMIN_KS);
+  assert.equal(calls(ff, 'v1/tool/get'), 1);
+  assert.equal(calls(ff, 'v1/skill/get'), 1, 'a shared skill is not found by id');
+  assert.equal(calls(ff, 'v1/skill/list'), 1, 'and is read from the list once');
+  const by = (code) => report.findings.filter((f) => f.code === code);
+  assert.deepEqual(by('thread_start_tool_blocks').map((f) => f.configId).sort(), [10, 11]);
+  assert.deepEqual(by('latency_preloaded_skills')[0].agentIds, ['a1']);
+  assert.equal(by('tool_not_found').length, 0);
+  for (const c of ff.calls) assert.match(c.url, /\/(list|get)$/, 'read-only');
+});
+
+test('doctor: a missing tool still gives tool_not_found through the shared read', async () => {
+  const { mgmt } = refsHarness({
+    intellects: { 10: { id: 10, type: 'brain', tool_ids: ['gone'] }, 11: { id: 11, type: 'brain' } },
+    toolGet: () => notFound,
+  });
+  const report = await mgmt.doctor(ADMIN_KS);
+  assert.equal(report.findings.filter((f) => f.code === 'tool_not_found').length, 1);
+  assert.equal(report.findings.some((f) => f.code === 'read_failed'), false);
+});
+
+test('doctor: a failed tool read is one read_failed, skips that intellect\'s audit and tool checks, and keeps the rest', async () => {
+  const { mgmt } = refsHarness({
+    intellects: {
+      10: { id: 10, type: 'brain', tool_ids: ['t-bad'], knowledge_ids: [1, 2], model_configuration: { max_output_tokens: 4096 } },
+      11: { id: 11, type: 'brain', tool_ids: ['t-bad'], knowledge_ids: [1, 2] },
+    },
+    toolGet: () => ({ status: 500, body: { message: 'boom' } }),
+  });
+  const report = await mgmt.doctor(ADMIN_KS);
+  const failed = report.findings.filter((f) => f.code === 'read_failed');
+  assert.equal(failed.length, 1, 'the same tool is reported once');
+  assert.match(failed[0].message, /tools t-bad \(HTTP 500/);
+  assert.ok(report.skipped.includes('tools'));
+  assert.equal(report.findings.some((f) => f.code === 'tool_not_found' || f.code === 'knowledge_ids_over_cap'), false, 'no audit on partial data');
+  assert.equal(report.findings.some((f) => f.code === 'latency_output_tokens'), true, 'checks that need no tools still run');
+});
+
+test('doctor: a 401 on a tool read rejects the run', async () => {
+  const { mgmt } = refsHarness({
+    intellects: { 10: { id: 10, type: 'brain', tool_ids: ['t1'] }, 11: { id: 11, type: 'brain' } },
+    toolGet: () => ({ status: 401, body: { message: 'expired' } }),
+  });
+  await assert.rejects(() => mgmt.doctor(ADMIN_KS), (e) => e.status === 401);
+});
+
+test('doctor: skipping the intellect group and the speed checks reads no tools or skills', async () => {
+  const { mgmt, ff } = refsHarness({
+    intellects: { 10: { id: 10, type: 'brain', tool_ids: ['t1'] }, 11: { id: 11, type: 'brain' } },
+    toolGet: (req) => ({ body: slowStart(req.body.id) }),
+  });
+  await mgmt.doctor(ADMIN_KS, { skip: ['intellect', 'speed'] });
+  assert.equal(calls(ff, 'v1/tool/get') + calls(ff, 'v1/skill/get'), 0);
+});

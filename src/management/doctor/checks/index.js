@@ -6,6 +6,10 @@ import {
   asrLanguage, avatarCapability, avatarReferences, avatarShared, intellectReference, maxConversation,
   openingPhraseDuplicate, openingPhraseLanguage, voiceLanguageDefault, voiceReplyLanguage,
 } from './agent.js';
+import {
+  clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
+  latencyPromptSize, latencyThinking, openingPhraseMayRenderEmpty, threadStartToolBlocks, toolSurfaceLarge,
+} from './intellect.js';
 
 /** @typedef {import('../model.js').DoctorCheck} DoctorCheck */
 /** @typedef {import('../model.js').AgentView} AgentView */
@@ -21,6 +25,8 @@ import {
 export const CHECKS = Object.freeze([
   intellectReference, avatarReferences, asrLanguage, voiceLanguageDefault, voiceReplyLanguage,
   openingPhraseDuplicate, openingPhraseLanguage, maxConversation, avatarCapability, avatarShared,
+  latencyThinking, latencyOutputTokens, latencyPreloadedSkills, latencyPromptSize, threadStartToolBlocks, toolSurfaceLarge,
+  clientToolWaitBlocks, clientToolFireAndForget, conditionUnquotedName, openingPhraseMayRenderEmpty,
 ]);
 
 /**

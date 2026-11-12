@@ -199,8 +199,8 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 | `unscoped_rule` | warn | A `thread` rule has no agent condition, so it runs for every agent |
 | `agent_not_found` | warn | The rule names an agent id the partner does not have |
 | `duplicate_agent_ids` | info | The same agent id appears twice in the rule's conditions |
-| `insight_setting_missing` | warn | `insightSettingsIds` holds an id with no insight setting. The id is skipped |
-| `insight_setting_disabled` | warn | A listed insight setting is `disabled`. It is skipped |
+| `rule_operator_never_matches` | warn | A condition uses `not_empty`, which never matches, so the rule never fires |
+| `insight_setting_missing`, `insight_setting_disabled` | warn | `insightSettingsIds` holds an id with no insight setting, or a `disabled` one. The id is skipped |
 | `too_many_insight_settings` | error | More than 20 `insightSettingsIds` |
 | `badges_unfiltered` | warn | A `createBadges` rule on `analysis_updated` has no `changed_keys` filter |
 | `badge_key_unproduced` | warn | A `badgeId` names a key no active rule on those agents writes |
