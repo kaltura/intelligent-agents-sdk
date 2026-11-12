@@ -112,16 +112,16 @@ test('tool_surface_large: preloaded skills and capabilities that are off do not 
 
 const client = (over = {}) => ({ id: 'c1', name: 'go_to_slide', config: { type: 'client', description: 'Open a slide.', ...over } });
 
-test('client_tool_wait_blocks: an unset wait_for_response on a client tool is info with the real timeout', () => {
-  const f = run(clientToolWaitBlocks, view({ tool_ids: ['c1'] }, { tools: [client({ timeout: 15 })] }));
+test('client_tool_wait_blocks: a client tool that waits (true, or null) is info with the real timeout', () => {
+  const f = run(clientToolWaitBlocks, view({ tool_ids: ['c1'] }, { tools: [client({ wait_for_response: true, timeout: 15 })] }));
   assert.deepEqual(codes(f), ['info:client_tool_wait_blocks']);
   assert.match(f[0].message, /up to 15 s/);
   assert.match(run(clientToolWaitBlocks, view({ tool_ids: ['c1'] }, { tools: [client({ wait_for_response: null })] }))[0].message, /up to 30 s/);
+  assert.deepEqual(codes(run(clientToolWaitBlocks, view({ tool_ids: ['c1'] }, { tools: [client()] }))), ['info:client_tool_wait_blocks'], 'the server stores an unset value as true');
 });
 
-test('client_tool_wait_blocks: silent when it is set either way, for api tools and for tools not in tool_ids', () => {
+test('client_tool_wait_blocks: silent when wait_for_response is false, for api tools and for tools not in tool_ids', () => {
   const ids = { tool_ids: ['c1'] };
-  assert.deepEqual(run(clientToolWaitBlocks, view(ids, { tools: [client({ wait_for_response: true })] })), []);
   assert.deepEqual(run(clientToolWaitBlocks, view(ids, { tools: [client({ wait_for_response: false })] })), []);
   assert.deepEqual(run(clientToolWaitBlocks, view(ids, { tools: [apiTool({}, 'c1')] })), []);
   assert.deepEqual(run(clientToolWaitBlocks, view({}, { tools: [client()] })), []);

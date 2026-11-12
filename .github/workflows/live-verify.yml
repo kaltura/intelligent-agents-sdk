@@ -474,6 +474,7 @@ jobs:
               - *shared
             doctor:
               - 'scripts/live-verify-doctor.mjs'
+              - 'scripts/live-verify-doctor-matrix.mjs'
               - 'scripts/doctor.mjs'
               - 'scripts/live-verify-kickoff-shared.mjs'
               - 'src/management/doctor.js'
@@ -942,6 +943,16 @@ jobs:
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: node scripts/live-step.mjs --log live-verify-doctor-output.log -- npm run live-verify:doctor
 
+      # Scratch agent → one planted misconfiguration per doctor finding code → doctor must catch each → cleanup
+      - name: Resources · Doctor matrix
+        id: live_verify_doctor_matrix
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['doctor'] == 'true') }}
+        timeout-minutes: 15
+        env:
+          AGENTIC_PARTNER_ID: ${{ secrets.AGENTIC_PARTNER_ID }}
+          AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
+        run: node scripts/live-step.mjs --log live-verify-doctor-matrix-output.log -- npm run live-verify:doctor-matrix
+
       # Scratch Visual → avatars create/get/update(openingPhrase)/delete → cleanup, against the real Kaltura API
       - name: Resources · Avatars
         id: live_verify_avatars
@@ -1185,6 +1196,16 @@ jobs:
               echo
               echo '```'
               tail -n 40 live-verify-lifecycle-audit-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live-verify-doctor-matrix-output.log ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Resources · Doctor matrix — ${{ steps.live_verify_doctor_matrix.outcome }}"
+              echo
+              echo '```'
+              tail -n 40 live-verify-doctor-matrix-output.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
