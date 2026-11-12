@@ -65,12 +65,16 @@ test('doctor merges lifecycle findings, intellect findings and orphans', async (
   for (const c of ff.calls) assert.match(c.url, /\/(list|get)$/, 'read-only');
 });
 
-test('doctor({only:["lifecycle"]}) still reports the intellects it read as agentIntellects', async () => {
-  const dtc = { id: 'r3', systemName: 'dtc', status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: scope('a1'), action: { actionType: 'triggerDtcKai', agentId: 'a1' } };
-  const { mgmt } = harness({ rules: [...RULES, dtc] });
-  const report = await mgmt.doctor(ADMIN_KS, { only: ['lifecycle'] });
-  assert.equal('intellects' in report.checked, false);
-  assert.ok(report.checked.agentIntellects >= 1, JSON.stringify(report.checked));
+test('doctor: the lifecycle audit never adds its own intellect count to checked', async () => {
+  const dtc = (id, agent) => ({ id, systemName: id, status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: scope(agent), action: { actionType: 'triggerDtcKai', agentId: agent } });
+  const { mgmt } = harness({ rules: [...RULES, dtc('r3', 'a1'), dtc('r4', 'a3')] });
+  const lifecycleOnly = await mgmt.doctor(ADMIN_KS, { only: ['lifecycle'] });
+  assert.equal('intellects' in lifecycleOnly.checked, false);
+  assert.equal(lifecycleOnly.checked.agentIntellects, 0, 'no intellect checks ran');
+  const subset = await mgmt.doctor(ADMIN_KS, { agentIds: ['a3'] });
+  assert.equal(subset.checked.agentIntellects, 0, 'a3 intellect is missing, a1 rule is out of scope');
+  const full = await mgmt.doctor(ADMIN_KS);
+  assert.equal(full.checked.agentIntellects, 1, 'intellect 10 exists, 11 is missing');
 });
 
 test('doctor({agentIds}) limits to those agents and skips orphan checks', async () => {
