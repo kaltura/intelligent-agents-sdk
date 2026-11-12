@@ -14,6 +14,27 @@ for (const f of report.findings) console.log(f.severity, f.code, f.message, '\n 
 
 The token must be an admin token. Any other token throws `wrong_token_scope` before a request is sent.
 
+## Start from a symptom
+
+Run the doctor, then look for these codes. Session warnings (`slow_turn` and others) come from a live session, see [Turn warnings](architecture-reference/resilience-and-failure-handling.md#turn-warnings).
+
+| What you see | Look for |
+|---|---|
+| Callers in another language are misheard | `asr_language_mismatch`, `config_language_differs` |
+| The avatar speaks, but the words are garbled | `voice_reply_language_mismatch`, `reply_language_differs_from_config` |
+| A reply shows as text but no audio starts | `speech_not_started` |
+| A long silence before the avatar speaks | `latency_thinking`, `latency_prompt_size`, `latency_preloaded_skills`, `thread_start_tool_blocks`, `slow_turn` |
+| Replies run long | `latency_output_tokens` |
+| The agent calls the same tool again and again | `tool_surface_large`, `client_tool_fire_and_forget_unbudgeted`, `tool_heavy_turn` |
+| A turn hangs until it times out | `client_tool_wait_blocks` |
+| The opening line is missing or is the default greeting | `opening_phrase_may_render_empty`, `opening_phrase_duplicate` |
+| A prompt block or tool never applies | `condition_unquoted_name` |
+| The conversation ends mid-exchange | `max_conversation_short` |
+| The avatar does not appear | `capability_disabled_vetoes_avatar`, `avatar_not_found` |
+| The session fails to start | `intellect_not_found` |
+
+To time a turn instead of reading config, use [`mgmt.doctorProbe`](#time-a-real-turn).
+
 ## Read a report
 
 | Field | Meaning |
