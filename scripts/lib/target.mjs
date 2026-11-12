@@ -24,7 +24,7 @@ export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..'
 export function loadEnvFile(path) {
   let text;
   try { text = readFileSync(path, 'utf8'); } catch { return false; }
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (!m || process.env[m[1]]) continue;
     process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');

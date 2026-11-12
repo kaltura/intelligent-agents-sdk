@@ -57,4 +57,5 @@ Example: `deck-presenter.html`
 | Let the avatar see the user's screen | `/reference/api/build/avatar-and-agent/` |
 | Widgets in the conversation | `/reference/genui-reference/` |
 | Lifecycle actions and email | `/guides/lifecycle-recipes/` |
+| Agent mishears, speaks the wrong language, stays silent or answers slowly | `/guides/doctor-quickstart/` |
 | Security review | `/reference/security/` |
