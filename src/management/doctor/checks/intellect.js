@@ -147,17 +147,17 @@ export const toolSurfaceLarge = {
   },
 };
 
-/** A client tool with no `wait_for_response` blocks for 30 s unless the host answers. @type {DoctorCheck} */
+/** A client tool that waits blocks the turn until the host answers. The server stores an unset `wait_for_response` as `true`, so unset and `true` read the same. @type {DoctorCheck} */
 export const clientToolWaitBlocks = {
   id: 'client-tool-wait-blocks', category: 'speed', scope: 'intellect', needs: ['intellect', 'refs'], codes: ['client_tool_wait_blocks'],
   run(/** @type {IntellectView} */ iv) {
     if (!brain(iv) || iv.refs !== 'ok') return [];
-    return (iv.tools ?? []).filter((t) => cfgOf(t).type === 'client' && (cfgOf(t).wait_for_response ?? null) === null
+    return (iv.tools ?? []).filter((t) => cfgOf(t).type === 'client' && cfgOf(t).wait_for_response !== false
       && (brain(iv)?.tool_ids ?? []).some((/** @type {unknown} */ ref) => toolRefId(ref) === String(t.id)))
       .map((t) => about(iv, {
         severity: 'info', code: 'client_tool_wait_blocks', field: `tool_ids ${t.id}`,
-        message: `Client tool "${t.name ?? t.id}" does not set wait_for_response. Unset means the turn waits for your app, up to ${cfgOf(t).timeout ?? 30} s.`,
-        fix: 'Set waitForResponse true and answer with session.respondToTool(), or set it to false if the app only reacts.',
+        message: `Client tool "${t.name ?? t.id}" waits for your app. The turn is held up to ${cfgOf(t).timeout ?? 30} s until the app answers.`,
+        fix: 'If the app answers with session.respondToTool(), ignore this. If the app only reacts, set waitForResponse false.',
       }));
   },
 };
