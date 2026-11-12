@@ -59,6 +59,11 @@ module.exports = [
         "children": []
       },
       {
+        "title": "Doctor quickstart",
+        "url": "/guides/doctor-quickstart/",
+        "children": []
+      },
+      {
         "title": "Doctor",
         "url": "/guides/doctor/",
         "children": []
