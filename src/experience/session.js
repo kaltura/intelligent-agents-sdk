@@ -53,6 +53,7 @@ import {
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
+import { TurnMonitor } from './turn-monitor.js';
 import { KalturaError } from '../core/errors.js';
 import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
@@ -202,6 +203,9 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} [cfg.stickyId]  Sticky routing id for load-balanced reconnects. Default a random id.
    * @param {number} [cfg.brainStallMs]  How long to wait for a brain response before surfacing a stall signal. Default 12000.
    * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
+   * @param {number} [cfg.speechStartGraceMs]  How long after a reply is complete with no audio before the `speech_not_started` warning. 0 disables. Default 3000.
+   * @param {number} [cfg.slowTurnMs]  Time from a sent turn to the avatar talking before the `slow_turn` warning. 0 disables. Default 10000.
+   * @param {number} [cfg.toolHeavyLimit]  Tool calls in one turn before the `tool_heavy_turn` warning. 0 disables. Default 5.
    * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
    * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
    * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends: tab close, backgrounding, or an explicit disconnect(). Default true. `false` disables the POST and its listeners entirely.
@@ -553,6 +557,11 @@ export class KalturaAvatarSession extends Emitter {
     // perceivable output; starts true so a stray turn-end before the first
     // turnStart never misfires. See `_checkEmptyTurn`.
     this._turnSawOutput = true;
+    // Turn timing warnings and the `turnTimings` event. Observes only. See turn-monitor.js.
+    this._turnMonitor = new TurnMonitor({
+      emit: (name, payload) => this.emit(name, payload), isAudioOnly: () => this.mode === 'audio', isPaused: () => this.paused,
+      speechStartGraceMs: cfg.speechStartGraceMs, slowTurnMs: cfg.slowTurnMs, toolHeavyLimit: cfg.toolHeavyLimit,
+    });
   }
 
   // ─────────────────────────── connect ───────────────────────────
@@ -616,6 +625,7 @@ export class KalturaAvatarSession extends Emitter {
       if (prep) {
         // Steps 1 to 3 are done: report them as of now (the app listens from connect()).
         this._clientConfig = prep.cc;
+        this._turnMonitor.configReady(prep.cc);
         this._mark('socketOpen'); this._mark('serverConnected'); this._mark('joinComplete');
         this.emit('streamReady', { finalUrl: prep.onConn?.finalUrl, agentName: prep.onConn?.agentName, hostName: prep.onConn?.hostName });
       } else {
@@ -687,6 +697,7 @@ export class KalturaAvatarSession extends Emitter {
       this._await(socket, 'joinComplete', this._timeouts.joinComplete, 'JoinRoomTimeout', overall),
     ]);
     this._clientConfig = cc?.clientConfiguration || cc;
+    this._turnMonitor.configReady(this._clientConfig);
     this._mark('joinComplete');
     return onConn;
   }
@@ -1367,6 +1378,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._debug) this._socket.emit('debug_text_entered', buildTextEntered(finalText, true)); // debug only
     this._armBrainWatchdog();      // expect a brain response; warn if it stalls
     this._armResponsePending();    // positive "awaiting the brain" signal so the app can mask the gap
+    this._turnMonitor.sent();
     this._lastTurnText = rawText;  // for a possible spiral-recovery resend — see `recoverFromSpiral`
   }
 
@@ -1457,6 +1469,7 @@ export class KalturaAvatarSession extends Emitter {
     this._socket.emit('tapToTalkEnd', {});
     this._armBrainWatchdog();
     this._armResponsePending();
+    this._turnMonitor.sent();
     this.emit('tapToTalkEnded', {});
   }
 
@@ -1974,7 +1987,7 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /** Pause the live turn loop. */
-  pause() { this._requireConnected('pause'); this.paused = true; this._socket.emit('pauseConversation', {}); }
+  pause() { this._requireConnected('pause'); this.paused = true; this._turnMonitor.quiet(); this._socket.emit('pauseConversation', {}); }
   /**
    * Ask the server to start the pause window again while paused. Sends `extendPause`.
    * Each accepted call starts the window from the beginning. The server sends no reply:
@@ -2846,6 +2859,7 @@ export class KalturaAvatarSession extends Emitter {
         // or the bounded window to expire — then end cleanly. NEVER hang here.
         this._reconnectAttempt++;
         this._setState('reconnecting');
+        this._turnMonitor.reset();
         this.emit('reconnecting', { reason: r, attempt: this._reconnectAttempt, maxAttempts: this._maxReconnect });
         this._armReconnectTimer();
       } else {
@@ -2913,6 +2927,7 @@ export class KalturaAvatarSession extends Emitter {
       // ergonomic peer of the headless collectConverse().toolCalls.
       if (action && action.type === 'tool-call') {
         this._dispatchToolCall(action.payload);
+        this._turnMonitor.toolCall();
         this._checkToolSpiral();
       }
       // Fused-segment recovery (see `_dispatchToolCall`/`_recoverFusedToolResponse`):
@@ -2932,6 +2947,7 @@ export class KalturaAvatarSession extends Emitter {
       // condition. It must NOT reset on agent_start_speech/turnStart but SHOULD reset once the
       // brain genuinely recovers.
       if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; this._turnSawOutput = true; }
+      if (d && SPOKEN_TYPES.has(d.type)) this._turnMonitor.segment(typeof d.content === 'string' ? d.content : undefined);
       // A `think` segment is the server acknowledging the turn — it is working, but has
       // produced nothing perceivable yet, so it ARMS the dead-air signal (a UI can show
       // "thinking" from here). The first real OUTPUT segment (avatar/text/tool/genui) settles it.
@@ -2974,24 +2990,27 @@ export class KalturaAvatarSession extends Emitter {
         this._turnSawOutput = false;
         if (p?.speechId) this._tracker.beginUtterance(p.speechId);
       }
+      this._turnMonitor.turnStart({ turnId: p?.turnId, speechId: p?.speechId, isNewTurn: p?.isNewTurn });
       this.emit('turnStart', { speechId: p?.speechId, turnId: p?.turnId, isNewTurn: p?.isNewTurn });
     });
     socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
-    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId }); });
+    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this._turnMonitor.finishedGenerating(); this.emit('turnEnd', { speechId: p?.speechId }); });
     socket.on('generatingSpeech', (p) => {
       if (p?.speechId) this._tracker.beginUtterance(p.speechId);
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
-      if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
+      this._turnMonitor.speechId(p?.speechId);
+      if (isUninterruptibleSpeechId(p?.speechId)) { this._uninterruptibleTurn = true; this._turnMonitor.quiet(); }
       const label = openingText(p?.speechId, p?.text);
-      if (label) this._silentOpening = true;
+      if (label) { this._silentOpening = true; this._turnMonitor.quiet(); }
       this.emit('transcript', { text: label ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
     });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
       const label = openingText(p?.speechId, p?.text);
-      if (label) this._silentOpening = true;
+      if (label) { this._silentOpening = true; this._turnMonitor.quiet(); }
+      else this._turnMonitor.speechChunk();
       const text = label ?? clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
@@ -3000,7 +3019,7 @@ export class KalturaAvatarSession extends Emitter {
 
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
-    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
+    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._turnMonitor.startedTalking(); this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
     // the wire first, and a speak() called from inside the listener is sent, not held again.
     socket.on('stvFinishedTalking', (p) => {
@@ -3008,12 +3027,12 @@ export class KalturaAvatarSession extends Emitter {
       const silent = this._silentOpening; this._silentOpening = false;
       this.emit('avatarStopTalking', { text: silent ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) });
     });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
+    socket.on('agentInterrupted', () => { this._turnMonitor.quiet(); this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
     socket.on('agentTurnToTalk', (p) => {
-      this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch();
+      this._armBrainWatchdog(); this._armResponsePending(); this._turnMonitor.sent(); this._touchActivity(); this._completer.touch();
       if (!(p && p.userTranscription)) return;
       this._audit('turn.user_captured', 'success', {});
       this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
@@ -3535,6 +3554,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._coldReconnecting && attempt === 0) return;   // a retry is the same reconnect: the flag stays set across the backoff
     this._coldReconnecting = true;
     this._clearReconnectTimer();
+    this._turnMonitor.reset();   // the old session's turn can never finish
     // A cold reconnect gets a brand-new server-side session — any ACK the old session was
     // waiting on can never arrive now. Drop them rather than let respondToTool()
     // later resolve against a dead session. Bump the generation too, so a respondToTool()
@@ -3685,6 +3705,7 @@ export class KalturaAvatarSession extends Emitter {
     this._uninterruptibleTurn = false;
     this._silentOpening = false;
     this.speaking = false;
+    this._turnMonitor.reset();
     this._clearBrainWatchdog();
     this._stopHealthWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown

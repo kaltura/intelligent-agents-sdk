@@ -33,6 +33,8 @@ A finding has `severity`, `code`, `message` and `fix`. It also carries the ids i
 
 A value the doctor does not recognize is skipped. It is never reported as an error.
 
+The doctor reads stored config. Problems that show only in a live conversation, such as a reply with no audio or a slow turn, are session warnings. See [Turn warnings](architecture-reference/resilience-and-failure-handling.md#turn-warnings).
+
 ## Options
 
 | Option | Use |
