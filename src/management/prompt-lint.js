@@ -115,7 +115,7 @@ export const PROMPT_TYPES = Object.freeze(['custom', 'system', 'knowledge']);
 /**
  * One finding from a lint pass.
  * @typedef {object} LintFinding
- * @property {'error'|'warning'} severity
+ * @property {'error'|'warning'|'info'} severity
  * @property {string} code            Stable machine-readable code.
  * @property {string} message         Human-readable explanation.
  * @property {string} [path]          Where it was found (e.g. `prompts[2].value`).
@@ -448,9 +448,10 @@ export const PAGE_CONTEXT_PROMPT = Object.freeze({
  *
  * Gate/placeholder mismatch checks (both are silent failures live, so lint is
  * the only place they surface):
- *   - `vars_gate_unreferenced` WARNING: `allowClientVariables` is explicitly
- *     `true` but no block references any client `{{variable}}` — every request
- *     variable sent at converse time (including `page_context` from
+ *   - `vars_gate_unreferenced` INFO: `allowClientVariables` is explicitly
+ *     `true` (the server default) but no block references any client
+ *     `{{variable}}`. Harmless unless your app sends request variables: every
+ *     one sent at converse time (including `page_context` from
  *     `setDynamicPrompt`) is accepted and then silently ignored.
  *   - `known_var_unreferenced` WARNING (per var): a name in `knownVars` is
  *     never referenced by any block — that variable is sent but never rendered.
@@ -565,9 +566,9 @@ export function lintPrompts(prompts, opts = {}) {
   const knownVars = Array.isArray(opts.knownVars) ? opts.knownVars : [];
   if (opts.allowClientVariables === true && clientVariables.length === 0) {
     findings.push({
-      severity: 'warning',
+      severity: 'info',
       code: 'vars_gate_unreferenced',
-      message: 'allow_client_variables is on but no prompt block references a client `{{variable}}` — request variables sent at converse time (including `page_context` from setDynamicPrompt) are accepted and then silently ignored. Add a block that references them (see PAGE_CONTEXT_PROMPT) or stop sending them.',
+      message: 'allow_client_variables is on (the default) but no prompt block references a client `{{variable}}`. This is fine if your app sends none. If it sends request variables at converse time (including `page_context` from setDynamicPrompt), they are accepted and then silently ignored. Add a block that references them (see PAGE_CONTEXT_PROMPT) or stop sending them.',
     });
   }
   for (const name of knownVars) {

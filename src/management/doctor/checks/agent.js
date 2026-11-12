@@ -110,7 +110,7 @@ export const intellectReference = {
     if (view.intellectState !== 'missing') return [];
     return [found('error', 'intellect_not_found', view, {
       message: `Agent ${view.agentId} points at intellect ${view.configId}, which does not exist.`,
-      fix: 'Point the agent at an existing intellect.',
+      fix: 'Point the agent at an existing intellect, or delete the agent if you no longer use it.',
     })];
   },
 };

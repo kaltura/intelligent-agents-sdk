@@ -145,7 +145,8 @@ export class Doctor {
       await guarded('lifecycle', async () => {
         const report = await lifecycle.audit(ks, { agentIds, pageSize, agents: all });
         findings.push(...report.findings);
-        Object.assign(checked, report.checked);
+        const { intellects: readForRules, ...rest } = report.checked;
+        Object.assign(checked, rest, { agentIntellects: readForRules ?? 0 });
         skipped.push(...report.skipped);
       });
     }
@@ -155,7 +156,9 @@ export class Doctor {
       agents: all, selected, needs: new Set(checks.flatMap((c) => c.needs)), audit: on('intellect'), pageSize, concurrency,
     });
     failures.push(...gathered.failures);
+    const readForRules = checked.agentIntellects ?? 0;
     Object.assign(checked, gathered.checked, { agents: selected.size });
+    checked.agentIntellects = Math.max(checked.agentIntellects, readForRules);
     findings.push(...gathered.intellectFindings, ...runChecks({ agents: gathered.agents, intellects: gathered.intellects, selected }, thresholds, checks));
 
     if (!agentIds && on('orphans')) {

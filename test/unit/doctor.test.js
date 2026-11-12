@@ -57,18 +57,27 @@ test('doctor merges lifecycle findings, intellect findings and orphans', async (
   assert.match(by('orphan_insight_setting')[0].message, /s-orphan/);
   assert.deepEqual(by('orphan_email_template').map((f) => f.message.includes('loose')), [true], 'only the loose, non-deleted template');
   assert.equal(by('agent_not_found').length, 0);
-  assert.equal(report.checked.agentIntellects, 2);
+  assert.equal(report.checked.agentIntellects, 1, 'counts intellects that exist: 10 is read, 11 is missing');
+  assert.equal('intellects' in report.checked, false, 'one intellect count only');
   assert.equal(report.checked.rules, 2);
   assert.deepEqual(report.skipped, []);
   assert.deepEqual(report.summary, { error: 2, warn: 0, info: 2 });
   for (const c of ff.calls) assert.match(c.url, /\/(list|get)$/, 'read-only');
 });
 
+test('doctor({only:["lifecycle"]}) still reports the intellects it read as agentIntellects', async () => {
+  const dtc = { id: 'r3', systemName: 'dtc', status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: scope('a1'), action: { actionType: 'triggerDtcKai', agentId: 'a1' } };
+  const { mgmt } = harness({ rules: [...RULES, dtc] });
+  const report = await mgmt.doctor(ADMIN_KS, { only: ['lifecycle'] });
+  assert.equal('intellects' in report.checked, false);
+  assert.ok(report.checked.agentIntellects >= 1, JSON.stringify(report.checked));
+});
+
 test('doctor({agentIds}) limits to those agents and skips orphan checks', async () => {
   const { mgmt } = harness();
   const report = await mgmt.doctor(ADMIN_KS, { agentIds: ['a3'] });
   assert.deepEqual(report.findings.map((f) => f.code), ['intellect_not_found']);
-  assert.equal(report.checked.agentIntellects, 1);
+  assert.equal(report.checked.agentIntellects, 0, 'the only intellect is missing');
 });
 
 test('doctor degrades when the messaging host is unavailable', async () => {

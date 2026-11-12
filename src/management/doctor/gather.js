@@ -167,7 +167,7 @@ export async function gather(ks, deps, plan) {
 
   return {
     agents: views, intellects, intellectFindings, failures,
-    checked: { agentIntellects: needsIntellect ? byConfig.size : 0, avatars: avatarCount },
+    checked: { agentIntellects: configs.size, avatars: avatarCount },
   };
 }
 

@@ -41,7 +41,7 @@ To time a turn instead of reading config, use [`mgmt.doctorProbe`](#time-a-real-
 |---|---|
 | `findings` | Sorted by severity (`error`, `warn`, `info`), then `code`, then id. The order is the same on every run |
 | `summary` | `{ error, warn, info }` counts. `suppressed` is added when you pass `ignore` |
-| `checked` | How much was read, for example `agents`, `rules`, `agentIntellects`, `avatars` |
+| `checked` | How much was read, for example `agents`, `rules`, `avatars`. `agentIntellects` counts the intellects that exist and were read. A missing one is not counted |
 | `skipped` | Areas that could not be read. Checks that need them did not run |
 
 A finding has `severity`, `code`, `message` and `fix`. It also carries the ids it is about: `agentId`, `agentIds`, `configId`, `ruleId` and `field`. A finding about an intellect that several agents share carries `agentIds`, not `agentId`.
