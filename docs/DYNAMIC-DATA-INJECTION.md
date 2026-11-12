@@ -82,7 +82,7 @@ The mirror-image misconfiguration is also silent live: the gate is on, but no pr
 import { lintPrompts } from '@kaltura/intelligent-agents/management';
 const lint = lintPrompts(prompts, { allowClientVariables: true, knownVars: ['page_context'] });
 // findings to look for:
-//   vars_gate_unreferenced: gate on, but NO block references any client {{variable}}
+//   vars_gate_unreferenced (info): gate on, but NO block references any client {{variable}}
 //   known_var_unreferenced: a var you send is never referenced by any block
 //   client_variable_not_allowed: a block references a client var but the gate is off
 ```

@@ -145,7 +145,9 @@ export class Doctor {
       await guarded('lifecycle', async () => {
         const report = await lifecycle.audit(ks, { agentIds, pageSize, agents: all });
         findings.push(...report.findings);
-        Object.assign(checked, report.checked);
+        // The lifecycle audit's own intellect count also covers missing and out-of-scope agents. `agentIntellects` is the one count.
+        const { intellects: _ruleIntellects, ...rest } = report.checked;
+        Object.assign(checked, rest);
         skipped.push(...report.skipped);
       });
     }

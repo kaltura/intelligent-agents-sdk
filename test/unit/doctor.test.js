@@ -57,18 +57,31 @@ test('doctor merges lifecycle findings, intellect findings and orphans', async (
   assert.match(by('orphan_insight_setting')[0].message, /s-orphan/);
   assert.deepEqual(by('orphan_email_template').map((f) => f.message.includes('loose')), [true], 'only the loose, non-deleted template');
   assert.equal(by('agent_not_found').length, 0);
-  assert.equal(report.checked.agentIntellects, 2);
+  assert.equal(report.checked.agentIntellects, 1, 'counts intellects that exist: 10 is read, 11 is missing');
+  assert.equal('intellects' in report.checked, false, 'one intellect count only');
   assert.equal(report.checked.rules, 2);
   assert.deepEqual(report.skipped, []);
   assert.deepEqual(report.summary, { error: 2, warn: 0, info: 2 });
   for (const c of ff.calls) assert.match(c.url, /\/(list|get)$/, 'read-only');
 });
 
+test('doctor: the lifecycle audit never adds its own intellect count to checked', async () => {
+  const dtc = (id, agent) => ({ id, systemName: id, status: 'active', eventType: 'session_ended', objectType: 'thread', eventConditions: scope(agent), action: { actionType: 'triggerDtcKai', agentId: agent } });
+  const { mgmt } = harness({ rules: [...RULES, dtc('r3', 'a1'), dtc('r4', 'a3')] });
+  const lifecycleOnly = await mgmt.doctor(ADMIN_KS, { only: ['lifecycle'] });
+  assert.equal('intellects' in lifecycleOnly.checked, false);
+  assert.equal(lifecycleOnly.checked.agentIntellects, 0, 'no intellect checks ran');
+  const subset = await mgmt.doctor(ADMIN_KS, { agentIds: ['a3'] });
+  assert.equal(subset.checked.agentIntellects, 0, 'a3 intellect is missing, a1 rule is out of scope');
+  const full = await mgmt.doctor(ADMIN_KS);
+  assert.equal(full.checked.agentIntellects, 1, 'intellect 10 exists, 11 is missing');
+});
+
 test('doctor({agentIds}) limits to those agents and skips orphan checks', async () => {
   const { mgmt } = harness();
   const report = await mgmt.doctor(ADMIN_KS, { agentIds: ['a3'] });
   assert.deepEqual(report.findings.map((f) => f.code), ['intellect_not_found']);
-  assert.equal(report.checked.agentIntellects, 1);
+  assert.equal(report.checked.agentIntellects, 0, 'the only intellect is missing');
 });
 
 test('doctor degrades when the messaging host is unavailable', async () => {
