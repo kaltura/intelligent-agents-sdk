@@ -60,6 +60,12 @@ Each peer keeps a safe summary of what it gathered and what its STUN and TURN se
 
 `connect()` fails with `ice_failed` (`phase: 'ice'`, `retryable: true`, `error.ice` is the same summary) when the avatar peer never reaches ICE `connected`. This holds with or without a `<video>` element and with or without a frame callback: `connect()` never resolves while ICE is down. ICE `failed` ends the wait at once. Otherwise the wait ends at `timeouts.firstFrame`. The first miss re-subscribes once. The second miss rejects. A peer that is connected but shows no frame is a different case: `connect()` resolves with `media_no_video`. An ASR peer that fails while `connect()` is still running is recovered as soon as the session is `connected`.
 
+### Session diagnostics
+
+`await session.diagnostics()` returns a record to attach to a bug report. It is read-only and never rejects. It holds the session state and mode, the language settings the server sent, `connectTimings`, a count per warning code, the last 200 events and the `getIceReport()` result. `formatDiagnostics(d)` (from `@kaltura/intelligent-agents/experience`) turns it into plain text.
+
+It keeps event names, codes, counts and timings only. It never holds speech, names, URLs, tokens or tool arguments. The SDK does not send it anywhere. Your app decides whether to share it.
+
 ### Peer health watchdog
 
 A peer can die without an ICE event: closing it from outside fires nothing, and a stalled sender keeps ICE `connected` while no video arrives. While the session is `connected` (not paused or released), a check runs every `timeouts.healthTick` (1 s):
