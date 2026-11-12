@@ -122,6 +122,27 @@ Every one of these has an `npm run live-verify:<name>` script except `live-verif
 - No npm script, so use `node scripts/<name>.mjs`: `live-eval-emotions.mjs`, `live-verify-emotions.mjs`, `live-verify-intellect-config.mjs`, `live-verify-knowledge-kms.mjs`, `live-verify-feedback-flow.mjs`, `live-check-feedback-unfiltered.mjs`, `live-verify-thread-access.mjs`.
 - With an npm script, for example `npm run live-verify:regions`: `live-verify-force-language.mjs`, `live-verify-limits.mjs`, `live-verify-regions.mjs`, `live-verify-matrix.mjs`, `live-verify-salesforce-lead.mjs`, `live-verify-salesforce-agent.mjs`.
 
+### Doctor CLI
+
+`doctor.mjs` (`npm run doctor`) finds misconfigured agents on a target. It is read-only unless you pass `--fix --apply`. Same `TARGET` rules as the live scripts. Finding codes and the fix rules: [Doctor](../docs/DOCTOR.md).
+
+```bash
+npm run doctor -- [--agent <id>]... [--only <name>]... [--skip <name>]... [--ignore-file <path>] [--fail-on warn|error] [--json | --format text|markdown] [--fix [--apply --code <code>...]]
+```
+
+| Flag | Effect |
+|---|---|
+| `--agent <id>` | Check only that agent. Repeatable |
+| `--only`, `--skip` | Run only, or leave out, check ids or categories. Repeatable |
+| `--ignore-file <path>` | JSON array of ignore items, or `{ "ignore": [...] }`. Hidden findings are counted |
+| `--fail-on <level>` | Exit 1 on a finding at this level or worse. Default `error` |
+| `--json` | `{ schemaVersion, target, report, fix? }`. `schemaVersion` is 1 |
+| `--format markdown` | A findings table for a ticket or PR comment |
+| `--fix` | Also plan the guided fixes. Writes nothing |
+| `--apply --code <code>` | With `--fix`: write the fixes for these codes. Repeatable |
+
+Exit codes: 0 clean, 1 findings at or above `--fail-on`, 2 usage, auth or request error. The code comes from the report, so run the doctor again after `--apply`.
+
 ### Lifecycle audit CLI
 
 `lifecycle-audit.mjs` (`npm run audit:lifecycle`) is a tool, not a test. It is read-only. It uses the same `TARGET` rules as the live scripts. Finding codes: [Audit your rules](../docs/lifecycle/README.md#audit-your-rules).

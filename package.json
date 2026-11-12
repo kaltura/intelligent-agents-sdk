@@ -69,6 +69,7 @@
     "live-verify:agents": "node scripts/live-verify-agents.mjs",
     "live-verify:lifecycle-audit": "node scripts/live-verify-lifecycle-audit.mjs",
     "audit:lifecycle": "node scripts/lifecycle-audit.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "live-verify:intellects-conversations": "node scripts/live-verify-intellects-conversations.mjs",
     "live-verify:tools": "node scripts/live-verify-tools.mjs",
     "live-verify:limits": "node scripts/live-verify-limits.mjs",
