@@ -14,7 +14,7 @@
  * | A1 | prompt block, `sys__avatar_enabled`                        | marker           | no marker          |
  * | A2 | prompt block, `... and not sys__avatar_share_screen_enabled` | marker         | no marker          |
  * | A3 | skill, `sys__avatar_enabled`                               | marker           | no marker          |
- * | A4 | `var` tool, `sys__avatar_enabled`                          | tool called      | tool never called  |
+ * | A4 | `var` tool, `sys__avatar_enabled`                          | tool called      | tool never called (built-in tools are ignored) |
  * | A5 | prompt block, `sys__avatar_share_screen_enabled`           | marker after a share | not run        |
  * | A6 | prompt block, `... and not sys__avatar_share_screen_enabled` | no marker after a share | not run  |
  *
@@ -265,7 +265,9 @@ const SCENARIOS = {
         report.check(`${ctx.id}: avatar session offers and calls the tool`, called);
         const conv = await kaltura.sessions.createConversationToken({ configId: agent.configId });
         const plain = [await kaltura.converseOnce(agent.configId, 'Switch mode to zebra.', {}, conv), await kaltura.converseOnce(agent.configId, 'Please switch the mode to zebra now.', {}, conv)];
-        report.check(`${ctx.id}: plain conversation never calls the tool`, plain.every((r) => (r.toolCalls ?? []).length === 0 && (r.text ?? '').trim() !== ''), { calls: plain.map((r) => (r.toolCalls ?? []).length) });
+        // Only the gated tool counts. Some models call a built-in tool when no tool matches the request.
+        const gatedCalls = (/** @type {any} */ r) => (r.toolCalls ?? []).filter((c) => String(c.name).startsWith(toolName));
+        report.check(`${ctx.id}: plain conversation never calls the tool`, plain.every((r) => gatedCalls(r).length === 0 && (r.text ?? '').trim() !== ''), { calls: plain.map((r) => (r.toolCalls ?? []).map((c) => c.name)) });
       } finally {
         await kaltura.intellectConfig.setCapabilities(agent.configId, { kaltura_genie_experiences: priorExperiences ?? 'on' }, admin.ks).catch(() => {});
       }
