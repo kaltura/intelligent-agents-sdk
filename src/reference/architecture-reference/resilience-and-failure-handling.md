@@ -68,6 +68,12 @@ Each peer keeps a safe summary of what it gathered and what its STUN and TURN se
 
 `connect()` fails with `ice_failed` (`phase: 'ice'`, `retryable: true`, `error.ice` is the same summary) when the avatar peer never reaches ICE `connected`. This holds with or without a `<video>` element and with or without a frame callback: `connect()` never resolves while ICE is down. ICE `failed` ends the wait at once. Otherwise the wait ends at `timeouts.firstFrame`. The first miss re-subscribes once. The second miss rejects. A peer that is connected but shows no frame is a different case: `connect()` resolves with `media_no_video`. An ASR peer that fails while `connect()` is still running is recovered as soon as the session is `connected`.
 
+### Session diagnostics
+
+`await session.diagnostics()` returns a record to attach to a bug report. It is read-only and never rejects. It holds the session state and mode, the language settings the server sent, `connectTimings`, a count per warning code, the last 200 events and the `getIceReport()` result. `formatDiagnostics(d)` (from `@kaltura/intelligent-agents/experience`) turns it into plain text.
+
+It keeps event names, codes, counts and timings only. It never holds speech, names, URLs, tokens or tool arguments. The SDK does not send it anywhere. Your app decides whether to share it.
+
 ### Peer health watchdog
 
 A peer can die without an ICE event: closing it from outside fires nothing, and a stalled sender keeps ICE `connected` while no video arrives. While the session is `connected` (not paused or released), a check runs every `timeouts.healthTick` (1 s):
@@ -141,6 +147,8 @@ The connect-time keys (`overall`, `joinRoom`, and the rest) are in [Connection &
 | Tool reply gets no answer | 15 s deadline | `respondToTool()` returns `{ok:false, reason:'timeout'}`. The call stays pending, so you can retry. The first reply may still have arrived, so make the tool's side effect safe to repeat. |
 | Agent stalls mid-conversation | Watchdog | `brainStalled`, repeating every `brainStallMs` (default 12000) until output lands. |
 | Tool-call spiral (same command retried with no narration) | Two-tier circuit breaker | Soft signal (`toolSpiralDetected`), then a hard cold reconnect. See [Tool-call spiral](#tool-call-spiral). |
+| Reply text arrives but no audio starts | Turn monitor | `warning` `speech_not_started`. See [Turn warnings](#turn-warnings). |
+| Turn is slow, or calls many tools | Turn monitor | `warning` `slow_turn` or `tool_heavy_turn`. See [Turn warnings](#turn-warnings). |
 | Tab backgrounded / network change | `online`/`offline`/`visibilitychange` listeners | Media recovery as above. See [Session completion](#session-completion). |
 
 ### Tool-call spiral
@@ -154,6 +162,24 @@ An agent can retry the same client command again and again instead of narrating.
 | Resend | The cold reconnect succeeds and `recoverFromSpiral` is `true` (default) | `spiralRecovered {text}` | The SDK resends the abandoned turn once, with a short nudge prefix. |
 
 Set `recoverFromSpiral:false` to resend the turn yourself from `lastTurnText`. Set any of the three limits to `0` to turn that step off. Options and a code sample: [README § Resilience: agent stalls and tool-call spirals](https://github.com/kaltura/intelligent-agents-sdk/blob/main/README.md#resilience-agent-stalls-and-tool-call-spirals). Prompt-side prevention: [Client-Side Commands](/guides/client-commands/).
+
+### Turn warnings
+
+`KalturaAvatarSession` watches the timing of each turn and raises `warning` events. It only observes. It never sends, holds or interrupts a turn. The warnings carry counts and times, never reply text.
+
+| Code | When | Payload | Option (default, `0` turns it off) |
+|---|---|---|---|
+| `speech_not_started` | The reply text is complete and no audio began within the grace | `turnId`, `replyChars`, `elapsedMs` | `speechStartGraceMs` (3000) |
+| `slow_turn` | A turn you sent took longer than the limit to start talking | `turnId`, `elapsedMs`, `limitMs`, `stage`, `toolCalls` | `slowTurnMs` (10000) |
+| `tool_heavy_turn` | Raw tool segments in one turn reached the limit. This comes before `toolSpiralDetected` | `turnId`, `count`, `limit` | `toolHeavyLimit` (5) |
+| `config_language_differs` | Once per session. `languageCode` and `asr.language` in the client configuration name different languages | `languageCode`, `asrLanguage` | none |
+| `reply_language_differs_from_config` | Once per session. A reply is written in a script the session `languageCode` does not use. Script only: Spanish on an English session is not flagged | `replyScript`, `languageScript` | none |
+
+`stage` in `slow_turn` is `first_segment` (the agent was slow to answer) or `speech_start` (the answer came in time and the voice was slow).
+
+`speech_not_started` stays quiet on an interrupt, a pause, a reconnect, a silent opening, the server's check-in and goodbye turns, a turn with no reply text, audio-only mode, and a turn with several speech ids. It cannot see playback problems in the browser, such as blocked autoplay or a muted tab.
+
+The `turnTimings` event fires once per turn when generation ends: `{ turnId, origin, firstSegmentMs, firstSpeechChunkMs, startedTalkingMs, finishedMs, toolCalls }`. Times count from the send (`origin: 'sent'`) or, for a turn the server began, from the turn start (`origin: 'turn_start'`). A step that did not happen is `null`.
 
 ### Session completion
 

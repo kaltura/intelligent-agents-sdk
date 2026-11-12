@@ -199,6 +199,7 @@ A rule can be valid when you save it and still do nothing later. An insight sett
 const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); // agentIds is optional
 // { findings: [{ severity, code, ruleId, message, fix }], summary: { error, warn, info }, checked: { rules, ... }, skipped: [] }
 // agentIds limits the check to those agents and the rules that run for them. Rules with no agent scope are always included.
+// checked.rules and checked.agents then count only what was kept.
 ```
 
 | Code | Severity | Meaning |
@@ -206,8 +207,8 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 | `unscoped_rule` | warn | A `thread` rule has no agent condition, so it runs for every agent |
 | `agent_not_found` | warn | The rule names an agent id the partner does not have |
 | `duplicate_agent_ids` | info | The same agent id appears twice in the rule's conditions |
-| `insight_setting_missing` | warn | `insightSettingsIds` holds an id with no insight setting. The id is skipped |
-| `insight_setting_disabled` | warn | A listed insight setting is `disabled`. It is skipped |
+| `rule_operator_never_matches` | warn | A condition uses `not_empty`, which never matches, so the rule never fires |
+| `insight_setting_missing`, `insight_setting_disabled` | warn | `insightSettingsIds` holds an id with no insight setting, or a `disabled` one. The id is skipped |
 | `too_many_insight_settings` | error | More than 20 `insightSettingsIds` |
 | `badges_unfiltered` | warn | A `createBadges` rule on `analysis_updated` has no `changed_keys` filter |
 | `badge_key_unproduced` | warn | A `badgeId` names a key no active rule on those agents writes |
@@ -221,7 +222,7 @@ const report = await mgmt.lifecycle.audit(ks, { agentIds: ['<agent-uuid>'] }); /
 
 The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_key_unproduced`) are skipped for agents covered by an active `triggerDtcKai` rule, because the keys it writes are not documented. Templates live on the Messaging host. If the target has none, the template checks are skipped and the report says `skipped: ['templates']`.
 
-`mgmt.doctor(ks, opts?)` runs the same check, then audits the intellect of each agent with `mgmt.intellectConfig.audit(configId, ks)`. It also reports `orphan_insight_setting` and `orphan_email_template` (both `info`) for entities no rule uses. It skips the orphan checks when you pass `agentIds`.
+`mgmt.doctor(ks, opts?)` runs the same check, then audits each intellect with `mgmt.intellectConfig.audit(configId, ks)` and checks each agent, its avatars and voices. Its options and its own codes are in [Doctor](/guides/doctor/). A finding about an intellect that several agents share carries `agentIds`.
 
 | Intellect code | Severity | Meaning |
 |---|---|---|
@@ -242,7 +243,6 @@ The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`, `badge_
 | `tool_condition_suspect` | warn | A linked tool's `condition` uses a form that blanks the turn or never matches |
 | `tool_arg_unused` | warn | A linked `api` tool declares an arg that no `{arg}` in its url or body uses, so it is never sent |
 | `tool_name_builtin` | warn | A linked tool has the same name as a built-in tool (`async_search_knowledge_base`, `search_entries` or `search_web`) |
-| `intellect_not_found` | error | `doctor` only. An agent points at an intellect that does not exist |
 
 The pure functions `auditLifecycleRules(rules, ctx)` and `auditIntellectConfig(config, ctx)` are exported from `./management` if you already hold the data. To run it from a terminal or CI, use `npm run audit:lifecycle`. Run `npm run audit:lifecycle -- --help` for the flags. It exits 0 when nothing reaches `--fail-on`, 1 when something does, and 2 on a usage, auth or request error.
 
@@ -264,7 +264,7 @@ Calls go to your region's `agenticUrl` (default `https://api.avatar.us.kaltura.a
 | `lifecycle.listEvents(objectType, ks)` | `POST /v1/lifecycle/listEvents` | READ | |
 | `lifecycle.describeFields(objectType, eventType, ks)` | `POST /v1/lifecycle/describeFields` | READ | |
 | `lifecycle.audit(ks, opts?)` | reads only: lists rules, insight settings and agents, gets each pinned template and each `triggerDtcKai` intellect | READ | see [Audit your rules](#audit-your-rules). `opts.agentIds`, `opts.pageSize`. Admin KS |
-| `mgmt.doctor(ks, opts?)` | reads only | READ | rules, intellects, and unused settings and templates. See [Audit your rules](#audit-your-rules) |
+| `mgmt.doctor(ks, opts?)` | reads only | READ | rules, intellects, agents, avatars, voices, and unused settings and templates. See [Doctor](/guides/doctor/) |
 
 `InsightSettings`, SDK: `mgmt.insightSettings`:
 
