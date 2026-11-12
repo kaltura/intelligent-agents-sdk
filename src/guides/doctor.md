@@ -125,7 +125,7 @@ These read the config, not a real turn. They show what makes slow or looping tur
 | `latency_prompt_size` | info | The prompt blocks hold more characters than the limit |
 | `thread_start_tool_blocks` | warn | A `thread_start_tools` api tool waits for its response and its `request.timeout` is over 10 s. The first turn waits for it |
 | `tool_surface_large` | info | Tools, `adhoc` skills, MCP servers and built-in tools that are on add up to more than the limit. More choices raise the risk of repeated tool calls |
-| `client_tool_wait_blocks` | info | A client tool leaves `wait_for_response` unset. Unset means the turn waits for your app, 30 s by default |
+| `client_tool_wait_blocks` | info | A client tool waits for your app to answer (`wait_for_response` is true or unset, and the server treats unset as true). The turn is held up to 30 s by default |
 | `client_tool_fire_and_forget_unbudgeted` | info | A client tool has `wait_for_response: false` and its description does not say it is called once per turn |
 
 An external intellect has no brain config, so these are skipped for it.
