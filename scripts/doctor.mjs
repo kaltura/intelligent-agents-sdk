@@ -126,7 +126,7 @@ if (values.json) {
   const lines = [`# Doctor report: ${target.name}`, '', `${counts(report)}.`, ''];
   if (report.findings.length) {
     lines.push('| Severity | Code | Where | Message | Fix |', '|---|---|---|---|---|');
-    const cell = (/** @type {string} */ s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    const cell = (/** @type {string} */ s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
     for (const f of report.findings) lines.push(`| ${f.severity} | \`${f.code}\` | ${cell(where(f))} | ${cell(f.message)} | ${cell(f.fix)} |`);
     lines.push('');
   }
