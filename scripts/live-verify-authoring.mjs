@@ -204,7 +204,8 @@ try {
   made.tools.push(openTool.id, gatedTool.id);
   const openIntellect = await modeIntellect(openTool);
   const gatedIntellect = await modeIntellect(gatedTool);
-  const called = (r) => (r.toolCalls ?? []).length > 0;
+  // Only this script's own tools count. Some models call a built-in tool when no tool matches the request.
+  const called = (r) => (r.toolCalls ?? []).some((c) => String(c.name).startsWith('live_verify_'));
   const open = await tryTwice(() => kaltura.converseOnce(openIntellect.id, 'Switch mode to zebra.', {}), called);
   check('5-true-tool-condition-offers-tool', called(open), { calls: (open.toolCalls ?? []).map((c) => c.name) });
   // The model could skip a tool by chance, so the gated tool is asked twice and must stay uncalled both times.
