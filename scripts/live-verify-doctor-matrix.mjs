@@ -14,7 +14,7 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveTarget, managementFor } from './lib/target.mjs';
-import { ensureAgent, deleteAgent, verifyDeleted, Report, mdTable, repoRoot } from './live-verify-kickoff-shared.mjs';
+import { ensureAgent, deleteAgent, verifyDeleted, Report, mdTable, redact, repoRoot } from './live-verify-kickoff-shared.mjs';
 import { tools } from '../src/management/index.js';
 
 const target = resolveTarget(process.env.TARGET ?? 'prod');
@@ -84,8 +84,9 @@ try {
   const toolIds = [];
   ok.tools = await plant('client_tool_wait_blocks', async () => {
     const wait = await kaltura.tools.create(tools.client({ name: `matrix_wait_${tag}`, description: 'Show a panel to the viewer.' }), ks);
+    toolIds.push(wait.id); created.tools.push(wait.id);
     const fire = await kaltura.tools.create(tools.client({ name: `matrix_fire_${tag}`, description: 'Highlight a slide.', waitForResponse: false }), ks);
-    toolIds.push(wait.id, fire.id); created.tools.push(wait.id, fire.id);
+    toolIds.push(fire.id); created.tools.push(fire.id);
     await kaltura.intellectConfig.setToolIds(configId, toolIds, ks);
   });
   ok.threadStart = await plant('thread_start_tool_blocks', async () => {
@@ -97,10 +98,12 @@ try {
 
   ok.shared = await plant('avatar_shared', async () => {
     const second = await kaltura.agents.create({ displayName: `matrix second ${tag}`, intellect: { intellectType: 'genie', id: configId }, avatarIds: [avatarId] }, ks);
-    created.agents.push(second.agentId ?? second.id);
+    const secondId = second.agentId ?? second.id;
+    if (!secondId) throw new Error('the create response had no agent id');
+    created.agents.push(secondId);
   });
   ok.avatarGone = await plant('avatar_not_found', () => kaltura.agents.update({ agentId, avatarIds: [avatarId, '000000000000000000000000'] }, ks));
-  await plant('visual_not_in_catalog', () => kaltura.avatars.update({ id: avatarId, background: { type: 'visual', value: '0_00000000' } }, ks));
+  ok.visual = await plant('visual_not_in_catalog', () => kaltura.avatars.update({ id: avatarId, background: { type: 'visual', value: '0_00000000' } }, ks));
   ok.orphan = await plant('orphan_insight_setting', async () => {
     const s = await kaltura.insightSettings.create({ key: `MATRIX_${tag}`.toUpperCase(), title: 'Scratch', prompt: 'Summarize the topic.', valueType: 'string' }, ks);
     created.insightSettings.push(s.id);
@@ -124,6 +127,7 @@ try {
   expect(round1, 'tool_surface_large', 'info', ok.tools);
   expect(round1, 'avatar_shared', 'info', ok.shared);
   expect(round1, 'avatar_not_found', 'error', ok.avatarGone);
+  expect(round1, 'visual_not_in_catalog', 'warn', ok.visual);
 
   // Orphans are partner-wide, so this run reads the whole partner.
   if (ok.orphan) {
@@ -158,7 +162,11 @@ try {
     if (stack) await kaltura.intellectConfig.setSkillIds(stack.configId, [], ks).catch(() => {});
     for (const id of created.tools) await attempt(`tool ${id}`, () => kaltura.tools.delete(id, ks, confirm));
     for (const id of created.skills) await attempt(`skill ${id}`, () => kaltura.skills.delete(id, ks, confirm));
-    for (const s of created.stacks) await deleteAgent(kaltura, ks, s);
+    for (const s of created.stacks) {
+      await deleteAgent(kaltura, ks, s);
+      const gone = await verifyDeleted(kaltura, ks, s);
+      for (const [what, state] of Object.entries(gone)) if (state !== 'deleted') left.push(`${what}: ${state}`);
+    }
     if (stack) {
       await deleteAgent(kaltura, ks, stack);
       const gone = await verifyDeleted(kaltura, ks, stack);
@@ -174,7 +182,7 @@ const notCovered = [
   ['avatar-level orphan_email_template', 'not run', 'needs the messaging host'],
 ];
 const rows = [...matrix, ...notCovered];
-console.log(mdTable(['code', 'result', 'detail'], rows));
+console.log(redact(mdTable(['code', 'result', 'detail'], rows)));
 report.write(outDir, `# Live doctor matrix (${target.name})\n\n${mdTable(['code', 'result', 'detail'], rows)}\n`);
 console.log(`\n${report.checks.length} checks, ${report.checks.filter((c) => !c.ok).length} failed.`);
 process.exit(report.failed ? 1 : 0);
