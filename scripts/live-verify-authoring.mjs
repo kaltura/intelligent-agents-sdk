@@ -233,6 +233,7 @@ try {
   const attachOpen = await tryTwice(() => kaltura.converseOnce(refIntellect.id, 'Switch mode to zebra.', {}), called);
   check('5b-true-attachment-condition-offers-tool', called(attachOpen), { calls: (attachOpen.toolCalls ?? []).map((c) => c.name) });
 
+  // The reply is plain text on purpose: a reply the model fences as JSON is not spoken text, so `text` would be empty.
   // 6: {arg} placeholder fills the url and the string values of an object body.
   // The prefixes exist only in the tool, so seeing them in the reply proves the server filled the arg
   // and the model did not just repeat the city from the user message.
@@ -244,7 +245,7 @@ try {
     responseMapping: { from_url: 'args.c', from_body: 'json.note', count: 'json.count' },
   }), admin);
   made.tools.push(argTool.id);
-  const argIntellect = await newIntellect([baseRules('Call the tool for the city asked. Then print the tool result exactly, nothing else.')]);
+  const argIntellect = await newIntellect([baseRules('Call the tool for the city asked. Then reply in plain sentences that repeat every value of the tool result. Do not use JSON or a code block.')]);
   await kaltura.intellectConfig.setToolIds(argIntellect.id, [argTool.id], admin);
   const filledOk = (r) => (r.text ?? '').includes(`URL${MARK}-Paris`) && (r.text ?? '').includes(`BODY${MARK}-Paris`);
   const filled = await tryTwice(() => kaltura.converseOnce(argIntellect.id, 'Look up Paris.', {}), filledOk);
@@ -265,7 +266,7 @@ try {
     responseMapping: { all_args: 'args', all_headers: 'headers', nested: 'json.deep.list.0' },
   }), admin);
   made.tools.push(extraTool.id);
-  const extraIntellect = await newIntellect([baseRules('Call the tool for the city asked. Then print EVERY field of the tool result (all_args, all_headers, nested) exactly as returned, nothing else.')]);
+  const extraIntellect = await newIntellect([baseRules('Call the tool for the city asked. Then reply in plain sentences that repeat EVERY field of the tool result (all_args, all_headers, nested) exactly as returned. Do not use JSON or a code block.')]);
   await kaltura.intellectConfig.setToolIds(extraIntellect.id, [extraTool.id], admin);
   const extras = await tryTwice(() => kaltura.converseOnce(extraIntellect.id, 'Look up Paris.', {}), (r) => (r.text ?? '').includes(`NEST${MARK}-Paris`) && (r.text ?? '').includes('HDR'));
   const extrasText = (extras.text ?? '').replace(/\s+/g, ' ');
