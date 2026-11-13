@@ -133,32 +133,57 @@ function renderMarkdown(el, raw) {
 // mentions "<foo>" as real text is never touched.
 const FILLER_TOKEN_RE = /^<[^<>]+>$/;
 
-export function appendTranscript(who, text) {
+/** One labeled line. `speechId` ties a Nova line to the reply it belongs to. */
+function makeLine(who, text, cls, speechId) {
+  const p = document.createElement('p');
+  p.className = cls;
+  if (speechId) p.dataset.speechId = speechId;
+  const label = document.createElement('strong');
+  label.className = 'nova-label';
+  label.textContent = who === 'you' ? 'You:' : 'Nova:';
+  const body = document.createElement('span');
+  body.className = 'nova-msg';
+  body.dataset.raw = text;
+  paint(body, cls);
+  p.append(label, ' ', body);
+  return p;
+}
+
+/**
+ * Add a line. `speechId` is the reply a line belongs to (the SDK stamps it on
+ * both Nova's sentences and the visitor's spoken line). The server sends the
+ * visitor's words after Nova's first sentence, so a visitor line with a
+ * `speechId` goes in front of that reply's paragraph instead of at the end.
+ * A Nova sentence for a different reply starts a new paragraph. Without a
+ * `speechId` (typed text, chat) lines keep arrival order and glue as before.
+ */
+export function appendTranscript(who, text, speechId = null) {
   if (FILLER_TOKEN_RE.test(text.trim())) return;
   const cls = who === 'you' ? 'nova-you' : 'nova-nova';
   // The thinking dots stay pinned to the bottom: messages land above them,
   // and the glue check looks at the last real message, not the dots.
   const last = thinkingEl ? thinkingEl.previousElementSibling : transcriptEl.lastElementChild;
   const wasPinned = isPinned();
+  if (who === 'you' && speechId) {
+    const reply = Array.from(transcriptEl.children)
+      .find((el) => el.className === 'nova-nova' && el.dataset.speechId === speechId);
+    if (reply) {
+      reply.before(makeLine(who, text, cls, null));
+      followOrOffer(wasPinned);
+      return;
+    }
+  }
   // Nova's replies stream in segments — glue consecutive same-speaker
-  // segments into one paragraph instead of a "Nova:"-prefixed line each.
-  if (last && last.className === cls) {
+  // segments of one reply into one paragraph instead of a "Nova:"-prefixed line each.
+  const sameReply = !speechId || !last?.dataset.speechId || last.dataset.speechId === speechId;
+  if (last && last.className === cls && sameReply) {
     const body = last.querySelector('.nova-msg');
     const raw = body.dataset.raw;
     body.dataset.raw = `${raw}${/\s$/.test(raw) || /^\s/.test(text) ? '' : ' '}${text}`;
+    if (speechId && !last.dataset.speechId) last.dataset.speechId = speechId;
     paint(body, cls);
   } else {
-    const p = document.createElement('p');
-    p.className = cls;
-    const label = document.createElement('strong');
-    label.className = 'nova-label';
-    label.textContent = who === 'you' ? 'You:' : 'Nova:';
-    const body = document.createElement('span');
-    body.className = 'nova-msg';
-    body.dataset.raw = text;
-    paint(body, cls);
-    p.append(label, ' ', body);
-    transcriptEl.insertBefore(p, thinkingEl);
+    transcriptEl.insertBefore(makeLine(who, text, cls, who === 'nova' ? speechId : null), thinkingEl);
   }
   // The visitor's own line always scrolls into view; Nova's replies only when
   // they were already reading the bottom.
