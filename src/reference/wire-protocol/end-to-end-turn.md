@@ -37,6 +37,19 @@ A user turn, as captured:
 
 **Runtime behavior for integrators reasoning about turns:**
 
+- **The user's words arrive after the reply starts.** On a spoken turn, `generatingSpeech` for the first reply sentence comes before `agentTurnToTalk`. The SDK emits `transcript {type:'final'}` for the sentence and then `transcript {type:'user'}` for the question. Rendering `transcript` events in arrival order puts the question under its own answer. Do not use arrival order. The `user` event carries the `speechId` of the reply it prompted, so `TranscriptLog` can put it back in front of that reply:
+
+  ```js
+  import { TranscriptLog } from '@kaltura/intelligent-agents/experience';
+
+  const log = new TranscriptLog();
+  session.on('transcript', (tr) => {
+    const added = log.add(tr);   // null for a partial caption
+    if (added) list.insertBefore(row(added.entry), list.children[added.index] ?? null);
+  });
+  ```
+
+  `speechId` is `null` on a `user` line with no reply to pair with (typed text on `KalturaChatSession`, or a second line for a reply that already has one). The log appends those at the end. Turns with no user words (the opening, a check-in, the goodbye) send `agentTurnToTalk` with no `userTranscription` and emit no `user` line.
 - **Turn segmentation.** `agent_start_speech.isNewTurn` is `false` when new ASR/typed text continues the turn already in flight (e.g. a correction or extension of what the user just said). It's `true` for a fresh turn. The SDK reads this field and does not compute continuation itself.
 
 ## 9. Reproduce / re-capture
