@@ -169,7 +169,7 @@ Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with ty
 | 3 | `avatarStartTalking`, then one `transcript`/`speechChunk` and `avatarStopTalking`, all with `text: '[silence]'` (`SILENT_OPENING_LABEL`) for the opening turn. |
 | 4 | The SDK sends the kickoff. `session.kickoff.sent` becomes `true`. |
 | 5 | `responsePending` fires when the server acknowledges the turn. Show a "thinking" indicator here. |
-| 6 | `speechChunk` / `transcript {type:'agent'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. |
+| 6 | `speechChunk` / `transcript {type:'final'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. |
 
 Step 3 ends about 0.3 s after step 2. The agent's first words come about 1 s after step 2.
 
