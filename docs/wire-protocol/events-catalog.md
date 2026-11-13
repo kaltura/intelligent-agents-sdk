@@ -85,7 +85,7 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `stvStartedTalking` | `{}` | Audio generation begins (`isAgentTalking = true`). Playback follows about 400 ms later. Do not use it to trigger captions. |
 | `stvFinishedTalking` | `{ agentContent:"<full spoken text>" }` | The avatar finished a turn. The SDK emits `avatarStopTalking`. Reset caption buffers on **this** event, not on `stvStartedTalking`. |
 | `stvFinishedGenerating` | `{ speechId }` | Speech generation for `speechId` finished (generation is not playback end). The SDK emits `turnEnd { speechId }` with no `turnId`. |
-| `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
+| `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech, and it arrives after the first `generatingSpeech` of the reply. The SDK emits it as `transcript {type:'user', speechId}`, with the reply's `speechId` ([order](end-to-end-turn.md#8-end-to-end-turn-what-fires-in-order)). |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
 | `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk control. The server sends one in reply to `setTapToTalkMode` (`false` hides, `true` shows). The SDK has no handler for them. |

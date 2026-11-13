@@ -23,6 +23,7 @@
  * | V14 | audio-only mode (iPhone UA)                          | when the server picks audio mode: reply arrives with one peer |
  * | V15 | spoken opening ('Hello!') + kickoff                  | opening spoken, kickoff after it, reply on a new speech id |
  * | V16 | text barge-in mid-reply                              | `interrupted` within 1500 ms of speak() |
+ * | V17 | transcript order                                     | the user line carries the reply's speech id and `TranscriptLog` puts it first |
  *
  * Usage
  *   node scripts/live-verify-kickoff.mjs                        # --env prod, AGENTIC_* vars
@@ -43,6 +44,7 @@ import {
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, agentReply, dumpEvents, isOpeningSpeechId, textsSent, sleep, SILENT_OPENING, SILENT_OPENING_LABEL,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
+import { TranscriptLog } from '../src/experience/index.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'kickoff');
 const KICKOFF = typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.';
@@ -443,6 +445,35 @@ const SCENARIOS = {
       ({ events: evs } = await waitFor(page, (e) => firstReply(e, intr.index), REPLY_TIMEOUT, 'reply after barge-in'));
       report.check(`${id}: reply after the barge-in`, true);
       commonChecks(id, evs, { expectEchoes: 0 });
+      await ev(page, 'testDisconnect').catch(() => {});
+    },
+  },
+
+  V17: {
+    name: 'transcript order: user line paired with its reply',
+    async run({ context, sink, id }) {
+      const page = await openHarness(context, origin, { mode: 'avatar', kickoff: KICKOFF }, sink);
+      const first = await connectAndReply(page, id);
+      await replyEnd(page, firstReply(first).index);
+      const at = await page.evaluate(() => /** @type {any} */ (window).__events.length);
+      const QUESTION = 'In one short sentence, what is an intelligent agent?';
+      const sent = await ev(page, 'testSpeak', QUESTION);
+      report.check(`${id}: speak() sent`, sent === true, { sent });
+      await waitFor(page, (e) => find(e, 'avatarStopTalking', { from: at }) || find(e, 'interrupted', { from: at }), REPLY_END_TIMEOUT, 'reply end');
+      await sleep(500);
+      const evs = (await page.evaluate(() => /** @type {any} */ (window).__events.slice())).slice(at);
+      const lines = evs.filter((e) => e.type === 'transcript' && (e.detail?.type === 'user' || e.detail?.type === 'final'));
+      const user = lines.find((e) => e.detail.type === 'user' && e.detail.text.includes('intelligent agent'));
+      const replies = lines.filter((e) => e.detail.type === 'final');
+      report.check(`${id}: the user line arrived`, !!user, { types: lines.map((e) => e.detail.type) });
+      report.check(`${id}: the user line carries a speech id`, typeof user?.detail.speechId === 'string' && user.detail.speechId.length > 0, { speechId: user?.detail.speechId ?? null });
+      const mine = replies.filter((e) => e.detail.speechId === user?.detail.speechId);
+      report.check(`${id}: that speech id is on the reply sentences`, mine.length > 0, { replySpeechIds: [...new Set(replies.map((e) => e.detail.speechId))] });
+      report.note(`${id}: arrival order`, lines.map((e) => e.detail.type));
+      const log = new TranscriptLog();
+      for (const e of lines) log.add(e.detail);
+      const roles = log.entries.map((e) => e.role);
+      report.check(`${id}: TranscriptLog order is user, then reply`, roles[0] === 'user' && roles.slice(1).every((r) => r === 'agent'), { roles });
       await ev(page, 'testDisconnect').catch(() => {});
     },
   },

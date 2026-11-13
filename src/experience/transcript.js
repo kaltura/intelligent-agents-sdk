@@ -66,6 +66,61 @@ export class TranscriptTracker {
 }
 
 /**
+ * @typedef {object} TranscriptEntry One line of the conversation log.
+ * @property {'user'|'agent'} role  `user` for the viewer's words, `agent` for a reply sentence.
+ * @property {string} text
+ * @property {string|null} speechId  The reply this line belongs to. `null` for a line with no reply link (typed text).
+ */
+
+/**
+ * The conversation in speaking order. On a spoken turn the server delivers the user's
+ * words after the first sentence of the reply, so `transcript` events arrive as
+ * reply, then question. `TranscriptLog` puts a `user` line back in front of the reply
+ * it prompted, using the `speechId` the SDK stamps on both. Feed it every `transcript`
+ * event. It keeps `type:'final'` (agent) and `type:'user'` lines and ignores `partial`.
+ * Pure state, no timers, no I/O.
+ *
+ * @example
+ * const log = new TranscriptLog();
+ * session.on('transcript', (tr) => {
+ *   const added = log.add(tr);
+ *   if (added) list.insertBefore(row(added.entry), list.children[added.index] ?? null);
+ * });
+ */
+export class TranscriptLog {
+  constructor() {
+    /** @type {TranscriptEntry[]} */
+    this._entries = [];
+  }
+
+  /** The lines in speaking order. A copy: changing it does not change the log. @returns {TranscriptEntry[]} */
+  get entries() { return this._entries.slice(); }
+
+  /**
+   * Add a `transcript` event. A `user` line with a `speechId` goes before the first
+   * agent line of that reply. Every other line goes at the end.
+   * @param {{text?:string, type?:string, speechId?:string|null}} tr A `transcript` event payload.
+   * @returns {{index:number, entry:TranscriptEntry}|null} Where the line landed, for inserting it into a rendered list.
+   *   `null` when the event is not a line (a `partial` caption, or no text).
+   */
+  add(tr) {
+    if (!tr || !tr.text || (tr.type !== 'user' && tr.type !== 'final')) return null;
+    /** @type {TranscriptEntry} */
+    const entry = { role: tr.type === 'user' ? 'user' : 'agent', text: tr.text, speechId: tr.speechId ?? null };
+    let index = this._entries.length;
+    if (entry.role === 'user' && entry.speechId) {
+      const reply = this._entries.findIndex((e) => e.role === 'agent' && e.speechId === entry.speechId);
+      if (reply !== -1) index = reply;
+    }
+    this._entries.splice(index, 0, entry);
+    return { index, entry };
+  }
+
+  /** Drop every line. */
+  clear() { this._entries.length = 0; }
+}
+
+/**
  * Apportion a chunk's `durationMs` evenly across its words, offset by the
  * utterance-relative start. The server emits no per-word `startMs`, so this is
  * an estimate and captions follow audio onset rather than lead it.

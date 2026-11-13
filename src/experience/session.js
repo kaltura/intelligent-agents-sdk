@@ -410,6 +410,12 @@ export class KalturaAvatarSession extends Emitter {
     // userTranscription (ASR, since a spiral can start from voice, not just speak()).
     // Cleared after a successful resend so a later spiral doesn't replay stale text.
     this._lastTurnText = null;
+    // The server delivers a spoken turn's user text (agentTurnToTalk) AFTER the reply's first
+    // sentence (generatingSpeech), so `transcript {type:'user'}` arrives behind the reply it
+    // prompted. These two ids let the SDK say which reply a user line belongs to: the newest
+    // reply speechId seen, and the last one a user line already claimed.
+    this._replySpeechId = null;
+    this._claimedSpeechId = null;
     // Optional network/visibility awareness (browser only). On by default in a browser.
     this._networkAware = cfg.networkAware ?? (typeof globalThis.addEventListener === 'function');
     // Off by default: on conversationEnded the server has already ended the thread.
@@ -3012,6 +3018,7 @@ export class KalturaAvatarSession extends Emitter {
     // sub-turn 1 is a distinct call from that same name arriving fused in sub-turn 2's
     // segment, and a stale entry would skip the sub-turn-2 recovery.
     socket.on('agent_start_speech', (p) => {
+      if (p?.speechId) this._replySpeechId = p.speechId;
       this._armBrainWatchdog();
       this._pendingFusedBlobs = []; this._turnDispatchedToolNames.clear();
       if (p?.isNewTurn) {
@@ -3027,7 +3034,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
     socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this._turnMonitor.finishedGenerating(); this.emit('turnEnd', { speechId: p?.speechId }); });
     socket.on('generatingSpeech', (p) => {
-      if (p?.speechId) this._tracker.beginUtterance(p.speechId);
+      if (p?.speechId) { this._tracker.beginUtterance(p.speechId); this._replySpeechId = p.speechId; }
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
       this._turnMonitor.speechId(p?.speechId);
@@ -3067,11 +3074,14 @@ export class KalturaAvatarSession extends Emitter {
       if (!(p && p.userTranscription)) return;
       this._audit('turn.user_captured', 'success', {});
       this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
+      // Claim the newest reply speechId, once. A user line with no unclaimed reply stays null.
+      const speechId = this._replySpeechId !== this._claimedSpeechId ? this._replySpeechId : null;
+      this._claimedSpeechId = this._replySpeechId;
       // The kickoff is the app's own text, not the user's: drop its server echo from the user
       // transcript, exactly once, by text match, no timer. Anything else the same turn carries
       // (a held speak(), or what the mic heard meanwhile) is still surfaced.
       const shown = this._stripKickoffEcho(this._lastTurnText);
-      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId: null, words: [] });
+      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId, words: [] });
     });
     // Forwarded smart-turn VAD end-of-turn indicator (WIRE-PROTOCOL §4b) — passthrough, no SDK-side logic depends on it yet.
     socket.on('smartTurnStatus', (p) => this.emit('smartTurnStatus', { status: p?.status, timeoutMs: p?.timeout_ms, probability: p?.probability }));
@@ -3080,7 +3090,7 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('conversationTimeWarning', (p) => this.emit('timeWarning', { remainingTime: p?.remainingTime }));
     socket.on('conversationTimeExpired', () => this.emit('timeExpired', {}));
     socket.on('conversationEnded', () => { this.emit('ended', {}); this.disconnect({ final: this._completeOnServerEnd, reason: 'conversation_ended' }); });
-    socket.on('conversationResumed', () => { this.paused = false; this.emit('resumed', {}); });
+    socket.on('conversationResumed', () => { this.paused = false; this._replySpeechId = this._claimedSpeechId = null; this.emit('resumed', {}); });
     socket.on('stvTaskFail', () => this.emit('error', new KalturaError({ type: 'about:blank', title: 'STV task failed', code: 'stv_task_fail', detail: 'The server failed to render/send the avatar video.' })));
 
     // Fatal error events.
