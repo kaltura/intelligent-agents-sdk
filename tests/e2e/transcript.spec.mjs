@@ -156,3 +156,82 @@ test('reading older messages is not yanked to the bottom; a jump pill brings it 
   });
   expect(pinned).toBe(true);
 });
+
+// On a spoken turn the server sends the visitor's words after Nova's first
+// sentence. The SDK stamps both with the reply's speechId; the page uses it to
+// put the visitor's line first.
+const order = (page) => page.locator('#nova-transcript > .nova-you, #nova-transcript > .nova-nova').evaluateAll((els) =>
+  els.map((el) => `${el.className === 'nova-you' ? 'you' : 'nova'}:${el.querySelector('.nova-msg').dataset.raw}`));
+
+test('a spoken visitor line that arrives after the reply goes in front of it', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('nova', 'Goodbye!', 's1');
+    t.appendTranscript('you', 'Bye.', 's1');
+  });
+  expect(await order(page)).toEqual(['you:Bye.', 'nova:Goodbye!']);
+});
+
+test('a multi-sentence reply stays one paragraph under its visitor line', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('nova', 'First.', 's1');
+    t.appendTranscript('you', 'Explain.', 's1');
+    t.appendTranscript('nova', 'Second.', 's1');
+  });
+  expect(await order(page)).toEqual(['you:Explain.', 'nova:First. Second.']);
+});
+
+test('back-to-back spoken turns keep speaking order', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('nova', 'Answer one.', 'a');
+    t.appendTranscript('you', 'Question one?', 'a');
+    t.appendTranscript('nova', 'Answer two.', 'b');
+    t.appendTranscript('you', 'Question two?', 'b');
+    t.appendTranscript('nova', 'More two.', 'b');
+  });
+  expect(await order(page)).toEqual([
+    'you:Question one?', 'nova:Answer one.', 'you:Question two?', 'nova:Answer two. More two.',
+  ]);
+});
+
+test('a visitor line goes before its own reply, never before an earlier turn', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('nova', 'A.', 'a');
+    t.appendTranscript('nova', 'B.', 'b');
+    t.appendTranscript('you', 'Q2', 'b');
+  });
+  expect(await order(page)).toEqual(['nova:A.', 'you:Q2', 'nova:B.']);
+});
+
+test('lines without a speechId keep arrival order and glue as before', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('you', 'typed');
+    t.appendTranscript('nova', 'One.');
+    t.appendTranscript('nova', 'Two.');
+    t.appendTranscript('you', 'spoken with no reply seen', 'unseen');
+  });
+  expect(await order(page)).toEqual(['you:typed', 'nova:One. Two.', 'you:spoken with no reply seen']);
+});
+
+test('the thinking dots stay last when a visitor line is placed before a reply', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const t = window.__transcript;
+    t.appendTranscript('nova', 'Hi.', 's1');
+    t.showThinking();
+    t.appendTranscript('you', 'Hello', 's1');
+  });
+  expect(await order(page)).toEqual(['you:Hello', 'nova:Hi.']);
+  const lastIsThinking = await page.evaluate(() =>
+    document.getElementById('nova-transcript').lastElementChild.className === 'nova-thinking');
+  expect(lastIsThinking).toBe(true);
+});

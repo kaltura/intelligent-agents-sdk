@@ -441,17 +441,19 @@ async function connect(pendingPrompt, mode = 'avatar') {
     // copy of the visitor's turn, 'final' carries each of Nova's reply
     // segments. Her spoken intro is a normal 'final' line and shows as hers.
     // A 'user' line the site already showed (see localEchoes) is dropped;
-    // what is left, such as a spoken turn, shows as the visitor's.
+    // what is left, such as a spoken turn, shows as the visitor's. On a spoken
+    // turn the server sends that line after Nova's first sentence. Both carry
+    // the reply's speechId, and appendTranscript puts the visitor's line first.
     session.on('transcript', (tr) => {
       if (tr.type === 'user' && tr.text) {
         const unseen = dropLocalEchoes(tr.text);
-        if (unseen) appendTranscript('you', unseen);
+        if (unseen) appendTranscript('you', unseen, tr.speechId);
       }
       // The avatar's silent opening turn reaches the app as the SDK's
       // SILENT_OPENING_LABEL caption; it is not something to show a visitor.
       else if (tr.type === 'final' && tr.text && tr.text !== SILENT_OPENING_LABEL) {
         hideThinking();
-        appendTranscript('nova', tr.text);
+        appendTranscript('nova', tr.text, tr.speechId);
       }
     });
     session.on('error', (e) => {
