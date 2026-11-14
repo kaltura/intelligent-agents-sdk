@@ -105,7 +105,7 @@ How the text a voice speaks is written. Config only: the doctor cannot hear a vo
 | `respelling_table_shared_across_providers` | info | One spoken-forms table is used by agents whose voices come from different providers (read from the voice's `ttsProvider`). The same respelling can win on one provider and fail on another |
 | `spoken_output_undeclared` | info | The agent has an avatar, but no prompt says the reply is spoken aloud. Skipped when replies are forced to a language other than English |
 
-`spoken_text_digits_cross_language` compares the voice language with the forced reply language, or with `asr.language` when none is forced. It reads only the opening line and rows written as `Term -> "spoken form"` (also `→` or `=>`) in the base directive and prompt blocks. It does not read model replies: to check those, pass `spoken` to [`mgmt.doctorProbe`](#time-a-real-turn).
+`spoken_text_digits_cross_language` compares the voice language with the forced reply language, or with `asr.language` when none is forced. It reads only the opening line and rows written as `Term -> "spoken form"` (also `→` or `=>`, and quotes are optional when the prompt has three or more such rows) in the base directive and prompt blocks. It does not read model replies: to check those, pass `spoken` to [`mgmt.doctorProbe`](#time-a-real-turn).
 
 ### Agent and avatar
 

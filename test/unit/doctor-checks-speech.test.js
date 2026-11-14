@@ -243,6 +243,31 @@ test('spokenFormRows: skips rows that are not a whole `Term -> "form"` line', ()
   assert.deepEqual(rows, [{ term: 'Good', spoken: 'good' }]);
 });
 
+test('spokenFormRows: reads a table of bare rows (no quotes) when there are three or more', () => {
+  const rows = spokenFormRows({ base_directive: 'Replace each term:\n\nEBITDA -> ee-BIT-dah\nNon-GAAP -> non-GAP\n1,200 -> twelve hundred\nP&L -> P and L\n' });
+  assert.deepEqual(rows.map((r) => `${r.term}=${r.spoken}`), ['EBITDA=ee-BIT-dah', 'Non-GAAP=non-GAP', '1,200=twelve hundred', 'P&L=P and L']);
+});
+
+test('spokenFormRows: one or two bare arrows are prose, not a table', () => {
+  assert.deepEqual(spokenFormRows({ prompts: [{ value: 'A -> b\nC -> d\n' }] }), []);
+  assert.deepEqual(spokenFormRows({ prompts: [{ value: 'Flow: A -> B -> C\nX -> y.\nZ -> w:\nQ -> v\n' }] }), []);
+});
+
+test('spokenFormRows: bare rows mix with quoted rows and a row in both forms counts once', () => {
+  const rows = spokenFormRows({
+    base_directive: 'A -> a1\nB -> b1\nC -> c1\n',
+    prompts: [{ value: 'A -> "a1"\nD -> "d1"\n' }],
+  });
+  assert.deepEqual(rows.map((r) => `${r.term}=${r.spoken}`).sort(), ['A=a1', 'B=b1', 'C=c1', 'D=d1']);
+});
+
+test('respelling_hyphen_or_mixed_case: finds hyphenated forms in a bare-row table', () => {
+  const cfg = { id: 10, type: 'brain', base_directive: 'CAGR -> KAY-ger\nEBITDA -> ee-BIT-dah\nARR -> A R R\nNDR -> N D R\n' };
+  const f = run(respellingStyle, intellectView(cfg));
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /2 spoken form/);
+});
+
 test('spokenFormRows: two calls on the same config give the same rows (no shared regex state)', () => {
   const cfg = table(['A -> "a"', 'B -> "b"']);
   assert.deepEqual(spokenFormRows(cfg), spokenFormRows(cfg));

@@ -25,6 +25,12 @@ const SPOKEN_WORDS = /\b(spoken|speak|speaks|speaking|speech|aloud|text-to-speec
 /** A spoken-forms row in a prompt: `Term -> "spoken form"`. Also `→`, `=>` and a leading bullet. */
 const TABLE_ROW = /^[ \t]*(?:[-*][ \t]+)?(.{1,80}?)[ \t]*(?:->|→|=>)[ \t]*["“]([^"”\n]{1,80})["”][ \t\r]*$/gm;
 
+/** A row with no quotes: `Term -> spoken form`. One short line, one arrow, no sentence end. */
+const BARE_ROW = /^[ \t]*(?:[-*][ \t]+)?([^\s>→=][^>→=\n"“”]{0,39}?)[ \t]*(?:->|→|=>)[ \t]*([^\s"“”>→=-][^"“”>→=\n]{0,59}?)[ \t\r]*$/gm;
+
+/** Bare rows count only as a table: fewer than this many lines is a stray arrow in prose. */
+const MIN_BARE_ROWS = 3;
+
 /** The intellect, unless it is external. @param {Record<string, any>|undefined} config */
 const brainOf = (config) => (config && config.type !== 'external' ? config : null);
 
@@ -34,9 +40,17 @@ function promptText(config) {
   return [config.base_directive, ...blocks].filter((/** @type {unknown} */ s) => typeof s === 'string').join('\n');
 }
 
-/** Every `Term -> "spoken"` row in the prompt text. @param {Record<string, any>} config @returns {Array<{term:string, spoken:string}>} */
+/**
+ * Every `Term -> "spoken"` row in the prompt text. Rows without quotes count when at least
+ * three of them appear, so one arrow in a sentence is not read as a table.
+ * @param {Record<string, any>} config @returns {Array<{term:string, spoken:string}>}
+ */
 export function spokenFormRows(config) {
-  return [...promptText(config).matchAll(TABLE_ROW)].map((m) => ({ term: m[1].trim(), spoken: m[2].trim() }));
+  const text = promptText(config);
+  const rows = [...text.matchAll(TABLE_ROW)].map((m) => ({ term: m[1].trim(), spoken: m[2].trim() }));
+  const bare = [...text.matchAll(BARE_ROW)].map((m) => ({ term: m[1].trim(), spoken: m[2].trim() })).filter((r) => !/[.!?:;]$/.test(r.spoken));
+  const all = bare.length >= MIN_BARE_ROWS ? [...rows, ...bare] : rows;
+  return all.filter((r, i) => all.findIndex((o) => o.term === r.term && o.spoken === r.spoken) === i);
 }
 
 /** True when a spoken form is written to be read letter by letter or syllable by syllable. @param {string} spoken */
