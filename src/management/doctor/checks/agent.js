@@ -18,7 +18,7 @@ const text = (v) => typeof v === 'string' && v.trim() !== '';
 const brain = (view) => (view.intellect && view.intellect.type !== 'external' ? view.intellect : null);
 
 /** The language the agent is told to reply in, as a code, or `null`. @param {AgentView} view */
-const forcedLanguage = (view) => normalizeLanguage(brain(view)?.force_language);
+export const forcedLanguage = (view) => normalizeLanguage(brain(view)?.force_language);
 
 /** The `attributes.voice` block of a catalog voice item. @param {any} item */
 const voiceAttributes = (item) => item?.attributes?.voice ?? {};
@@ -29,7 +29,7 @@ const voiceAttributes = (item) => item?.attributes?.voice ?? {};
  * @param {AgentView} view
  * @returns {Array<{avatarId:string, voiceId:string, name:string, custom:boolean, raw:unknown, language:string|null}>}
  */
-function voicesOf(view) {
+export function voicesOf(view) {
   return view.avatars.flatMap((a) => (a.voice?.state === 'found' && a.voice.item
     ? [{
       avatarId: a.id, voiceId: a.voice.id, name: String(voiceAttributes(a.voice.item).name ?? a.voice.id),

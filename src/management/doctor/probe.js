@@ -26,6 +26,15 @@ export const PROBE_LIMITS = 'The probe sends text. It uses no speech recognition
  * @property {string} [message]  What to send. Default: a short greeting. Up to 500 characters.
  * @property {boolean} [allowSideEffects]  Run even when active lifecycle rules match the agent. Default false.
  * @property {number} [timeoutMs]  Stop waiting for the reply after this long. Default 60000.
+ * @property {{rawTerms?: string[]}} [spoken]  Check the reply text for what a voice reads badly. `rawTerms` are written forms that must not appear, such as `EBITDA` when the prompt asks for "ebitda". Matching is case-sensitive and on whole words.
+ */
+
+/**
+ * What the reply holds that a voice reads badly.
+ * @typedef {object} SpokenCheck
+ * @property {string[]} rawTerms  The `rawTerms` that appear in the reply.
+ * @property {number} digits  Digit runs in the reply.
+ * @property {string[]} symbols  Distinct symbols from `% $ & € £ #` in the reply.
  */
 
 /**
@@ -44,7 +53,7 @@ export const PROBE_LIMITS = 'The probe sends text. It uses no speech recognition
  * @property {number|null} configId  The agent's intellect id.
  * @property {{thinkingLevel: unknown, includeThoughts: unknown, maxOutputTokens: unknown, type: unknown}|null} config  Model settings in effect. Null when the intellect could not be read.
  * @property {{firstSegmentMs: number|null, firstTextMs: number|null, totalMs: number}|null} timings  Null when the probe did not run.
- * @property {{toolCalls: number, spiralStopped: boolean, replyChars: number, errorSegments: number}|null} reply  Null when the probe did not run or the request failed.
+ * @property {{toolCalls: number, spiralStopped: boolean, replyChars: number, errorSegments: number, spoken?: SpokenCheck}|null} reply  Null when the probe did not run or the request failed. `spoken` is set only when the call passed `spoken`.
  * @property {{code: string, message: string}|null} error  The request failure, if any.
  * @property {string} limits
  */
@@ -70,10 +79,12 @@ export class DoctorProbe {
    */
   async run(ks, opts) {
     this._.assertAdmin(ks, 'doctorProbe');
-    const { agentId, message = DEFAULT_MESSAGE, allowSideEffects = false, timeoutMs = DEFAULT_TIMEOUT_MS } = opts ?? {};
+    const { agentId, message = DEFAULT_MESSAGE, allowSideEffects = false, timeoutMs = DEFAULT_TIMEOUT_MS, spoken } = opts ?? {};
     if (typeof agentId !== 'string' || !agentId.trim()) throw badRequest('doctorProbe needs opts.agentId.');
     if (typeof message !== 'string' || !message.trim() || message.length > MAX_MESSAGE_CHARS) throw badRequest(`doctorProbe message must be 1 to ${MAX_MESSAGE_CHARS} characters.`);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw badRequest(`doctorProbe timeoutMs must be a number from 1 to ${MAX_TIMEOUT_MS}.`);
+
+    if (spoken !== undefined && (!spoken || typeof spoken !== 'object' || (spoken.rawTerms !== undefined && (!Array.isArray(spoken.rawTerms) || spoken.rawTerms.some((t) => typeof t !== 'string' || !t))))) throw badRequest('doctorProbe spoken.rawTerms must be an array of non-empty strings.');
 
     const agent = await this._d.agents.get(agentId, ks);
     const configId = resolveIntellectId(agent.intellect) ?? null;
@@ -106,7 +117,7 @@ export class DoctorProbe {
       return {
         ...base, ran: true, error: null,
         timings: { firstSegmentMs, firstTextMs, totalMs: this._now() - t0 },
-        reply: { toolCalls: r.segments.filter((x) => x.type === 'tool').length, spiralStopped: r.spiralStopped, replyChars: r.text.length, errorSegments: r.kindCounts.error },
+        reply: { toolCalls: r.segments.filter((x) => x.type === 'tool').length, spiralStopped: r.spiralStopped, replyChars: r.text.length, errorSegments: r.kindCounts.error, ...(spoken ? { spoken: spokenCheck(r.text, spoken.rawTerms ?? []) } : {}) },
       };
     } catch (e) {
       if (isTokenError(e)) throw e;
@@ -131,6 +142,16 @@ export class DoctorProbe {
       return null;
     }
   }
+}
+
+/** @param {string} text @param {string[]} rawTerms @returns {SpokenCheck} */
+function spokenCheck(text, rawTerms) {
+  const esc = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return {
+    rawTerms: rawTerms.filter((t) => new RegExp(`(?<![A-Za-z0-9])${esc(t)}(?![A-Za-z0-9])`).test(text)),
+    digits: text.match(/\d+/g)?.length ?? 0,
+    symbols: [...new Set(text.match(/[%$&€£#]/g) ?? [])],
+  };
 }
 
 /** @param {string} detail @returns {KalturaError} */

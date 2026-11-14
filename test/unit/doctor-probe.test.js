@@ -101,3 +101,32 @@ test('doctorProbe: an agent with no intellect cannot be probed', async () => {
   const mgmt = new Management({ partnerId: '123', adminSecret: 's', fetch: ff });
   await assert.rejects(() => mgmt.doctorProbe(ADMIN_KS, { agentId: 'a4' }), (e) => e.code === 'intellect_not_found');
 });
+
+const SPOKEN_REPLY = JSON.stringify({ type: 'text', content: 'EBITDA was 12% of $84 million, up from 9 last year. SaaS is fine.' }) + '\n';
+
+test('doctorProbe: spoken reports raw terms, digit runs and symbols in the reply', async () => {
+  const { mgmt } = harness({ reply: () => ({ body: SPOKEN_REPLY }) });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', spoken: { rawTerms: ['EBITDA', 'SaaS', 'ARR', 'ebitda'] } });
+  assert.deepEqual(r.reply.spoken, { rawTerms: ['EBITDA', 'SaaS'], digits: 3, symbols: ['%', '$'] });
+});
+
+test('doctorProbe: spoken with no terms still counts digits and symbols, and is absent when not asked', async () => {
+  const { mgmt } = harness({ reply: () => ({ body: SPOKEN_REPLY }) });
+  assert.deepEqual((await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', spoken: {} })).reply.spoken, { rawTerms: [], digits: 3, symbols: ['%', '$'] });
+  assert.equal('spoken' in (await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1' })).reply, false);
+});
+
+test('doctorProbe: spoken matches a term with regex characters literally and whole words only', async () => {
+  const body = JSON.stringify({ type: 'text', content: 'C++ and R&D, but not NONGAAP or xARR.' }) + '\n';
+  const { mgmt } = harness({ reply: () => ({ body }) });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', spoken: { rawTerms: ['R&D', 'GAAP', 'ARR', 'C++'] } });
+  assert.deepEqual(r.reply.spoken.rawTerms, ['R&D', 'C++']);
+});
+
+test('doctorProbe: a bad spoken option is rejected before any request', async () => {
+  const { mgmt, ff } = harness();
+  for (const spoken of [null, 'x', { rawTerms: 'EBITDA' }, { rawTerms: [''] }, { rawTerms: [3] }]) {
+    await assert.rejects(() => mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', spoken }), { code: 'bad_request' });
+  }
+  assert.equal(ff.calls.length, 0);
+});
