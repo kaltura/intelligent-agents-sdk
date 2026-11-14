@@ -130,3 +130,23 @@ test('doctorProbe: a bad spoken option is rejected before any request', async ()
   }
   assert.equal(ff.calls.length, 0);
 });
+
+test('doctorProbe: a failed intellect read leaves config null and still probes; an expired token rejects', async () => {
+  const ff = fakeFetch([
+    { match: '/service/session/action/start', respond: () => ({ body: CONV_KS }) },
+    { match: 'lifecycle/list', respond: () => ({ body: { objects: [], totalCount: 0 } }) },
+    { match: 'agent/get', respond: () => ({ body: { agentId: 'a1', intellect: { id: 10 } } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 500, body: { message: 'boom' } }) },
+    { match: '/assistant/converse', respond: () => ({ body: REPLY }) },
+  ]);
+  const mgmt = new Management({ partnerId: '123', adminSecret: 's3cret', fetch: ff });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1' });
+  assert.equal(r.config, null);
+  assert.equal(r.ran, true);
+  const ff401 = fakeFetch([
+    { match: 'lifecycle/list', respond: () => ({ body: { objects: [], totalCount: 0 } }) },
+    { match: 'agent/get', respond: () => ({ body: { agentId: 'a1', intellect: { id: 10 } } }) },
+    { match: 'v1/intellect/get', respond: () => ({ status: 401, body: { message: 'expired' } }) },
+  ]);
+  await assert.rejects(() => new Management({ partnerId: '123', adminSecret: 's3cret', fetch: ff401 }).doctorProbe(ADMIN_KS, { agentId: 'a1' }));
+});

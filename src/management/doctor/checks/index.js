@@ -10,7 +10,7 @@ import {
   clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
   latencyPromptSize, latencyThinking, openingPhraseMayRenderEmpty, threadStartToolBlocks, toolSurfaceLarge,
 } from './intellect.js';
-import { respellingStyle, spokenDigitsCrossLanguage, spokenOutputUndeclared } from './speech.js';
+import { respellingStyle, respellingTableSharedProviders, spokenDigitsCrossLanguage, spokenOutputUndeclared } from './speech.js';
 
 /** @typedef {import('../model.js').DoctorCheck} DoctorCheck */
 /** @typedef {import('../model.js').AgentView} AgentView */
@@ -28,7 +28,7 @@ export const CHECKS = Object.freeze([
   openingPhraseDuplicate, openingPhraseLanguage, maxConversation, avatarCapability, avatarShared,
   latencyThinking, latencyOutputTokens, latencyPreloadedSkills, latencyPromptSize, threadStartToolBlocks, toolSurfaceLarge,
   clientToolWaitBlocks, clientToolFireAndForget, conditionUnquotedName, openingPhraseMayRenderEmpty,
-  spokenOutputUndeclared, respellingStyle, spokenDigitsCrossLanguage,
+  spokenOutputUndeclared, respellingStyle, spokenDigitsCrossLanguage, respellingTableSharedProviders,
 ]);
 
 /**

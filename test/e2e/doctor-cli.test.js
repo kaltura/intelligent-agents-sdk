@@ -18,7 +18,7 @@ const SECRET = 'cli-test-secret-value-9f3';
 const VOICE = { itemId: 'v1', type: 'Voice', adminTags: ['preset'], attributes: { voice: { name: 'Maya', language: 'he' } } };
 
 const fresh = () => ({
-  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [], rules: [], converseBodies: [],
+  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [], rules: [], converseBodies: [], intellectExtra: {},
 });
 const state = fresh();
 
@@ -47,7 +47,7 @@ before(async () => {
       if (path.endsWith('/agent/list')) return page([{ agentId: 'a1', intellect: { id: 10 }, avatarIds: ['av1'], asr: state.asr }]);
       if (path.endsWith('/agent/get')) return send({ agentId: 'a1', intellect: { id: 10 }, asr: state.asr });
       if (path.endsWith('/agent/update')) { state.writes.push(body); state.asr = body.asr; return send({ agentId: 'a1', ...body }); }
-      if (path.endsWith('/intellect/get')) return send({ id: 10, type: 'brain', force_language: state.forced });
+      if (path.endsWith('/intellect/get')) return send({ id: 10, type: 'brain', force_language: state.forced, ...state.intellectExtra });
       if (path.endsWith('/avatar/list')) return page([{ id: 'av1', voice: { id: 'v1' }, visual: { id: 'vis1' } }]);
       if (path.endsWith('/catalog-item/list')) return page(body.filter?.typeEqual === 'Voice' ? [VOICE] : [{ itemId: 'vis1', type: 'Visual' }]);
       return send({ message: 'not found' }, 404);
@@ -95,6 +95,16 @@ test('--fail-on warn fails on a warn finding that the default lets pass', async 
   const set = { forced: undefined }; // no forced language, a Hebrew voice, ASR en: a warn
   assert.equal((await run([], { set })).code, 0);
   assert.equal((await run(['--fail-on', 'warn'], { set })).code, 1);
+});
+
+test('speech findings: a digit in the opening on a Hebrew voice with English replies is a warn that --fail-on warn catches', async () => {
+  const set = { asr: { language: 'en', provider: 'kaltura' }, forced: 'English', intellectExtra: { opening_phrase: 'Revenue is up 12%.', prompts: [{ key: 'pron', type: 'custom', headerTemplate: 'Pronunciation', value: 'CAGR -> "KAY-ger"' }] } };
+  const r = await run(['--only', 'speech', '--json'], { set });
+  assert.equal(r.code, 0, r.stderr);
+  const codes = JSON.parse(r.stdout).report.findings.map((f) => `${f.severity}:${f.code}`);
+  assert.deepEqual(codes, ['warn:spoken_text_digits_cross_language', 'info:respelling_hyphen_or_mixed_case']);
+  assert.equal((await run(['--only', 'speech', '--fail-on', 'warn'], { set })).code, 1);
+  assert.equal((await run(['--skip', 'speech', '--skip', 'language', '--fail-on', 'warn'], { set })).code, 0);
 });
 
 test('--json prints schemaVersion, target and the report', async () => {

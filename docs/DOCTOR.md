@@ -22,7 +22,7 @@ Run the doctor, then look for these codes. Session warnings (`slow_turn` and oth
 |---|---|
 | Callers in another language are misheard | `asr_language_mismatch`, `config_language_differs` |
 | The avatar speaks, but the words are garbled | `voice_reply_language_mismatch`, `reply_language_differs_from_config` |
-| Numbers, symbols or acronyms are read wrong | `spoken_text_digits_cross_language`, `respelling_hyphen_or_mixed_case`, `spoken_output_undeclared` |
+| Numbers, symbols or acronyms are read wrong | `spoken_text_digits_cross_language`, `respelling_hyphen_or_mixed_case`, `respelling_table_shared_across_providers`, `spoken_output_undeclared` |
 | A reply shows as text but no audio starts | `speech_not_started` |
 | A long silence before the avatar speaks | `latency_thinking`, `latency_prompt_size`, `latency_preloaded_skills`, `thread_start_tool_blocks`, `slow_turn` |
 | Replies run long | `latency_output_tokens` |
@@ -102,6 +102,7 @@ How the text a voice speaks is written. Config only: the doctor cannot hear a vo
 |---|---|---|
 | `spoken_text_digits_cross_language` | warn | An avatar voice is made for one language, replies are in another, and the opening line or a spoken-forms row holds digits or symbols (`% $ & € £ #`). The voice reads them in its own language or garbles them |
 | `respelling_hyphen_or_mixed_case` | info | A spoken-forms row (`Term -> "spoken"`) is written with hyphens or mixed case, such as `KAY-ger`. In listening tests, voices often spelled these out or stuttered. Hyphenated number words like `twenty-five` are fine |
+| `respelling_table_shared_across_providers` | info | One spoken-forms table is used by agents whose voices come from different providers (read from the voice's `ttsProvider`). The same respelling can win on one provider and fail on another |
 | `spoken_output_undeclared` | info | The agent has an avatar, but no prompt says the reply is spoken aloud. Skipped when replies are forced to a language other than English |
 
 `spoken_text_digits_cross_language` compares the voice language with the forced reply language, or with `asr.language` when none is forced. It reads only the opening line and rows written as `Term -> "spoken form"` (also `→` or `=>`) in the base directive and prompt blocks. It does not read model replies: to check those, pass `spoken` to [`mgmt.doctorProbe`](#time-a-real-turn).
