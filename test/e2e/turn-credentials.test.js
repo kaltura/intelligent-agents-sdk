@@ -354,6 +354,19 @@ test('prepare() then connect() near expiry drops the prepared socket', async () 
   session.disconnect();
 });
 
+test('an unused prepared socket that is dropped takes its credentials with it', async () => {
+  const { session, sockets } = await connected({ perSocket: (n) => (n === 0 ? { turn: serverTurn() } : {}), connect: false });
+  await session.prepare();
+  assert.ok(session._serverTurn, 'credentials were read');
+  session._dropPrepared('prepare_expired');
+  assert.equal(session._serverTurn, null);
+  await session.connect();
+  assert.equal(sockets.length, 2);
+  assert.equal(serverEntry(stvPeer()), undefined, 'the dropped socket\'s credentials are not reused');
+  assert.deepEqual(stvPeer().config.iceServers, [FALLBACK]);
+  session.disconnect();
+});
+
 // ── warnings, leaks, version ──
 
 /** JSON of everything reachable from `o`, each object once. Peers count as `{}`, like a real RTCPeerConnection. */

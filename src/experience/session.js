@@ -216,7 +216,7 @@ export class KalturaAvatarSession extends Emitter {
    *   so the first words are an interruptible model reply. Goes through the same path as `speak()`, so the reply is interruptible.
    *   Never re-sent on `resume()` or a reconnect. Its server echo is dropped from `transcript {type:'user'}`
    *   unless `echo: true`. Empty/whitespace text sends nothing. Any other type throws `bad_request`.
-   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  TURN username and credential for `turnServerUrl`. `appInit` returns none. When omitted, the SDK's default TURN credentials apply.
+   * @param {{username:string,credential:string,expiry?:number}} [cfg.turnCredentials]  TURN username and credential for `turnServerUrl`. `appInit` returns none. When omitted, the SDK's default TURN credentials apply. Read once, at construction. The TURN entry the server sends is listed first and these follow it. Credentials for a host the server entry does not name are used alone.
    * @param {boolean} [cfg.allowInsecureTransport]  Permit ws/http transport (localhost/dev ONLY — emits a loud warning; never in production).
    * @param {(event:object)=>void} [cfg.onAuditEvent]  Redacted structured security events (session.connect/disconnect/auth.fail/protocol.violation). NIST AU-2/AU-3.
    * @param {string} [cfg.preferredVideoCodec]  Force a specific codec for the STV downlink via `setCodecPreferences`. Leave unset. The default is H264; any other value (`'VP8'`, `'VP9'`, `'AV1'`) still negotiates successfully but the video track never produces a frame (audio is unaffected, no error is thrown).
@@ -831,6 +831,7 @@ export class KalturaAvatarSession extends Emitter {
     this._pendingAwaits.clear();
     if (this._socket === prep.socket) this._socket = null;
     this._clientConfig = null;
+    this._serverTurn = null;   // the credentials came with this socket; the next connect() gets its own
     if (warnCode) this.emit('warning', { code: warnCode, message: 'The prepared connection was not used in time and was closed. connect() starts a new one.' });
   }
 
@@ -927,7 +928,7 @@ export class KalturaAvatarSession extends Emitter {
       if (!st || !server || !s0 || s0.username !== server.username || s0.credential !== server.credential) throw err;
       const tryBuild = (/** @type {RTCIceServer[]} */ list) => { try { return createPeerConnection(this._RTC, iceConfig(channel, list, this._isFirefox)); } catch { return null; } };
       const serverOnly = iceServersFor({ server, turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials, fallbackRefused: true });
-      if (fallback.length && servers !== fallback && (pc = tryBuild(fallback))) {
+      if (fallback.length && (pc = tryBuild(fallback))) {
         st.bad = true;
         servers = fallback;
         this._warnOnce('turn-server-entry', 'This browser refused the TURN entry the server sent. Using the configured TURN entry only.', '[turn] ');
