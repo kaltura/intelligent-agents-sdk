@@ -32,6 +32,8 @@
  * Safari's engine, not iOS Safari — real mobile OS backgrounding/tab-kill
  * behavior isn't reachable from any Playwright engine; see
  * manual-testing/session-complete/ for that coverage.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';

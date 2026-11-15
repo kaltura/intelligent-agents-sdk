@@ -64,6 +64,7 @@ function overlaps(a, b) {
  * | `template_missing_or_deleted` | error | The pinned `templateId` does not exist or has `status:'deleted'`. |
  * | `template_tokens_unproduced` | warn | The template or preset needs a key no active rule on those agents produces. |
  * | `dtc_without_forms` | warn | `triggerDtcKai` on an agent whose intellect has no `user_properties_forms`. |
+ * | `rule_operator_never_matches` | warn | An `eventConditions` entry uses `not_empty`, which never matches. |
  * | `rule_disabled` | info | The rule is not active. |
  *
  * The key checks (`changed_keys_unproduced`, `template_tokens_unproduced`,
@@ -116,6 +117,11 @@ export function auditLifecycleRules(rules, ctx) {
       add('warn', 'unscoped_rule', 'The rule has no agent condition, so it runs for every agent on the partner.',
         "Add {field:'object.agent_id', operator:'eq', value:'<agent-id>'} to eventConditions. Keep it as is only if every agent should run it.");
     }
+
+    conditions.filter((c) => c?.operator === 'not_empty').forEach((c) => {
+      add('warn', 'rule_operator_never_matches', `The condition on ${c.field} uses not_empty, which never matches, so the rule never fires.`,
+        "Use another operator: eq, neq, gt, lt, in, contains, has_any or has_all.", { field: c.field });
+    });
 
     const named = conditions.filter(isAgentCondition).flatMap((c) => (c.operator === 'eq' ? [c.value] : c.value));
     for (const id of new Set(named)) {

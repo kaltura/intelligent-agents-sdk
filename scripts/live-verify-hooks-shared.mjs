@@ -14,6 +14,8 @@
  * stopped responding.
  *
  * Nothing here is imported by the SDK.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 
 /**

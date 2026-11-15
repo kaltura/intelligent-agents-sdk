@@ -11,9 +11,12 @@ Docs for contributors. They are never published on the docs site and never loade
 | [../../AGENTS.md](../../AGENTS.md) | Commands, CI rules and release order |
 | [../../CONTRIBUTING.md](../../CONTRIBUTING.md) | Contribution process |
 | [../../SDK_CONSTITUTION.md](../../SDK_CONSTITUTION.md) | Invariants every change must hold |
+| [limited-availability.md](limited-availability.md) | Use, test or extend a feature that only some environments have |
+| [emotions-eval.md](emotions-eval.md) | Run and read the live eval for avatar emotions |
 | [site-nav.md](site-nav.md) | Test, extend or set non-goals for the SITE-NAV plugin |
 | [startup-kpis.md](startup-kpis.md) | See the startup latency KPIs and how CI tracks them |
 | [../../scripts/README.md](../../scripts/README.md) | Pick and run the verification tiers and live-verify scripts |
 | [../../test/browser/README.md](../../test/browser/README.md) | Run and extend the avatar-media browser harness page |
 | [../../manual-testing/session-complete/README.md](../../manual-testing/session-complete/README.md) | Test the `session_completed` signal on real devices |
+| [../../manual-testing/feature-pages/README.md](../../manual-testing/feature-pages/README.md) | Look at recent SDK features in a real browser on a throwaway agent |
 | [../../manual-testing/voice-video/README.md](../../manual-testing/voice-video/README.md) | Test the voice and video avatar pipeline on real browsers and devices |

@@ -23,6 +23,8 @@
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
  * environment or a .env file in the repo root. `TARGET=nvq2` (or `nvq2:2`)
  * runs against another environment.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

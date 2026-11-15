@@ -37,7 +37,7 @@ This clears `force_language` and resets `asr.language` to `"en"`.
 | `configId`, `agentId` | Both required. `configId` is the intellect the agent points at |
 | `language` | An ISO 639-1 code from `LANGUAGE_CODES`, such as `"he"`, or `null` to clear |
 | `languageName` | The English name written to `force_language`. Required when the code is not in `LANGUAGE_NAMES` |
-| `asrProvider` | Passed through to `agents.update`. Defaults to `"kaltura"` |
+| `asrProvider` | The ASR provider to write. Defaults to the agent's current provider, then `"kaltura"` |
 
 `LANGUAGE_CODES` and `LANGUAGE_NAMES` are exported from `@kaltura/intelligent-agents/management`. `LANGUAGE_CODES` lists the codes `setForcedLanguage` accepts. `LANGUAGE_NAMES` maps some of them to English names. Neither is a list of supported languages.
 
@@ -53,7 +53,7 @@ A code outside `LANGUAGE_CODES` throws `bad_request` before any network call, ev
 
 | Setting | Where |
 |---|---|
-| Voice language | `catalog.createVoice(file, { name, description, language })`. A language code from the accepted list, defaults to `"en"`. See [Design](api/design.md) |
+| Voice language | `catalog.createVoice(file, { name, description, language })`. A label for the voice: a language code from the accepted list, default `"en"`. It does not set the reply language. See [Design](api/design.md) for the TTS provider |
 | Conversation language on the wire | The `clientConfiguration` message carries a `languageCode` field. It is part of the wire protocol, not an SDK option you set. See [client configuration](wire-protocol/client-configuration.md) |
 
 ## Which language is supported, and how to ask for one

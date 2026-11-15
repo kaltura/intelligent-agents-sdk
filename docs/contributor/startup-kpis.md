@@ -38,7 +38,7 @@ With a scripted opening, the first `speechChunk` arrives about 0.2 s after step 
 
 ## CI
 
-The job runs on pull requests that touch its paths, in the merge queue, on manual dispatch and on a nightly schedule. Fork and Dependabot pull requests get no secrets, so the job does not run for them. See the header of `.github/workflows/live-verify.yml`.
+When the job runs: [What CI runs](../../scripts/README.md#what-ci-runs).
 
 ## Opening-phrase checks
 

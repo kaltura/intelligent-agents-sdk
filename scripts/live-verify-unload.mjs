@@ -20,6 +20,8 @@
  * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md. No ids or secrets
  * are written. Unless --keep or --agent-json, the run checks that the throwaway agent, avatar and
  * intellect are gone after cleanup.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import {
   bootstrap, Report, mdTable, management, ensureAgent, verifyDeleted, mintPageInit, startServer,

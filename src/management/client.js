@@ -33,6 +33,8 @@ import { Lifecycle } from './lifecycle.js';
 import { InsightSettings } from './insight-settings.js';
 import { EmailTemplates } from './email-templates.js';
 import { Doctor } from './doctor.js';
+import { DoctorFix } from './doctor/fix.js';
+import { DoctorProbe } from './doctor/probe.js';
 import { Conversations, Threads, Messages, Feedback, Knowledge } from './conversations.js';
 import { provision } from './provision.js';
 import { setForcedLanguage } from './set-forced-language.js';
@@ -259,20 +261,50 @@ export class Management {
     // The siblings are what `lifecycle.audit` reads.
     this.lifecycle = new Lifecycle(ctx, { insightSettings: this.insightSettings, agents: this.agents, emailTemplates: this.emailTemplates, intellects: this.intellects });
     // Read-only health check behind `doctor()`.
-    this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, agents: this.agents, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates });
+    this._doctorFix = new DoctorFix(ctx, { agents: this.agents, intellects: this.intellects });
+    this._doctorProbe = new DoctorProbe(ctx, { agents: this.agents, lifecycle: this.lifecycle, intellects: this.intellects, conversations: this.conversations, sessions: this.sessions });
+    this._doctor = new Doctor(ctx, { lifecycle: this.lifecycle, intellectConfig: this.intellectConfig, intellects: this.intellects, agents: this.agents, avatars: this.avatars, catalog: this.catalog, insightSettings: this.insightSettings, emailTemplates: this.emailTemplates, tools: this.tools, skills: this.skills });
   }
 
   /**
    * Health check over the partner's agents. READ only, it changes nothing. One
    * report with the lifecycle audit ({@link Lifecycle#audit}), the intellect
-   * audit of each agent's intellect ({@link IntellectConfig#audit}) and the
-   * insight settings and email templates no rule uses. See {@link Doctor#run}.
+   * audit of each agent's intellect ({@link IntellectConfig#audit}), checks on
+   * each agent and its avatars, and the insight settings and email templates
+   * no rule uses. See {@link Doctor#run} and docs/DOCTOR.md.
    * @param {string} ks (admin)
-   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` limits the check to those agents and the rules that run for them.
-   * @returns {Promise<import('./audit-report.js').AuditReport>} `{findings, summary:{error,warn,info}, checked, skipped}`
+   * @param {import('./doctor.js').DoctorOptions} [opts] `agentIds` limits the check to those agents and the rules that run for them. `only`, `skip`, `ignore` and `thresholds` are in {@link Doctor#run}.
+   * @returns {Promise<import('./audit-report.js').AuditReport>} `{findings, summary:{error,warn,info,suppressed?}, checked, skipped}`
    */
   doctor(ks, opts) {
     return this._doctor.run(ks, opts);
+  }
+
+  /**
+   * Apply the guided fixes in a doctor report. A dry run by default. WRITE only with
+   * `apply: true`. See {@link DoctorFix#run} and docs/DOCTOR.md.
+   * @param {string} ks (admin)
+   * @param {import('./audit-report.js').AuditReport} report The result of {@link Management#doctor}.
+   * @param {import('./doctor/fix.js').DoctorFixOptions} [opts] `apply` writes. `codes` names the findings to fix and is required with `apply`.
+   * @returns {Promise<import('./doctor/fix.js').DoctorFixReport>}
+   */
+  doctorFix(ks, report, opts) {
+    return this._doctorFix.run(ks, report, opts);
+  }
+
+  /**
+   * Send one text message to an agent and measure the turn: time to the first
+   * segment and to the first text, total time, tool calls and `spiralStopped`.
+   * Also returns the model settings in effect. WRITE: it mints a user token and
+   * sends a message with `add_message_in_db: false`. It does not run when active
+   * lifecycle rules match the agent, unless `allowSideEffects` is true. The text
+   * path uses no speech recognition and no voice. See {@link DoctorProbe#run} and docs/DOCTOR.md.
+   * @param {string} ks  Admin token.
+   * @param {import('./doctor/probe.js').DoctorProbeOptions} opts
+   * @returns {Promise<import('./doctor/probe.js').DoctorProbeResult>}
+   */
+  doctorProbe(ks, opts) {
+    return this._doctorProbe.run(ks, opts);
   }
 
   /**
@@ -295,7 +327,7 @@ export class Management {
    * gives the end user their own threads. See {@link Sessions#createConversationToken}.
    * @param {number} configId
    * @param {string} message
-   * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object,context_id?:string,context_type?:'entry'|'category'|'ancestor_category'|'global',preload_entry_ids?:string[],exclude_entry_ids?:string[],metadata?:{voice_start_time?:number,voice_end_time?:number}}} [opts]
+   * @param {{agentId?:string,userId?:string|number,threadId?:string,sse?:boolean,model_type?:string,force_experience?:string,request_vars?:object,capabilities?:object,context_id?:string,context_type?:'entry'|'category'|'ancestor_category'|'global',preload_entry_ids?:string[],exclude_entry_ids?:string[],metadata?:{voice_start_time?:number,voice_end_time?:number},add_message_in_db?:boolean,shared_message_id?:string}} [opts]
    * @param {string|{ks:string}} [ks]  Conversation token; minted from configId if omitted.
    * @returns {AsyncGenerator<object>}
    */

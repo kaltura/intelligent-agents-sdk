@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath, textsEntered as sentTexts, markerCount } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
+import { bothTracks } from './helpers/wait.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 
@@ -148,7 +149,7 @@ test("emits 'videoMetadata' once decoded dimensions are known (videoEl configure
   const events = [];
   session.on('videoMetadata', (p) => events.push(p));
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   videoEl.fireLoadedMetadata(960, 540);
   videoEl.fireCanPlay();
   await connectP;
@@ -181,7 +182,7 @@ test("emits 'mediaReady' with {mode:'video', videoWidth, videoHeight} at the sam
   session.on('mediaReady', (p) => mediaReady.push(p));
   session.on('videoMetadata', (p) => videoMetadata.push(p));
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   videoEl.fireLoadedMetadata(960, 540);
   videoEl.fireCanPlay();
   await connectP;
@@ -200,7 +201,7 @@ test("emits 'mediaReady' with {mode:'video', videoWidth:0, videoHeight:0} when t
   session.on('mediaReady', (p) => mediaReady.push(p));
   session.on('videoMetadata', (p) => videoMetadata.push(p));
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   videoEl.fireCanPlay(); // canplay only — loadedmetadata never fires
   await connectP;
   assert.deepEqual(mediaReady, [{ mode: 'video', videoWidth: 0, videoHeight: 0 }], 'mediaReady still fires, unlike videoMetadata, so a spinner is never stuck on a slow/absent decoder');
@@ -239,7 +240,7 @@ test("regression: disconnect() mid-connect (WHEP succeeded, no canplay yet) canc
   const mediaReady = [];
   session.on('mediaReady', (p) => mediaReady.push(p));
   const connectP = session.connect();
-  await delay(20); // past the WHEP handshake and pc.ontrack; canplay/hard-cap still pending
+  await bothTracks(session, connectP); // past the WHEP handshake and pc.ontrack; canplay/hard-cap still pending
   session.disconnect();
   await connectP.catch(() => {}); // pre-existing, out-of-scope gap: connect() doesn't abort on a concurrent disconnect()
   await delay(6500); // past the 6s hard-cap the leaked timer used to fire on
@@ -269,7 +270,7 @@ test("regression: 'streamReady' still fires at Step 1, before 'mediaReady' resol
   session.on('streamReady', (p) => order.push({ event: 'streamReady', payload: p }));
   session.on('mediaReady', (p) => order.push({ event: 'mediaReady', payload: p }));
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   videoEl.fireLoadedMetadata(960, 540);
   videoEl.fireCanPlay();
   await connectP;
@@ -649,6 +650,17 @@ test('updateRequestVars / setDynamicPrompt keep cfg.contextId and cfg.contextTyp
   const last = socket.emitsOf('updateGenieContext').pop();
   assert.equal(last.contextId, '0_abc');
   assert.equal(last.contextType, 'entry');
+  session.disconnect();
+});
+
+test('KalturaAvatarSession refuses a custom sys__ key in the constructor and in updateRequestVars, with no emit', async () => {
+  assert.throws(() => newSession({ cfg: { requestVars: { sys__custom: 'x' } } }), (e) => e.code === 'validation_error' && e.detail.includes('"sys__custom"'));
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const before = socket.emitsOf('updateGenieContext').length;
+  assert.throws(() => session.updateRequestVars({ sys__custom: 'x' }), (e) => e.code === 'validation_error');
+  assert.equal(socket.emitsOf('updateGenieContext').length, before);
   session.disconnect();
 });
 

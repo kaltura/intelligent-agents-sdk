@@ -11,6 +11,8 @@
  *
  * Nothing here is imported by the SDK. Credentials come from the environment
  * or a .env file; none are written to the artifacts.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { readFileSync, writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';
@@ -286,7 +288,7 @@ function loadSocketIo() {
 
 /** @type {WeakSet<import('playwright').BrowserContext>} */ const socketIoRouted = new WeakSet();
 /** Serve the socket.io client from the Node side so the page never waits on the CDN. The page's own integrity check still applies. @param {import('playwright').BrowserContext} context */
-async function routeSocketIo(context) {
+export async function routeSocketIo(context) {
   if (socketIoRouted.has(context)) return;
   socketIoRouted.add(context);
   await context.route(SOCKET_IO_CDN, async (route) => {

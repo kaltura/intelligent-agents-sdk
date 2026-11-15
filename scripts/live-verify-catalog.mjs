@@ -15,9 +15,12 @@
  *   3g list rejections     : a bad orderBy and an unknown filter key reject with bad_request
  *   3h list adminTagsIn, agentScope: both resolve (contents are not asserted)
  *   4  catalog.update       — rename persists on a follow-up get
+ *   4a agentScope          : a Visual created with agentScope A is listed for A, not for B or unscoped;
+ *      update moves it to B; update with '' clears it; create with '' is refused offline
  *   4b catalog.importVoiceFromElevenLabs — an unknown provider voiceId creates
  *      nothing server-side, so the rejection path is free to exercise live
  *   4c catalog.importVoiceFromCartesia   — same contract, same free coverage
+ *   4d voice id length     : a 129 character voiceId is refused offline for both imports (zero fetch calls)
  *   5  catalog.delete       — scratch item removed, re-`get` real-404s
  *
  * `catalog.createVoice` (a real ElevenLabs clone) is NOT exercised here: it
@@ -35,8 +38,11 @@
  * `finally`, with independent re-verification that it is truly gone.
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the
  * environment or a .env file in the repo root.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../src/management/index.js';
@@ -71,10 +77,33 @@ function check(step, ok, detail) {
   record(step, ok, detail);
 }
 
-const kaltura = new Management(target);
+let fetchCount = 0;
+const kaltura = new Management({ ...target, fetch: (...args) => { fetchCount += 1; return target.fetch(...args); } });
 let admin;
 let itemId;
 let strayItemId;
+let scopedItemId;
+
+// Delete the scoped scratch item. Runs in `finally` and on SIGINT, once.
+async function deleteScoped() {
+  const id = scopedItemId;
+  if (!id) return;
+  scopedItemId = undefined;
+  try {
+    await kaltura.catalog.delete(id, admin, { confirmPermanent: true });
+    record('4a-scoped-item-delete', true, { scopedItemId: id });
+  } catch (err) {
+    failed = true;
+    record('4a-scoped-item-delete', false, { scopedItemId: id, message: err?.detail || err?.message || String(err) });
+  }
+}
+process.once('SIGINT', async () => {
+  await deleteScoped();
+  for (const id of [itemId, strayItemId]) {
+    if (id) await kaltura.catalog.delete(id, admin, { confirmPermanent: true }).catch(() => {});
+  }
+  process.exit(130);
+});
 
 try {
   admin = await kaltura.sessions.createAdminToken({ userId: 'sdk-live-verify' });
@@ -164,6 +193,35 @@ try {
   const gotAfterUpdate = await kaltura.catalog.get(itemId, admin);
   check('4-catalog-update-persists', gotAfterUpdate?.name === newAttrs.name || gotAfterUpdate?.attributes?.visual?.name === newAttrs.name, { got: gotAfterUpdate?.name ?? gotAfterUpdate?.attributes?.visual?.name });
 
+  // 4a: agentScope. The ids are plain strings: the server does not require them to name an existing agent.
+  const scopeA = randomUUID();
+  const scopeB = randomUUID();
+  const portrait = new Blob([readFileSync(resolve(__dirname, '../examples/chroma-key-green-screen-portrait.jpeg'))], { type: 'image/jpeg' });
+  try {
+    await kaltura.catalog.createVisual(new Blob([PNG_1PX], { type: 'image/png' }), { name: `sdk-live-${RUN_TAG}`, genderPresentation: 'Feminine', agentScope: '' }, admin);
+    check('4a-create-empty-scope-refused', false, { message: 'expected a refusal' });
+  } catch (err) {
+    check('4a-create-empty-scope-refused', err?.code === 'bad_request', { code: err?.code });
+  }
+  const scopedItem = await kaltura.catalog.createVisual(portrait, { name: `sdk-live-${RUN_TAG}-scoped`, genderPresentation: 'Feminine', agentScope: scopeA }, admin);
+  scopedItemId = scopedItem.itemId;
+  check('4a-create-scoped', !!scopedItemId, { scopedItemId });
+  // Each list is narrowed to this item id, so the page size and the catalog size do not matter.
+  const seenBy = async (agentScope) => (await kaltura.catalog.list(admin, { agentScope, filter: { itemIdEqual: scopedItemId } }).all()).length === 1;
+  check('4a-get-shows-scope', (await kaltura.catalog.get(scopedItemId, admin)).agentScope === scopeA, {});
+  check('4a-list-by-A-has-item', await seenBy(scopeA), {});
+  check('4a-list-by-B-lacks-item', !(await seenBy(scopeB)), {});
+  check('4a-list-unscoped-lacks-item', !(await seenBy(undefined)), {});
+  await kaltura.catalog.update({ itemId: scopedItemId, agentScope: scopeB }, admin);
+  check('4a-update-moves-scope', (await seenBy(scopeB)) && !(await seenBy(scopeA)), {});
+  const cleared = await kaltura.catalog.update({ itemId: scopedItemId, agentScope: '' }, admin);
+  const afterClear = await kaltura.catalog.get(scopedItemId, admin);
+  check('4a-update-empty-string-clears', !afterClear.agentScope && (await seenBy(undefined)) && (await seenBy(scopeA)), { returnedScope: cleared?.agentScope ?? null, getScope: afterClear.agentScope ?? null });
+  await kaltura.catalog.update({ itemId: scopedItemId, agentScope: scopeA }, admin);
+  await kaltura.catalog.update({ itemId: scopedItemId, attributes: { visual: { name: `sdk-live-${RUN_TAG}-renamed`, genderPresentation: 'Feminine' } } }, admin);
+  check('4a-update-without-scope-leaves-scope', (await seenBy(scopeA)) && !(await seenBy(undefined)), {});
+  await deleteScoped();
+
   // 4b/4c: importVoiceFromElevenLabs/importVoiceFromCartesia — an unknown provider
   // voiceId creates nothing server-side, so the error path is free to exercise live.
   try {
@@ -178,10 +236,18 @@ try {
   } catch (err) {
     check('4c-import-voice-cartesia-rejects-unknown-id', err?.code === 'voice_not_found_cartesia', { code: err?.code, message: err?.detail || err?.message });
   }
+
+  // 4d: a voiceId over 128 characters is refused before any request, for both providers.
+  for (const [name, fn] of [['elevenlabs', 'importVoiceFromElevenLabs'], ['cartesia', 'importVoiceFromCartesia']]) {
+    const before = fetchCount;
+    const err = await kaltura.catalog[fn]('a'.repeat(129), admin).then(() => null, (e) => e);
+    check(`4d-import-voice-${name}-129-chars-refused-offline`, err?.code === 'bad_request' && fetchCount === before, { code: err?.code, fetchCalls: fetchCount - before });
+  }
 } catch (err) {
   failed = true;
   record('live-verify-catalog', false, { message: err?.detail || err?.message || String(err), code: err?.code });
 } finally {
+  await deleteScoped();
   if (strayItemId) {
     try {
       await kaltura.catalog.delete(strayItemId, admin, { confirmPermanent: true });

@@ -111,6 +111,8 @@
  * Artifacts (`--out`, default live-verify-artifacts/): <runId>.json + <runId>.md, plus
  * <runId>-run<N>-events.json (the page's event log, redacted) for every run that fails.
  * No ids, tokens or secrets are written to them.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

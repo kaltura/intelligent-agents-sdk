@@ -33,6 +33,8 @@
  *
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET, from the environment
  * or a .env file in the repo root (same convention as scripts/live-verify.mjs).
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';

@@ -26,7 +26,7 @@ Direction: `→` the client emits, `←` the server emits. This catalog lists th
 | `screenShareStarted` / `screenShareStopped` | `{}` | A screen share began or ended. Sent by `startScreenShare()` / `stopScreenShare()`. |
 | `userScreenSharePendingImage` | `{}` | A still is about to follow. Sent once right after `screenShareStarted`. |
 | `userScreenShareShot` | `{ data }` (ArrayBuffer, JPEG) | A screen-share still for vision analysis, sent by `startScreenShare()` every `intervalMs` (default 2000 ms) or once by `sendScreenShot()`. Needs `isScreenShareEnabled` in [`clientConfiguration`](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
-| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` records the submission and does not change what the agent knows. |
+| `onHtmlElementClick` / `setFormLeadInfo` | `{ htmlText }` / `{ …fields }` | GenUI and structured-data-form callbacks, sent by `notifyHtmlElementClick(info)` and `submitStructuredDataForm(values)`. `setFormLeadInfo` sends the values to the server. The agent does not see them. |
 
 #### `tapToTalkStart`/`tapToTalkEnd` in detail
 
@@ -51,14 +51,14 @@ For the app-level decision of when to use this mode and how to design its UI, se
 | Event | Payload | Meaning |
 |---|---|---|
 | `onServerConnected` | `{ finalUrl, agentName?, hostName?, loadingVideoURL?, turn?:{ url, username, credential, ttl } }` | Handshake done. The SDK emits `streamReady` with `finalUrl`, `agentName` and `hostName`. `turn` holds this session's TURN credentials ([§5](audio-channels.md#5-asr-uplink-pc1-microphone--server)); `ttl` is in seconds. `url` can be empty: [§5](audio-channels.md#5-asr-uplink-pc1-microphone--server) says which host is used then. |
-| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, phoneMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
+| `clientConfiguration` | `{ clientConfiguration:{ configuration, nluFeatures, languageCode, isTapToTalk, interruptionsEnabled, pauseConversationEnabled, showTranscription, isWebSearchEnabled, isScreenShareEnabled, isCameraAnalysisEnabled, audioMode, shouldAggregateCurrentTurn, youtubeUrl, initialHtml, visualPhotos:[], visualVideos:[], agentPersonaName, userName, asr, forwardLoopMode, imaginativeAiMode, smartTurnConfig?, stvRecord? } }` | Per-session agent config. Field meanings: [§7](client-configuration.md#7-clientconfiguration-fields-per-session-agent-config). |
 | `joinComplete` | `{}` | Room join acknowledged. |
 | `stvNewSession` | normal: `{ session_id, status:"session started", webrtc_url? }`; **audio/phone mode**: `{ status:"audio/phone mode - no STV session" }` (no `session_id` or `webrtc_url`) | The STV session is created. `webrtc_url` is the WHEP play URL. The audio/phone variant skips STV ([§5b](audio-channels.md#5b-audio-mode-webrtc-separate-from-the-asr-uplink)). |
 | `showAgent` | `{}` | The agent has joined. |
 | `askPermissions` | `{ constraints:{ audio: boolean \| {echoCancellation}, video: boolean } }` | The server is ready for the mic. |
 | `throwToNoAgent` | `{}` | All agent slots are busy. The socket closes after it. `connect()` rejects with `KalturaError` `code:'capacity_unavailable'`, `status:6001`. To wait for a free slot, call `waitForCapacity()` before `connect()`. |
 | `throwToExceededTier` | `{}` | Account plan limit reached. `KalturaError` `code:'tier_exceeded'`, `status:6002`. No reconnect. |
-| `unsupportedClient` | `{ code }` | Fatal setup failure: the server refused the session. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. The error does not include the payload. |
+| `unsupportedClient` | `{ code }` | Fatal setup failure: the server refused the session. The socket closes. The SDK emits `error`, and `connect()` (or `prepare()`) rejects at once, both with `KalturaError` `code:'unsupported_client'`, `retryable:false`. When the payload `code` is an upper-case word (`A-Z` and `_`, up to 64 characters), it is on `err.serverCode`, and `err.code` stays `unsupported_client`. Nothing else from the payload reaches the error. `INVALID_KS`: mint a new token and call `connect()` again. `USAGE_LIMIT_EXCEEDED`: the account plan limit is reached, and a new token does not help. `INTERNAL_ERROR`: check the agent id, then call `connect()` again later. |
 | `throwToBadRequest` / `removePeer` | `{}` | Fatal disconnect reasons. `KalturaError` `code:'bad_request'` (`status:400`) / `code:'peer_removed'` (`status:401`). |
 | `availabilityResult` | `{ available, details? }` (or `{ error, available:false }`) | Reply to `checkAvailability`. The socket stays open. The SDK re-emits it as `capacityChanged { available, details }`. During `connect()`, an `available:false` reply schedules the next poll on the backoff `[30,45,60,90,120,180,240,300,360]s` (±15% jitter). |
 
@@ -79,13 +79,13 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 |---|---|---|
 | `agent_raw_text` | `{ speechId, turnId, delta:"<JSON string>" }` | The agent's streaming output. `delta` is a JSON string. Parse it ([§4e](#4e-agent_raw_textdelta-the-agent-stream-parsed)). |
 | `agent_start_speech` | `{ speechId, turnId, isNewTurn }` | A new speech segment begins. `isNewTurn` is `false` when new ASR or typed text continues the turn in flight (a correction or extension of what the user just said), and `true` for a fresh turn. The SDK only reads this field. |
-| `agent_end_turn` | `{ speechId, turnId }` | The agent's turn is complete. |
+| `agent_end_turn` | `{ speechId, turnId }` | The agent's turn is complete. The SDK emits `turnEnd { speechId, turnId }`. |
 | `generatingSpeech` | `{ text, speechId }` | **Clean sentence text** the avatar will speak, with authoritative word spacing. Arrives before audio. |
 | `stvSpeechChunk` | `{ text, speechId, durationMs }` | **Server-timed caption chunk** with its exact duration. Arrives about 400 ms before the audio plays, so add a display delay of about 400 ms to sync. Empty sentinels (`text:""`, `durationMs:1`) are filtered. |
 | `stvStartedTalking` | `{}` | Audio generation begins (`isAgentTalking = true`). Playback follows about 400 ms later. Do not use it to trigger captions. |
-| `stvFinishedTalking` | `{ agentContent:"<full spoken text>" }` | The avatar finished a turn. Reset caption buffers on **this** event, not on `stvStartedTalking`. |
-| `stvFinishedGenerating` | `{ speechId }` | Speech generation for `speechId` finished (generation is not playback end). |
-| `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech. |
+| `stvFinishedTalking` | `{ agentContent:"<full spoken text>" }` | The avatar finished a turn. The SDK emits `avatarStopTalking`. Reset caption buffers on **this** event, not on `stvStartedTalking`. |
+| `stvFinishedGenerating` | `{ speechId }` | Speech generation for `speechId` finished (generation is not playback end). The SDK emits `turnEnd { speechId }` with no `turnId`. |
+| `agentTurnToTalk` | `{ userTranscription? }` | The user's turn finished and the agent takes over. `userTranscription` is present only when the turn came from user speech, and it arrives after the first `generatingSpeech` of the reply. The SDK emits it as `transcript {type:'user', speechId}`, with the reply's `speechId` ([order](end-to-end-turn.md#8-end-to-end-turn-what-fires-in-order)). |
 | `agentInterrupted` | `{}` | Barge-in. The user spoke, or sent the `onTextEntered { isSpeechStart:true }` marker, and cut the avatar off mid-sentence. |
 | `userStartedTalking` | `{}` | The user started speaking. Fires without debug mode. |
 | `hideTapToTalkButton` / `showTapToTalkButton` | `{}` | UI hint: hide or show the tap-to-talk control. The server sends one in reply to `setTapToTalkMode` (`false` hides, `true` shows). The SDK has no handler for them. |
@@ -104,6 +104,12 @@ These fire once `approvedPermissions` is sent. Many payloads carry a `speechId`,
 | `debug_llm_input` | `{ userInput, finalSegment, pendingSegment, speechId, segmentType, isFinal }` | The text handed to the agent for this turn. Diagnostic. |
 | `debug_stvTaskGenerated` | `{ text, speechId, duration }` | Raw text chunks before audio. Diagnostic. |
 | `debug_conversationStateChange` | `{ state, preparingAnswerState }` | Turn-state diagnostic. Treat the values as opaque strings. |
+
+**Repeats and odd values.** The SDK passes these through and does not de-duplicate them.
+
+- `turnEnd` can fire twice for one turn: once with a `turnId` and once without.
+- A final `transcript` can have the text `"\n"`.
+- `avatarStopTalking` can fire more than once for one turn.
 
 The four `debug_*` events depend on `debugMode`, which the SDK sends as `true` ([§2](connection-basics.md#2-socketio-connection)). The SDK has no handler for them. Its captions and transcripts do not read them.
 

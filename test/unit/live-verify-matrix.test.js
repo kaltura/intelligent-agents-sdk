@@ -100,6 +100,7 @@ const NO_TARGET = new Map([
   ['live-verify-salesforce-lead.mjs', 'talks to Salesforce only'],
   ['live-verify-matrix.mjs', 'runner, each child resolves its own target'],
   ['live-verify-preflight.mjs', 'probes the production backend, no credentials'],
+  ['live-verify-feature-pages.mjs', 'starts feature-pages/serve.mjs, which resolves its own target'],
 ]);
 
 test('every live script resolves its backend through scripts/lib/target.mjs', () => {
@@ -118,6 +119,22 @@ test('no live script reads credentials from process.env directly', () => {
     const src = readFileSync(resolve(scriptsDir, f), 'utf8');
     assert.doesNotMatch(src, /process\.env\.(AGENTIC_|NVQ2_|NVP1_)/, `${f} reads backend env vars directly`);
   }
+});
+
+test('every live script header says QA runs are for employees and certified partners only', () => {
+  const files = readdirSync(scriptsDir).filter((f) => /^live-verify.*\.mjs$/.test(f));
+  for (const f of files) {
+    const src = readFileSync(resolve(scriptsDir, f), 'utf8');
+    const header = src.match(/^(?:#!.*\n)?\s*\/\*[\s\S]*?\*\//)?.[0] ?? '';
+    assert.match(header, /employees and certified partners only/i, `${f} header needs the QA access note`);
+  }
+});
+
+test('live-verify-mcp targets production unless told otherwise', () => {
+  const src = readFileSync(resolve(scriptsDir, 'live-verify-mcp.mjs'), 'utf8');
+  assert.match(src, /argValue\('--target', process\.env\.LIVE_VERIFY_TARGET \|\| 'prod'\)/);
+  assert.match(src, /--target \(default prod\)/);
+  assert.doesNotMatch(src, /default nvq2/);
 });
 
 test('the allowlist names real files', () => {

@@ -128,11 +128,12 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | If you want to… | Read this |
 |-----------------|-----------|
 | See every kind of app you can build (personalized greeters, memory agents, quizzes, video avatars, voice cloning…) | [docs/USE-CASES.md](docs/USE-CASES.md) |
+| Check your agent for setup mistakes (wrong language, slow answers, missing greeting) | [docs/DOCTOR-QUICKSTART.md](docs/DOCTOR-QUICKSTART.md) |
 | Look up the exact API call for something | [API-REFERENCE.md](API-REFERENCE.md#contents) |
 | Put a talking video avatar on a web page | [docs/USE-CASES.md](docs/USE-CASES.md) → UC-12 |
 | Make the avatar greet the user first, interruptibly, as fast as possible | [docs/START-THE-CONVERSATION.md](docs/START-THE-CONVERSATION.md) |
 | Use your **own voice** for the avatar | [Catalog & Assets](docs/api/design.md#upload-a-custom-voice-clone) |
-| Use your **own face/portrait** for the avatar | [Catalog & Assets](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) |
+| Use your **own face/portrait** for the avatar | [Catalog & Assets § Face + Background](docs/api/design.md#custom-look-a-face-and-a-background-recommended) |
 | Build a real app with the JavaScript SDK | [README.md](README.md#quick-start) |
 | Let Claude Code build it with you | [Using Claude Code or another coding agent](README.md#using-claude-code-or-another-coding-agent) |
 | Make the avatar drive your UI (slides, widgets, navigation) | [docs/CLIENT-COMMANDS.md](docs/CLIENT-COMMANDS.md) |
@@ -142,6 +143,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Understand how the whole system works under the hood | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Look up a term, or find which ID (`configId`, `agentId`, `avatarId`, `widgetId`) to use where | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
 | Make the agent speak and listen in one language | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| Hear how a voice says a number, an acronym or a name | [docs/EAR-TEST-RECIPE.md](docs/EAR-TEST-RECIPE.md) |
 | Run every demo in `examples/` | [docs/LIVE-DEMOS.md](docs/LIVE-DEMOS.md) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](examples/deck-presenter.html) |
@@ -159,4 +161,4 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 
 **How do I label the agents I create so I can find mine later?** Tag the **agent** (not the avatar) via `adminTags` on `agents.create()`, then filter with `agents.list(admin.ks, { filter: { adminTagsIn: ['<tag>'] } })`. Details under [Create an Agent](docs/api/build/avatar-and-agent.md#create-an-agent).
 
-**Can I use my own face or voice?** Yes, both. See [Catalog & Assets](docs/api/design.md#upload-a-custom-visual-portrait--animated-avatar) (visual) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).
+**Can I use my own face or voice?** Yes, both. See [Catalog & Assets](docs/api/design.md#custom-look-a-face-and-a-background-recommended) (face and background) and [→ Custom Voice](docs/api/design.md#upload-a-custom-voice-clone).

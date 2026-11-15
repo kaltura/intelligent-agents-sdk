@@ -42,9 +42,11 @@
  * (see docs/MCP-INTEGRATIONS.md, "Multiple servers, no collision risk") — the
  * rules prompts below use the namespaced form.
  *
- * Credentials and URLs: --target (default nvq2) is resolved by
+ * Credentials and URLs: --target (default prod) is resolved by
  * scripts/lib/target.mjs, which reads the target's prefixed vars from the
  * environment or the .env one level above the repo.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -60,7 +62,7 @@ const argValue = (flag, fallback) => {
   return hit ? hit.slice(flag.length + 1) : fallback;
 };
 
-const TARGET = argValue('--target', process.env.LIVE_VERIFY_TARGET || 'nvq2').toLowerCase();
+const TARGET = argValue('--target', process.env.LIVE_VERIFY_TARGET || 'prod').toLowerCase();
 const PHASE = argValue('--phase', 'all');
 const MCP_BASE = argValue('--mcp-url', process.env.MCP_PUBLIC_URL || '').replace(/\/$/, '');
 const statePath = resolve(artifactsDir, `state-${TARGET}.json`);

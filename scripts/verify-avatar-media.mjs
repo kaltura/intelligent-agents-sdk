@@ -30,6 +30,12 @@ const PORT = Number(process.env.VERIFY_AVATAR_MEDIA_PORT) || 4789;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
 const PAGE = '/test/browser/avatar-media.html';
 const CELL_TIMEOUT_MS = 30000;
+// `page.evaluate()` and `browser.close()` have no timeout of their own. A WebKitGTK WebProcess that
+// wedges mid-cell answers neither, and the run then sits silent until the job's own limit kills it.
+// So every call that can hang is raced against a deadline, and a wedged browser is replaced.
+const CELL_DEADLINE_MS = CELL_TIMEOUT_MS + 10000;   // above either wait inside a cell, so a slow cell still reports itself
+const HANG_PROBE_MS = 5000;
+const HARD_STOP_MS = 5 * 60 * 1000;   // the whole run; a normal one takes about 90 s
 const BUDGET_MS = 90000;
 const TRACK_TO_READY_MS = 2500;      // B12: same ceiling the page asserts per subscribe
 const ARTIFACT_DIR = resolve(repoRoot, '.harness-output');   // gitignored
@@ -79,6 +85,13 @@ const ALLOWED_SKIPS = [
   { cell: 'controls-before-connect', check: 'B10 pre-connect setAudioOutput lands on the element', reason: NO_SINK },
 ];
 
+/** Race `promise` against a deadline. Rejects with a message that names what stopped answering. */
+function within(promise, ms, what) {
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} did not answer within ${ms} ms`)), ms); });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 const ENGINES = { chromium, firefox, webkit };
 const engineName = process.env.VERIFY_BROWSER || 'chromium';
 const engine = ENGINES[engineName];
@@ -86,6 +99,15 @@ if (!engine) {
   console.error(`Unknown VERIFY_BROWSER "${engineName}" — expected one of: ${Object.keys(ENGINES).join(', ')}`);
   process.exit(1);
 }
+
+/**
+ * WebKitGTK only: cells that may get one retry after a "page hung". On that build the WebProcess
+ * main thread can deadlock inside the GStreamer media pipeline when a re-subscribed downlink is torn
+ * down. CI backtraces show it at about 1 in 70 runs of these cells in a loop. Changing the SDK's
+ * teardown order cut that rate but did not remove it. A retry runs on a fresh browser, is printed
+ * as RETRY and is listed in the artifact. A second hang, or any other failure, still fails the run.
+ */
+const RETRY_ON_HANG = engineName === 'webkit' ? ['races-recover', 'pc-closed'] : [];
 
 // Silent + gesture-free launch per engine. WebKit has no mute flag; the page keeps its tone at gain 0.005.
 const LAUNCH = {
@@ -109,11 +131,16 @@ function startServer() {
 }
 
 let server, browser;
+let leaked = false;   // an old browser would not close: its process keeps this one alive
 const t0 = Date.now();
+setTimeout(() => { console.error(`[${engineName}] FAIL — run still going after ${HARD_STOP_MS / 1000}s, stopping`); process.exit(1); }, HARD_STOP_MS).unref();
 try {
   server = await startServer();
-  browser = await engine.launch(LAUNCH[engineName]);
-  const context = await browser.newContext({ permissions: engineName === 'chromium' ? ['microphone'] : [] });
+  const launch = async () => {
+    browser = await engine.launch(LAUNCH[engineName]);
+    return browser.newContext({ permissions: engineName === 'chromium' ? ['microphone'] : [] });
+  };
+  let context = await launch();
   const consoleErrors = [];
   let cellLog = [];      // the page's console output during the current cell, printed when it fails
   let crashed = false;
@@ -135,6 +162,12 @@ try {
     await page.click('#go');
     await page.waitForFunction(() => window.__ready === true, null, { timeout: 10000 });
   };
+  // A cell that wedges the page leaves no way to talk to it: drop the whole browser and start another.
+  const relaunch = async () => {
+    await within(browser.close(), HANG_PROBE_MS, 'browser.close()').catch(() => { leaked = true; });
+    context = await launch();
+    await openHarness();
+  };
   await openHarness();
   const has = await page.evaluate(() => window.__has);
   const exposed = await page.evaluate(() => window.__scenarios);
@@ -152,26 +185,45 @@ try {
   console.log(`[${engineName}] features: ${JSON.stringify(has)}; ${cells.length} cells`);
 
   const results = [];
-  for (const name of cells) {
+  const retried = [];   // { name, ms, detail } for each hung attempt that got its one retry
+  const runCell = async (name) => {
     const errorsBefore = consoleErrors.length;
     cellLog = [];
     const started = Date.now();
-    let result = null;
+    let result;
     try {
-      await page.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
-      // Autoplay cells park on `__gestureWanted`; a real click on #resume is the user gesture.
-      await page.waitForFunction(() => window.__gestureWanted || window.__result, null, { timeout: CELL_TIMEOUT_MS });
-      if (await page.evaluate(() => window.__gestureWanted && !window.__result)) await page.click('#resume');
-      result = await page.waitForFunction(() => window.__result, null, { timeout: CELL_TIMEOUT_MS }).then((h) => h.jsonValue());
+      result = await within((async () => {
+        const p = page;   // a late step of an abandoned cell must not act on the page that replaced it
+        await p.evaluate((n) => { window.__result = null; window.__gestureWanted = false; window.__p = window.__run(n); }, name);
+        // Autoplay cells park on `__gestureWanted`; a real click on #resume is the user gesture.
+        await p.waitForFunction(() => window.__gestureWanted || window.__result, null, { timeout: CELL_TIMEOUT_MS });
+        if (await p.evaluate(() => window.__gestureWanted && !window.__result)) await p.click('#resume');
+        return p.waitForFunction(() => window.__result, null, { timeout: CELL_TIMEOUT_MS }).then((h) => h.jsonValue());
+      })(), CELL_DEADLINE_MS, `the page (cell ${name})`);
     } catch (e) {
-      const why = crashed || page.isClosed() || /crashed/i.test(e.message) ? 'page crashed' : 'cell timed out';
-      result = { name, pass: false, checks: [{ name: why, ok: false, detail: e.message }], skipped: [], lat: [], ms: Date.now() - started };
+      let why = crashed || page.isClosed() || /crashed/i.test(e.message) ? 'page crashed' : 'cell timed out';
+      let detail = e.message;
       if (why === 'page crashed') await openHarness();
-      else await page.evaluate(() => window.__p?.catch?.(() => {})).catch(() => {});   // settle the cell's promise so the next cell starts clean
+      else {
+        // Settle the cell's promise so the next cell starts clean. A page that cannot even do that is wedged.
+        const alive = await within(page.evaluate(() => window.__p?.catch?.(() => {})), HANG_PROBE_MS, 'the page').then(() => true, () => false);
+        if (!alive) { why = 'page hung'; detail = `${e.message}; the page did not answer a probe either, so the browser was restarted`; await relaunch(); }
+      }
+      result = { name, pass: false, checks: [{ name: why, ok: false, detail }], skipped: [], lat: [], ms: Date.now() - started };
     }
     const newErrors = consoleErrors.slice(errorsBefore);
     if (newErrors.length) result.checks.push({ name: 'no console errors / page errors', ok: false, detail: newErrors.join(' | ') });
     result.pass = result.checks.every((c) => c.ok);
+    return result;
+  };
+  for (const name of cells) {
+    let result = await runCell(name);
+    const hung = result.checks.find((c) => c.name === 'page hung');
+    if (hung && RETRY_ON_HANG.includes(name)) {
+      retried.push({ name, ms: result.ms, detail: hung.detail });
+      console.log(`[${engineName}] RETRY ${name}: page hung after ${result.ms}ms (WebKitGTK media pipeline deadlock), running it once more on a fresh browser`);
+      result = await runCell(name);
+    }
     results.push(result);
     console.log(`[${engineName}] ${result.pass ? 'OK  ' : 'FAIL'} ${name} (${result.ms}ms, ${result.checks.length} checks${result.skipped.length ? `, ${result.skipped.length} skipped` : ''})`);
     for (const c of result.checks.filter((c) => !c.ok)) console.log(`         ✖ ${c.name}${c.detail ? `: ${c.detail}` : ''}`);
@@ -210,7 +262,7 @@ try {
     writeFileSync(resolve(ARTIFACT_DIR, `avatar-media-${engineName}.json`), `${JSON.stringify({
       engine: engineName, features: has, ms: elapsed, budgetMs: BUDGET_MS,
       cells: results.length, checks: results.reduce((a, r) => a + r.checks.length, 0),
-      failedCells: failed.map((r) => r.name), unlistedSkips: unlisted,
+      failedCells: failed.map((r) => r.name), unlistedSkips: unlisted, retriedAfterHang: retried,
       latency: { trackToReadyMs: lat, max: sorted.at(-1) ?? 0, over: over.length, budgetMs: TRACK_TO_READY_MS },
       results: results.map((r) => ({ name: r.name, pass: r.pass, ms: r.ms, checks: r.checks.length, failures: r.checks.filter((c) => !c.ok), skipped: r.skipped, lat: r.lat || [] })),
     }, null, 2)}\n`);
@@ -218,12 +270,20 @@ try {
 
   console.log(`[${engineName}] ${results.length - failed.length}/${results.length} cells passed, ${results.reduce((a, r) => a + r.checks.length, 0)} checks, ${skipped.length} skipped, ${(elapsed / 1000).toFixed(1)}s`);
   if (skipped.length) console.log(`[${engineName}] skipped: ${skipped.join(', ')}`);
+  if (retried.length) console.log(`[${engineName}] retried after a page hang: ${retried.map((r) => r.name).join(', ')}`);
   if (results.length !== cells.length || failed.length) process.exitCode = 1;
-  if (elapsed > BUDGET_MS) { console.error(`[${engineName}] FAIL — over the ${BUDGET_MS / 1000}s budget`); process.exitCode = 1; }
+  // A hung attempt's time is the deadline plus a browser restart, not the cells' speed.
+  if (elapsed - retried.reduce((a, r) => a + r.ms, 0) > BUDGET_MS) { console.error(`[${engineName}] FAIL — over the ${BUDGET_MS / 1000}s budget`); process.exitCode = 1; }
 } catch (err) {
   console.error(`[${engineName}] FAIL —`, err);
   process.exitCode = 1;
 } finally {
-  await browser?.close();
+  const closed = await within(Promise.resolve(browser?.close()), HANG_PROBE_MS, 'browser.close()').then(() => true, () => false);
   server?.close();
+  // A browser that will not close keeps this process alive after the verdict is already printed.
+  // The verdict stands: leave with the run's own exit code, once the output is flushed.
+  if (!closed || leaked) {
+    console.warn(`[${engineName}] warning: a browser did not close, exiting without it`);
+    process.stderr.write('', () => process.stdout.write('', () => process.exit(process.exitCode ?? 0)));
+  }
 }

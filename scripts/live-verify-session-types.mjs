@@ -46,6 +46,8 @@
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET (or the `--env`
  * prefixed vars), from the environment or a .env file. None are written to
  * the artifacts.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { bootstrap, management, ensureAgent, verifyDeleted, Report, mdTable, redact, sleep } from './live-verify-kickoff-shared.mjs';
 

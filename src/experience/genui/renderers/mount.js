@@ -21,7 +21,7 @@
  *   - 'play'      {entryId?, url?, embedUrl?, startTime?, endTime?}
  *                                              → a video-gallery clip or a content-gallery video slide was clicked (times in seconds, or `null`)
  *   - 'open'      {url}                       → a link/source/content card was activated
- *   - 'submit'    {values, formId}            → a structured-data form was submitted. Send the values with speak() or updateRequestVars(); submitStructuredDataForm(values) only records the submission and does not send formId.
+ *   - 'submit'    {values, formId}            → a structured-data form was submitted. Send the values with speak() or updateRequestVars(); submitStructuredDataForm(values) sends the values to the server (the agent does not see them) and does not send formId.
  *   - 'answer'    {questionId, variant, correct, value, explanation, optionId?}
  *                                              → a `graded-question` was answered; `correct` is
  *                                                `boolean|null` (`null` = no answer key authored, ungraded)

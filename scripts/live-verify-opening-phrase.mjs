@@ -28,6 +28,8 @@
  * Tokens and URL query strings are redacted; no ids or secrets are written.
  * Unless --keep or --agent-json, the run checks that the throwaway agent, avatar
  * and intellect are gone after cleanup.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';

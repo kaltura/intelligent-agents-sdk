@@ -27,8 +27,16 @@ import { errorFromOkBody } from './errors.js';
  * @property {number} [start_time]  Unix seconds, on `tool`/`tool_response`.
  * @property {number} [end_time]    Unix seconds, on `tool`/`tool_response`.
  * @property {string} [human]       The user text for the turn, on the first `think`.
- * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string}} [metadata]
+ * @property {{widgetName?:string, runtimeName?:string, subtype?:string, tool_name?:string, tool_display_name?:string, emotion?:AvatarEmotion}} [metadata]
  * @property {{id:string, name?:string, args?:object, type?:string, wait_for_response?:boolean}} [tool_metadata]  Present on some `type:"tool"` segments (wire-protocol/events-catalog.md §4e); see {@link parseToolCall}.
+ */
+
+/**
+ * Limited Availability. The emotion label on the `segmentStart` chunk of a
+ * `type:"avatar"` segment when the `avatar_emotions` capability is on. The SDK
+ * passes the value through and does not check it, so treat it as untrusted text
+ * and match it against this list.
+ * @typedef {'neutral'|'happy'|'sad'|'surprise'} AvatarEmotion
  */
 
 /**

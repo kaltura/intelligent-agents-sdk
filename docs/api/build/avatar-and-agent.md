@@ -21,7 +21,7 @@ POST https://api.avatar.us.kaltura.ai/v1/avatar/create
 
 Allowed ranges: `voice.speed` 0.5 to 1.5; `motionControl.speaking` and `motionControl.nonSpeaking` each 0.1 to 1.0 (keep `nonSpeaking` below `speaking`); `name` up to 255 characters. A value outside these ranges is a 400.
 
-`voice.id` and `visual.id` come from the catalog ([Catalog & Assets § Browse the Catalog](../design.md#browse-the-catalog)). For your own portrait, upload it first and use the returned `itemId` as `visual.id` ([§ Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar), which also covers how to prepare the photo). Returns `id` (24-char hex). **No `adminTags`** on avatars: tag the parent agent instead ([Management Operations § Avatars](../management-operations.md#avatars)).
+`voice.id` and `visual.id` come from the catalog ([Catalog & Assets § Browse the Catalog](../design.md#browse-the-catalog)). For your own person, upload a transparent Face and compose it with a background ([§ Compose from a custom Face and Background](#compose-from-a-custom-face-and-background)). To use one finished photo instead, upload it and pass the returned `itemId` as `visual.id` ([Catalog & Assets § Upload a Custom Visual](../design.md#upload-a-custom-visual-portrait--animated-avatar)). Returns `id` (24-char hex). **No `adminTags`** on avatars: tag the parent agent instead ([Management Operations § Avatars](../management-operations.md#avatars)).
 
 Leave `openingPhrase` unset. The intellect's `opening_phrase` sets the first, uninterruptible turn of every session ([Configure an Intellect](intellect.md#configure-an-intellect)). `provision()` writes it there and creates the avatar without a phrase. An avatar-level `openingPhrase` is spoken only for a session whose intellect has none. Clear one with `avatars.update({ id, openingPhrase: null }, ks)`. Where the phrase lives, how to personalize it with a template, and the silent-opening and `kickoff` pattern: [START-THE-CONVERSATION.md](../../START-THE-CONVERSATION.md).
 
@@ -31,9 +31,9 @@ Leave `openingPhrase` unset. The intellect's `opening_phrase` sets the first, un
 
 | Way | Body | When |
 |---|---|---|
-| An existing Visual | `visual: { id }` | Fastest. A catalog preset, or your own upload via `catalog.createVisual`. Do not send just one of `face`/`background` alongside `visual`. Send both as a complete pair or neither. |
-| Compose a new Visual from a Face + Background | `face: { id }` + `background: { type: 'color', value?: '#hex' }` (`value` optional, defaults to white) or `{ type: 'visual', value: <Background catalog itemId> }` (`value` required) | You want a specific face (a `catalog.createFace` upload, or a preset Face item) over a specific backdrop. Send `face` and `background` together at create time. `avatars.create` throws `bad_request` before any network call if you send only one, even when `visual` is also sent. With `templateId`, one half is enough: a template can carry its own `face` or `background`. |
+| **Compose a Visual from a Face + Background (recommended)** | `face: { id }` + `background: { type: 'color', value?: '#hex' }` (`value` optional, defaults to white) or `{ type: 'visual', value: <Background catalog itemId> }` (`value` required) | Your own person on any backdrop, or a preset Face over your own backdrop. One Face serves many backgrounds, and you can swap the background later. Send `face` and `background` together at create time. `avatars.create` throws `bad_request` before any network call if you send only one, even when `visual` is also sent. With `templateId`, one half is enough: a template can carry its own `face` or `background`. |
 | A curated template + whatever it's missing | `templateId` + whichever of `face`/`background`/`visual` the template doesn't already supply | Fastest good-looking result. See below. `templateId` alone works only when the template already includes a complete `visual`. |
+| An existing Visual | `visual: { id }` | A catalog preset, or one photo with its background baked in (`catalog.createVisual`). The background cannot change without a new upload. Do not send just one of `face`/`background` alongside `visual`. Send both as a complete pair or neither. |
 
 You cannot create an avatar from a face alone and add the background afterwards: a face and a background are required together at create time. Once the avatar exists, `avatars.update` accepts a `background` on its own ([Management Operations § Avatars](../management-operations.md#avatars)).
 
@@ -54,16 +54,24 @@ await mgmt.avatars.create(
 
 ## Compose from a custom Face and Background
 
-Upload the two halves first ([Catalog & Assets § Upload a custom Face or Background](../design.md#upload-a-custom-face-or-background-compose-a-visual-path)), then pass their ids as `face.id` and `background.value`:
+Upload the two halves first ([Catalog & Assets § Custom look](../design.md#custom-look-a-face-and-a-background-recommended)). The Face must be a transparent PNG cutout, which the guide there shows how to make. Then pass the ids as `face.id` and `background.value`:
 
 ```js
-const face = await mgmt.catalog.createFace(portraitBlob, { name: 'Support rep', genderPresentation: 'Feminine' }, ks);
-const bg = await mgmt.catalog.createBackground(backdropBlob, { name: 'Office', genderPresentation: 'Feminine' }, ks);
-await mgmt.avatars.create(
-  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: bg.itemId } },
+const face = await mgmt.catalog.createFace(facePngBlob, { name: 'Support rep', genderPresentation: 'Feminine' }, ks);
+const office = await mgmt.catalog.createBackground(officeBlob, { name: 'Office', genderPresentation: 'Feminine' }, ks);
+const avatar = await mgmt.avatars.create(
+  { voice: { id: voiceItemId }, face: { id: face.itemId }, background: { type: 'visual', value: office.itemId } },
   ks,
 );
 ```
+
+Change the background later with no new upload. The new look shows on the next session:
+
+```js
+await mgmt.avatars.update({ id: avatar.id, background: { type: 'color', value: '#c0392b' } }, ks);
+```
+
+A runnable page that shows one Face on four image backgrounds and one flat color, live: [examples/face-and-backgrounds/](../../../examples/face-and-backgrounds/).
 
 Unlike `createVisual` (a photo used directly, already a full custom digital twin), a Face/Background is only usable through the `face` and `background` composition. You cannot pass it as `visual.id` on its own.
 

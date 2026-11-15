@@ -1,0 +1,219 @@
+#!/usr/bin/env node
+/**
+ * Drives the real-browser feature pages (manual-testing/feature-pages/) in a real browser.
+ * It starts serve.mjs as a child process, clicks through every page, checks what the
+ * page shows, saves a screenshot per page, then stops the server and checks that
+ * everything the server created is gone.
+ *
+ * Engine: LIVE_VERIFY_BROWSER=chromium|firefox|webkit (default chromium).
+ * Credentials: same as serve.mjs (NVP1_* or AGENTIC_* variables, optional ENV_FILE).
+ * The emotions page runs only with --emotions and TARGET set, and then it is the only page.
+ * It needs a Limited Availability environment, for employees and certified partners only, and
+ * it refuses to run when CI is set.
+ * See manual-testing/feature-pages/README.md.
+ *
+ * Screenshots and the server log go to manual-testing/feature-pages/out/ (git-ignored).
+ */
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { leakCounts } from './lib/leak-scan.mjs';
+import { startServer, absoluteEnvFile } from './lib/start-server.mjs';
+import { loadEnvironmentFiles } from '../manual-testing/feature-pages/serve.mjs';
+import { launchBrowser, warmFirefoxMedia, routeSocketIo, contextOptions, repoRoot, redact } from './live-verify-kickoff-shared.mjs';
+
+const engineName = process.env.LIVE_VERIFY_BROWSER || 'chromium';
+if (!['chromium', 'firefox', 'webkit'].includes(engineName)) {
+  console.error(`Unknown LIVE_VERIFY_BROWSER "${engineName}". Use chromium, firefox or webkit.`);
+  process.exit(1);
+}
+// The same env files serve.mjs reads. The leak scan needs the secret values too, so the parent loads them.
+// A relative ENV_FILE becomes absolute first, so the child reads the same file.
+absoluteEnvFile(process.env);
+try { loadEnvironmentFiles(process.env.ENV_FILE); } catch (err) {
+  console.error(/** @type {Error} */ (err).message);
+  process.exit(1);
+}
+const emotions = process.argv.includes('--emotions');
+if (emotions && process.env.CI) {
+  console.error('--emotions is not for CI. It needs a Limited Availability environment.');
+  process.exit(1);
+}
+if (emotions && !process.env.TARGET) {
+  console.error('--emotions needs TARGET set to the name of a Limited Availability environment.');
+  process.exit(1);
+}
+const outDir = resolve(repoRoot, 'manual-testing/feature-pages/out');
+mkdirSync(outDir, { recursive: true });
+
+let failed = false;
+/** What this script printed, before redaction. The leak scan reads it. */
+const printedRaw = [];
+/** @param {string} step @param {boolean} ok @param {unknown} [detail] */
+function check(step, ok, detail) {
+  if (!ok) failed = true;
+  printedRaw.push(`${step} ${detail === undefined ? '' : JSON.stringify(detail)}`);
+  console.log(`[${ok ? 'ok' : 'FAIL'}] ${step}${detail === undefined ? '' : ` ${redact(JSON.stringify(detail))}`}`);
+}
+
+/** Start serve.mjs and wait for its URL. */
+function startFeatureServer() {
+  const args = ['manual-testing/feature-pages/serve.mjs', '--ttl-minutes', '30', ...(emotions ? ['--emotions'] : [])];
+  return startServer({ command: process.execPath, args, cwd: repoRoot, env: process.env, redact });
+}
+
+/** @param {string} text @param {string} label @returns {string|undefined} the value in a two-column table row */
+const cell = (text, label) => text.split('\n').map((l) => l.split('\t')).find((p) => p[0] === label)?.[1];
+
+/** Click through the pages of the server at `base`. Never throws. @param {string} base */
+async function drive(base) {
+  let browser;
+  const problems = [];
+  try {
+    browser = await launchBrowser({ browser: engineName });
+    const warmMs = await warmFirefoxMedia(browser);
+    if (warmMs) console.log(`[info] firefox media warm-up ${warmMs} ms`);
+    const context = await browser.newContext(contextOptions());
+    await routeSocketIo(context);
+    const page = await context.newPage();
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e?.message || e}`));
+    // Playwright injects a style element while it takes a screenshot, and the page's CSP refuses it. Every engine words that message with "style-src". Only such messages during a screenshot, or 500 ms after, are counted and not failed on.
+    let ignored = 0;
+    let shotUntil = 0;
+    page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      if (Date.now() < shotUntil && /style-src/i.test(m.text())) { ignored++; return; }
+      problems.push(`console.error: ${m.text()}`);
+    });
+
+    const open = async (name) => {
+      await page.goto(`${base}manual-testing/feature-pages/${name}.html`);
+      await page.waitForSelector('body[data-ready="true"]', { timeout: 20_000 });
+    };
+    const shot = async (name) => {
+      shotUntil = Infinity;
+      try { await page.screenshot({ path: join(outDir, `${engineName}-${name}.png`), fullPage: true }); } finally { shotUntil = Date.now() + 500; }
+    };
+    const text = (sel) => page.locator(sel).innerText();
+    const waitData = (key, value, timeout = 90_000) => page.waitForFunction(([k, v]) => document.body.dataset[k] === v, [key, value], { timeout });
+    const stepClick = async (sel, step) => { await page.click(sel); await waitData('step', step); };
+
+    // The index lists only the pages this run serves.
+    await page.goto(base);
+    const links = await page.locator('a').allInnerTexts();
+    check('index-lists-pages', emotions ? links.join() === 'emotions' : links.length === 5 && !links.includes('emotions'), links);
+
+    if (!emotions) {
+      // variables
+      await open('variables');
+      await page.click('#load');
+      await waitData('loaded', 'true', 60_000);
+      const sys = await text('#system');
+      const custom = await text('#custom');
+      check('variables-system-listed', sys.includes('sys__thread_id') && sys.includes('sys__user_message'), { rows: sys.split('\n').length });
+      check('variables-custom-listed', custom.includes('sdk_live_color'), { custom: custom.replace(/\s+/g, ' ').slice(0, 120) });
+      await shot('variables');
+
+      // request-vars
+      await open('request-vars');
+      await page.click('#bad');
+      await waitData('done', '1');
+      const refused = await text('#result');
+      await shot('request-vars-refused');
+      check('request-vars-reserved-key-refused-offline', cell(refused, 'outcome') === 'refused' && cell(refused, 'code') === 'validation_error' && cell(refused, 'network calls') === '0', refused.replace(/\s+/g, ' ').slice(0, 200));
+      await page.click('#good');
+      await waitData('done', '2');
+      const accepted = await text('#result');
+      check('request-vars-allowed-key-reaches-agent', cell(accepted, 'outcome') === 'accepted' && cell(accepted, 'network calls') === '1' && /teal/i.test(cell(accepted, 'reply') || ''), { reply: (cell(accepted, 'reply') || '').slice(0, 80) });
+      await shot('request-vars');
+
+      // side-question
+      await open('side-question');
+      await stepClick('#start', 'start');
+      await stepClick('#side', 'side');
+      await stepClick('#fork', 'fork');
+      const st = await text('#state');
+      check('side-question-unsaved-ask-adds-no-message', cell(st, 'saved messages in thread') === '1' && cell(st, 'saved messages after side question') === '1' && (cell(st, 'side answer') || '').length > 0, { saved: cell(st, 'saved messages in thread'), afterSide: cell(st, 'saved messages after side question') });
+      check('side-question-fork-makes-new-thread', cell(st, 'fork thread') === 'new thread' && Number(cell(st, 'saved messages in fork')) >= 1 && cell(st, 'saved messages in source after fork') === '1', { fork: cell(st, 'fork thread'), forkSaved: cell(st, 'saved messages in fork'), source: cell(st, 'saved messages in source after fork') });
+      await shot('side-question');
+
+      // catalog-scope
+      await open('catalog-scope');
+      await stepClick('#create', 'create');
+      let c = await text('#state');
+      check('catalog-scope-created-in-scope-A', cell(c, 'item scope') === 'scope A' && cell(c, 'listed in scope A') === '1' && cell(c, 'listed in scope B') === '0' && cell(c, 'listed with no scope filter') === '0', c.replace(/\s+/g, ' '));
+      await stepClick('#toB', 'toB');
+      c = await text('#state');
+      check('catalog-scope-moved-to-B', cell(c, 'item scope') === 'scope B' && cell(c, 'listed in scope A') === '0' && cell(c, 'listed in scope B') === '1', c.replace(/\s+/g, ' '));
+      await stepClick('#clear', 'clear');
+      c = await text('#state');
+      check('catalog-scope-cleared', cell(c, 'item scope') === 'none' && cell(c, 'listed with no scope filter') === '1', c.replace(/\s+/g, ' '));
+      await page.waitForFunction(() => { const i = /** @type {HTMLImageElement} */ (document.getElementById('thumb')); return i.complete && i.naturalWidth > 0; }, null, { timeout: 20_000 }).catch(() => {});
+      const thumb = await page.evaluate(() => { const i = /** @type {HTMLImageElement} */ (document.getElementById('thumb')); return { shown: !i.hidden, w: i.naturalWidth }; });
+      check('catalog-scope-thumbnail-loads', thumb.shown && thumb.w > 0, thumb);
+      await shot('catalog-scope');
+
+      // connect-errors
+      await open('connect-errors');
+      await page.click('#refuse');
+      await waitData('refused', 'true', 60_000);
+      const err = await text('#error');
+      check('connect-errors-server-reason', cell(err, 'outcome') === 'refused' && cell(err, 'code') === 'unsupported_client' && cell(err, 'serverCode') === 'INVALID_KS', err.replace(/\s+/g, ' '));
+      await page.click('#notice');
+      await waitData('noticeDone', 'true', 90_000);
+      const warn = await text('#warn');
+      check('connect-errors-form-notice-once', cell(warn, 'connected') === 'yes' && cell(warn, 'notices after two calls') === '1', warn.replace(/\s+/g, ' ').slice(0, 200));
+      await shot('connect-errors');
+    } else {
+      await open('emotions');
+      await page.click('#on');
+      await waitData('done', '1', 120_000);
+      const on = await text('#result');
+      const segs = Number(cell(on, 'avatar segments'));
+      check('emotions-on-labels-present', cell(on, 'emotions') === 'on' && segs >= 1 && Number(cell(on, 'segments with a known label')) >= 1, on.replace(/\s+/g, ' '));
+      await shot('emotions-on');
+      await page.click('#off');
+      await waitData('done', '2', 120_000);
+      const off = await text('#result');
+      check('emotions-off-no-labels', cell(off, 'emotions') === 'off' && cell(off, 'chunks carrying any emotion field') === '0' && Number(cell(off, 'avatar segments')) >= 0, off.replace(/\s+/g, ' '));
+      await shot('emotions-off');
+    }
+    check('no-page-errors', problems.length === 0, problems.slice(0, 5));
+    if (ignored) console.log(`[info] ignored ${ignored} style-src policy message(s) from screenshots`);
+    await context.close();
+  } catch (err) {
+    check('run', false, String(/** @type {any} */ (err)?.message || err));
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
+async function main() {
+  let server;
+  try {
+    server = await startFeatureServer();
+  } catch (err) {
+    check('server-start', false, String(/** @type {any} */ (err)?.message || err));
+    process.exit(1);
+  }
+  /** @type {{code:number|null, log:string}} */
+  let stopped;
+  try {
+    await drive(server.url);
+  } catch (err) {
+    check('run', false, String(/** @type {any} */ (err)?.message || err));
+  } finally {
+    stopped = await server.stop();
+  }
+  const { code, log } = stopped;
+  writeFileSync(join(outDir, `${engineName}-serve.log`), redact(log));
+  check('server-teardown-verified', code === 0 && /teardown verified/.test(log), { exit: code });
+
+  // Leak scan: counts only. It reads the raw server log and raw script output, and every text file in out/.
+  const files = readdirSync(outDir).filter((f) => /\.(log|txt|json)$/.test(f)).map((f) => readFileSync(join(outDir, f), 'utf8'));
+  const { secretHits, ksHits, secretsChecked } = leakCounts([log, printedRaw.join('\n'), ...files], process.env);
+  // With no admin secret value to look for, the scan proves nothing, so that fails too.
+  check('no-secret-or-ks-in-logs', secretsChecked > 0 && secretHits === 0 && ksHits === 0, { secretHits, ksHits, secretsChecked });
+  process.exit(failed ? 1 : 0);
+}
+
+await main();

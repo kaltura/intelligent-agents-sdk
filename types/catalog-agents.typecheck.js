@@ -11,6 +11,12 @@ const png = /** @type {Blob} */ (/** @type {unknown} */ ({}));
 mgmt.catalog.list(ks, { type: 'Face', filter: { idsIn: ['a'], languageEqual: 'en' }, orderBy: '-createdAt', agentScope: 's' });
 mgmt.agents.list(ks, { filter: {}, orderBy: '-updatedAt' });
 mgmt.catalog.createVisual(png, { name: 'n', genderPresentation: 'Feminine', skinTone: 'Light', hairColor: 'Gray', ageGroup: 'OlderAdult', background: 'Color' }, ks);
+mgmt.catalog.createVisual(png, { name: 'n', genderPresentation: 'Feminine', agentScope: 'agent-1' }, ks);
+mgmt.catalog.createVoice(png, { name: 'n', description: 'd', agentScope: 'agent-1' }, ks);
+mgmt.catalog.update({ itemId: 'i', agentScope: '' }, ks);
+
+// @ts-expect-error agentScope is a string
+mgmt.catalog.update({ itemId: 'i', agentScope: 5 }, ks);
 
 // @ts-expect-error 'Dark' is not a skinTone
 mgmt.catalog.createVisual(png, { name: 'n', genderPresentation: 'Feminine', skinTone: 'Dark' }, ks);

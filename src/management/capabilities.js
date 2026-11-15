@@ -45,6 +45,7 @@ export const CAPABILITIES = Object.freeze([
   'avatar',
   'avatar_filler',
   'avatar_show_content',
+  'avatar_emotions',
   'kaltura_genie_experiences',
   'use_web_search',
   'screen_share_analysis',
@@ -63,6 +64,15 @@ export const CAPABILITIES = Object.freeze([
  */
 export const CAPABILITY_STATE = Object.freeze({ ON: 'on', OFF: 'off', DISABLED: 'disabled' });
 
+/**
+ * Capabilities that exist only in Limited Availability. They are not in the
+ * public docs. Send one only when you opt in: an environment without the
+ * feature refuses the unknown name. Documented in
+ * docs/contributor/limited-availability.md.
+ * @type {readonly string[]}
+ */
+export const LIMITED_AVAILABILITY_CAPABILITIES = Object.freeze(['avatar_emotions']);
+
 const VALID_STATES = Object.freeze([CAPABILITY_STATE.ON, CAPABILITY_STATE.OFF, CAPABILITY_STATE.DISABLED]);
 const CAPABILITY_SET = new Set(CAPABILITIES);
 
@@ -70,13 +80,13 @@ const CAPABILITY_SET = new Set(CAPABILITIES);
  * The OFF-by-default capabilities (the API's capability defaults):
  * `avatar`, `avatar_filler`, `avatar_show_content`, `video_gallery`,
  * `external_video`, `show_link`, `use_web_search`, `screen_share_analysis`,
- * `think_process`, `set_vars_tool`.
+ * `think_process`, `set_vars_tool`, `avatar_emotions`.
  * @type {readonly string[]}
  */
 const OFF_BY_DEFAULT = Object.freeze([
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
-  'think_process', 'set_vars_tool',
+  'think_process', 'set_vars_tool', 'avatar_emotions',
 ]);
 
 /**
@@ -118,6 +128,7 @@ export const CAPABILITY_INFO = Object.freeze({
   avatar: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.avatar, summary: 'Enables the live avatar face and voice channel.' },
   avatar_filler: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_filler, summary: 'Avatar speaks short filler phrases while thinking. Phrasing is server-generated per turn and NOT reliably steerable via base_directive or other persona instructions, despite streaming as a "spoken" segment type alongside avatar/text — disable this capability if the default phrasing does not fit your persona.' },
   avatar_show_content: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.avatar_show_content, summary: 'Lets the avatar push visual content (slides/cards) alongside speech.' },
+  avatar_emotions: { kind: 'segment', defaultState: CAPABILITY_DEFAULTS.avatar_emotions, summary: 'Limited Availability. Avatar segments carry metadata.emotion, and each emotion change starts a new segment. Needs avatar on.' },
   kaltura_genie_experiences: { kind: 'mode', defaultState: CAPABILITY_DEFAULTS.kaltura_genie_experiences, summary: 'Master switch for structured GenUI (flashcards/summary/markdown experiences).' },
   use_web_search: { kind: 'tool', defaultState: CAPABILITY_DEFAULTS.use_web_search, summary: 'search_web, live external web search. Off by default.' },
   screen_share_analysis: { kind: 'prompt', defaultState: CAPABILITY_DEFAULTS.screen_share_analysis, summary: 'Enables analysis of a user-shared screen.' },

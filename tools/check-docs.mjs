@@ -44,7 +44,7 @@ const DOCS = [
   'docs/CLIENT-COMMANDS.md', 'docs/DYNAMIC-DATA-INJECTION.md',
   'docs/STRUCTURED-DATA-FORMS.md', 'docs/EXTERNAL-API-INTEGRATIONS.md', 'docs/MCP-INTEGRATIONS.md',
   'docs/VOICE-INPUT-MODES.md', 'docs/USE-CASES.md', 'docs/START-THE-CONVERSATION.md',
-  'docs/GLOSSARY.md', 'docs/LANGUAGES.md', 'docs/LIVE-DEMOS.md',
+  'docs/GLOSSARY.md', 'docs/LANGUAGES.md', 'docs/LIVE-DEMOS.md', 'docs/DOCTOR.md',
   'docs/lifecycle/README.md', 'docs/lifecycle/recipes.md',
   'docs/SITE-NAV.md',
   'SECURITY.md', 'SDK_CONSTITUTION.md',
@@ -57,16 +57,57 @@ const DOCS = [
 const CONTRIBUTOR_DOCS = readdirSync(join(ROOT, 'docs/contributor'))
   .filter((f) => f.endsWith('.md')).map((f) => `docs/contributor/${f}`);
 
-/** Read a file relative to ROOT, return empty string if missing. */
+// The gate never writes files, so reads and the file list are cached for the run.
+const readCache = new Map();
+
+/** Read a file relative to ROOT, return empty string if missing. Cached. */
 function read(rel) {
-  const p = join(ROOT, rel);
-  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+  let text = readCache.get(rel);
+  if (text === undefined) {
+    const p = join(ROOT, rel);
+    text = existsSync(p) ? readFileSync(p, 'utf8') : '';
+    readCache.set(rel, text);
+  }
+  return text;
 }
 
-/** Git-tracked file list (paths relative to ROOT). */
+let trackedCache;
+
+/** Git-tracked file list (paths relative to ROOT). Cached. */
 function trackedFiles() {
-  const out = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' });
-  return out.trim().split('\n').filter(Boolean);
+  trackedCache ??= execSync('git ls-files', { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .trim().split('\n').filter(Boolean);
+  return trackedCache;
+}
+
+/** The page that holds every Limited Availability capability. */
+const LIMITED_AVAILABILITY_DOC = 'docs/contributor/limited-availability.md';
+
+/**
+ * Files that must not name a Limited Availability capability: every Markdown file
+ * outside `docs/contributor/`, plus everything under `docs/` and `app-builder-skill/`.
+ * @param {string[]} files tracked paths
+ */
+function publicDocFiles(files) {
+  return files.filter((f) => !f.startsWith('docs/contributor/')
+    && (f.endsWith('.md') || f.startsWith('docs/') || f.startsWith('app-builder-skill/')));
+}
+
+/**
+ * Problems with where Limited Availability capability names appear: absent from
+ * every public file, present in the contributor page.
+ * @param {readonly string[]} names @param {Record<string,string>} publicFiles path to text @param {string} contributorDoc
+ * @returns {string[]}
+ */
+function limitedAvailabilityProblems(names, publicFiles, contributorDoc) {
+  const out = [];
+  for (const name of names) {
+    for (const [f, text] of Object.entries(publicFiles)) {
+      if (text.includes(name)) out.push(`${f}: names the Limited Availability capability ${name}. Move it to ${LIMITED_AVAILABILITY_DOC}.`);
+    }
+    if (!contributorDoc.includes(name)) out.push(`${LIMITED_AVAILABILITY_DOC}: does not mention ${name}.`);
+  }
+  return out;
 }
 
 /** Slugify a heading the same way GitHub does. */
@@ -581,8 +622,9 @@ describe('7. SDK invariants', () => {
   });
 
   test('CAPABILITIES and their defaults match the intellect.md catalogue', async () => {
-    const { CAPABILITIES, CAPABILITY_DEFAULTS } = await import('../src/management/capabilities.js');
-    const codeSet = new Set(CAPABILITIES);
+    const { CAPABILITIES, CAPABILITY_DEFAULTS, LIMITED_AVAILABILITY_CAPABILITIES } = await import('../src/management/capabilities.js');
+    const limited = new Set(LIMITED_AVAILABILITY_CAPABILITIES);
+    const codeSet = new Set(CAPABILITIES.filter((c) => !limited.has(c)));
     assert.ok(codeSet.size > 0, 'CAPABILITIES array is empty');
 
     const docText = read('docs/api/build/intellect.md');
@@ -595,9 +637,35 @@ describe('7. SDK invariants', () => {
     }
 
     const missingDoc  = [...codeSet].filter((c) => !catSet.has(c));
-    const missingCode = [...catSet].filter((c) => !codeSet.has(c));
+    const missingCode = [...catSet].filter((c) => !codeSet.has(c) && !limited.has(c));
     assert.deepEqual(missingDoc,  [], `in code but not in catalogue: ${missingDoc.join(', ')}`);
     assert.deepEqual(missingCode, [], `in catalogue but not in code: ${missingCode.join(', ')}`);
+  });
+
+  test('Limited Availability capabilities are only in docs/contributor/limited-availability.md', async () => {
+    const { CAPABILITIES, LIMITED_AVAILABILITY_CAPABILITIES } = await import('../src/management/capabilities.js');
+    for (const name of LIMITED_AVAILABILITY_CAPABILITIES) assert.ok(CAPABILITIES.includes(name), `${name} is not in CAPABILITIES`);
+    const publicFiles = Object.fromEntries(publicDocFiles(trackedFiles()).map((f) => [f, read(f)]));
+    assert.ok(Object.keys(publicFiles).length > 10, 'public doc scan found too few files');
+    const problems = limitedAvailabilityProblems(LIMITED_AVAILABILITY_CAPABILITIES, publicFiles, read(LIMITED_AVAILABILITY_DOC));
+    assert.deepEqual(problems, [], problems.join('\n'));
+  });
+
+  test('the Limited Availability rule flags a public mention and a missing contributor entry', () => {
+    const doc = 'The `avatar_emotions` capability turns emotions on.';
+    assert.deepEqual(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'plain text' }, doc), []);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'set avatar_emotions on' }, doc).length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'app-builder-skill/x.md': 'avatar_emotions' }, doc).length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], {}, 'no mention here').length, 1);
+    assert.equal(limitedAvailabilityProblems(['avatar_emotions'], { 'docs/a.md': 'avatar_emotions' }, '').length, 2);
+  });
+
+  test('public doc selection covers docs, the skill and root pages, and skips contributor docs', () => {
+    const picked = publicDocFiles([
+      'README.md', 'API-REFERENCE.md', 'docs/api/build/intellect.md', 'docs/contributor/limited-availability.md',
+      'app-builder-skill/skills/x/SKILL.md', 'app-builder-skill/evals/case.json', 'src/management/capabilities.js', '.github/release-notes/v1.0.0.md',
+    ]);
+    assert.deepEqual(picked, ['README.md', 'API-REFERENCE.md', 'docs/api/build/intellect.md', 'app-builder-skill/skills/x/SKILL.md', 'app-builder-skill/evals/case.json', '.github/release-notes/v1.0.0.md']);
   });
 
   test('converse field list matches the operate.md Converse field table', () => {
@@ -656,12 +724,13 @@ describe('7. SDK invariants', () => {
     const result = spawnSync(
       process.execPath,
       ['--test', '--test-concurrency=1', ...testFiles],
-      // The full suite runs ~2 min on an unloaded machine; leave headroom so
-      // host load can't kill the child mid-run and report a phantom failure.
-      { cwd: ROOT, encoding: 'utf8', timeout: 300_000 },
+      // The full suite runs 2-4.5 min depending on host load. 900 s leaves
+      // headroom so load can't kill the child mid-run and report a phantom failure.
+      { cwd: ROOT, encoding: 'utf8', timeout: 900_000, maxBuffer: 64 * 1024 * 1024 },
     );
     if (result.status !== 0) {
       const out = (result.stdout || '') + (result.stderr || '');
+      if (result.error) assert.fail(`SDK tests did not finish: ${result.error.message}`);
       const failLines = out.split('\n')
         .filter((l) => /not ok|cancelled|Error|ERR_|SyntaxError/.test(l))
         .slice(0, 20).join('\n');
@@ -1131,8 +1200,8 @@ describe('16. Docs accuracy', () => {
     const re = /(submitStructuredDataForm|setFormLeadInfo)[^\n]*(feeds|is sent to the (agent|model)|reaches the (agent|model)|tells the (agent|model))/i;
     const hits = scanFiles().filter((f) => f.endsWith('.md')).flatMap((f) => read(f).split('\n')
       .map((l, i) => [i + 1, l]).filter(([, l]) => re.test(l)).map(([n]) => `${f}:${n}`));
-    assert.deepEqual(hits, [], `a form submission only records the values. Fix: ${hits.join(', ')}`);
-    assert.match(read('docs/STRUCTURED-DATA-FORMS.md'), /records the submission/);
+    assert.deepEqual(hits, [], `a form submission goes to the server and the agent does not see the values. Fix: ${hits.join(', ')}`);
+    assert.match(read('docs/STRUCTURED-DATA-FORMS.md'), /sends the values to the server\. The agent does not see them/);
   });
 
   test('the GenUI widget name literal in code and in docs is the same single value', () => {
@@ -1287,7 +1356,7 @@ describe('15. App-builder skill', () => {
 // 17. Content pages — languages, glossary, live demos, KS wording
 // ═══════════════════════════════════════════════════════════════════════
 describe('17. Content pages', () => {
-  const NEW_PAGES = ['docs/LANGUAGES.md', 'docs/GLOSSARY.md', 'docs/LIVE-DEMOS.md'];
+  const NEW_PAGES = ['docs/LANGUAGES.md', 'docs/GLOSSARY.md', 'docs/LIVE-DEMOS.md', 'docs/DOCTOR.md'];
 
   test('every new page exists, is in the DOCS list and is linked from the README', () => {
     const readme = read('README.md');
@@ -1307,8 +1376,8 @@ describe('17. Content pages', () => {
     for (const t of ['force_language', 'asr.language', 'LANGUAGE_CODES', 'LANGUAGE_NAMES', 'language: null']) {
       assert.ok(page.includes(t), `LANGUAGES.md does not mention ${t}`);
     }
-    assert.match(src, /opts\.asrProvider \|\| 'kaltura'/);
-    assert.match(page, /Defaults to `"kaltura"`/);
+    assert.match(src, /opts\.asrProvider \|\| current\?\.asr\?\.provider \|\| 'kaltura'/);
+    assert.match(page, /defaults to the agent's current provider, then `"kaltura"`/i);
   });
 
   test('the structured-data forms page names every FORM_FIELD_TYPES value and the title keys', async () => {
@@ -1369,7 +1438,7 @@ describe('18. Doc tiers and style', () => {
   const LINE_BUDGET = 250;
   // Ratchet: pages already over budget may not grow. Remove an entry once the page is under budget.
   const OVER_BUDGET = {
-    'README.md': 1232, 'docs/SITE-NAV.md': 430, 'SECURITY.md': 353, 'docs/lifecycle/README.md': 289,
+    'README.md': 1232, 'docs/SITE-NAV.md': 430, 'SECURITY.md': 353, 'docs/lifecycle/README.md': 288,
   };
   const userDocs = () => trackedFiles().filter((f) => f.endsWith('.md')
     && (USER_ROOT.includes(f) || (f.startsWith('docs/') && !f.startsWith('docs/contributor/'))));

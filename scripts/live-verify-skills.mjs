@@ -8,12 +8,15 @@
  *   2  skills.get        — visible, right shape
  *   3  skills.list       — the new skill appears
  *   4  skills.update     — rename + description change persists on a follow-up get
+ *   4a skills.update    : a rename with a bad character is refused offline (zero fetch calls); the stored name stays
  *   5  skills.delete     — plain delete (not referenced by any intellect), re-`get` real-404s
  *
  * Throwaway resource only (one Skill), full cleanup in `finally`, with
  * independent re-verification that it is truly gone (a real not-found, not
  * just a 200 from delete). Credentials: AGENTIC_PARTNER_ID /
  * AGENTIC_ADMIN_SECRET, from the environment or a .env file in the repo root.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -42,7 +45,8 @@ function check(step, ok, detail) {
   record(step, ok, detail);
 }
 
-const kaltura = new Management(target);
+let fetchCount = 0;
+const kaltura = new Management({ ...target, fetch: (...args) => { fetchCount += 1; return target.fetch(...args); } });
 let admin;
 let skillId;
 let otherSkillId;
@@ -69,6 +73,13 @@ try {
   const all = await kaltura.skills.list(admin).all();
   const found = all.find((s) => s.id === skillId);
   check('3-skills-list-contains-skill', !!found, { count: all.length, foundOurs: !!found });
+
+  // 4a: a rename with a bad character is refused offline and nothing changes.
+  const before = fetchCount;
+  const badRename = await kaltura.skills.update(skillId, { name: `bad name ${RUN_TAG}` }, admin).then(() => null, (e) => e);
+  check('4a-skills-rename-bad-char-refused-offline', badRename?.code === 'bad_request' && fetchCount === before, { code: badRename?.code, fetchCalls: fetchCount - before });
+  const gotAfterRefusal = await kaltura.skills.get(skillId, admin);
+  check('4a-skills-rename-bad-char-name-unchanged', gotAfterRefusal.name === skillName, { name: gotAfterRefusal.name });
 
   // 4: skills.update — rename + description change persists.
   const newName = `live-verify-skill-renamed-${RUN_TAG}`;

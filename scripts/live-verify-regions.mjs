@@ -11,6 +11,8 @@
  *   node scripts/live-verify-regions.mjs
  *
  * Exits 1 on any TLS failure or mismatch.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { REGIONS } from '../src/management/index.js';
 

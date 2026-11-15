@@ -96,7 +96,6 @@
         "isCameraAnalysisEnabled": "bool",
         "youtubeUrl": "str",
         "audioMode": "bool",
-        "phoneMode": "bool",
         "shouldAggregateCurrentTurn": "bool",
         "initialHtml": "str",
         "visualPhotos": [],

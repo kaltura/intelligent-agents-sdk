@@ -56,8 +56,8 @@ export class InsightSettings {
   /**
    * Create an insight setting. WRITE — NOT idempotent (a repeat call creates
    * a second entity, same as {@link Lifecycle#create}). `prompt` can hold
-   * `{{path}}` placeholders into the event. `key` uses letters, digits, `_`,
-   * `.` and `-`. Another key returns 400.
+   * `{{path}}` placeholders into the event. `key` is 1 to 64 characters: letters,
+   * digits, `_`, `.` and `-`. Another key returns 400.
    * @param {{key:string, title:string, prompt:string, valueType:string}} body
    * @param {string} ks (admin)
    */

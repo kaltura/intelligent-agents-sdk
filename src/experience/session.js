@@ -53,6 +53,8 @@ import {
 } from './wire.js';
 import { inspectKs } from '../management/ks-inspect.js';
 import { assertRequestVars } from '../management/conversations.js';
+import { TurnMonitor } from './turn-monitor.js';
+import { DiagnosticsLog } from './diagnostics.js';
 import { KalturaError } from '../core/errors.js';
 import { isSilentOpening, normalizeKickoff, SILENT_OPENING_LABEL } from '../core/opening.js';
 import { redact } from '../core/redact.js';
@@ -78,7 +80,7 @@ import { SCREEN_SHARE_DEFAULTS, createStillCapturer, screenShareError, unsupport
 const PENDING_TOOL_ACK_MAX_AGE_MS = 10 * 60_000;
 
 // One-time `submitStructuredDataForm()` notice (fixed text, never carries viewer values).
-const FORM_RECORDS_ONLY_MSG = '[KalturaAvatarSession] submitStructuredDataForm() records the submission only. It does not change what the agent knows. To give the agent the values, send them in a message with speak(), or as request variables with updateRequestVars() that your prompt reads.';
+const FORM_NOT_SEEN_MSG = '[KalturaAvatarSession] submitStructuredDataForm() sends the values to the server. The agent does not see them. To give the agent the values, send them in a message with speak(), or as request variables with updateRequestVars() that your prompt reads.';
 
 // `joinRoom` (5 s) covers `clientConfiguration`. `joinComplete` has its own, longer budget
 // (20 s): under load it can arrive after 5 s, and a 5 s cap surfaced a JoinRoomTimeout while
@@ -243,6 +245,9 @@ export class KalturaAvatarSession extends Emitter {
    * @param {string} [cfg.stickyId]  Sticky routing id for load-balanced reconnects. Default a random id.
    * @param {number} [cfg.brainStallMs]  How long to wait for a brain response before surfacing a stall signal. Default 12000.
    * @param {number} [cfg.toolSpiralLimit]  Soft tool-call-loop limit before nudging the agent to stop (Agentic ASI loop guard). Default 10.
+   * @param {number} [cfg.speechStartGraceMs]  How long after a reply is complete with no audio before the `speech_not_started` warning. 0 disables. Default 3000.
+   * @param {number} [cfg.slowTurnMs]  Time from a sent turn to the avatar talking before the `slow_turn` warning. 0 disables. Default 10000.
+   * @param {number} [cfg.toolHeavyLimit]  Tool calls in one turn before the `tool_heavy_turn` warning. 0 disables. Default 5.
    * @param {number} [cfg.hardToolSpiralLimit]  Hard tool-call-loop limit that forces a cold reconnect. Default `toolSpiralLimit * 3`.
    * @param {boolean} [cfg.networkAware]  React to `online`/`offline` browser events. Default true when `addEventListener` exists.
    * @param {boolean} [cfg.sessionCompleteOnEnd]  Master switch for signalling genie (`POST {genieUrl}/thread/session_completed`) the moment this conversation truly ends: tab close, backgrounding, or an explicit disconnect(). Default true. `false` disables the POST and its listeners entirely.
@@ -411,6 +416,7 @@ export class KalturaAvatarSession extends Emitter {
     this._maxReconnect = cfg.maxReconnectAttempts ?? 5;
     // Clock for `timings`: `performance.now()` in a browser, `cfg.now` when injected.
     this._clock = cfg.now || (typeof globalThis.performance?.now === 'function' ? () => globalThis.performance.now() : () => Date.now());
+    this._diagnostics = new DiagnosticsLog(this._clock);
     /** @type {{socket:any, roomId:string, onConn:any, cc:any, ready:boolean, idleTimer:any, done:Promise<void>}|null} */ this._prep = null;   // a prepare() that connect() has not consumed yet
     /** @type {Record<string, number>|null} */ this._timings = null;   // open only while connect() runs
     /** @type {Record<string, number>|null} */ this._lastTimings = null;
@@ -465,6 +471,12 @@ export class KalturaAvatarSession extends Emitter {
     // userTranscription (ASR, since a spiral can start from voice, not just speak()).
     // Cleared after a successful resend so a later spiral doesn't replay stale text.
     this._lastTurnText = null;
+    // The server delivers a spoken turn's user text (agentTurnToTalk) AFTER the reply's first
+    // sentence (generatingSpeech), so `transcript {type:'user'}` arrives behind the reply it
+    // prompted. These two ids let the SDK say which reply a user line belongs to: the newest
+    // reply speechId seen, and the last one a user line already claimed.
+    this._replySpeechId = null;
+    this._claimedSpeechId = null;
     // Optional network/visibility awareness (browser only). On by default in a browser.
     this._networkAware = cfg.networkAware ?? (typeof globalThis.addEventListener === 'function');
     // Off by default: on conversationEnded the server has already ended the thread.
@@ -614,6 +626,11 @@ export class KalturaAvatarSession extends Emitter {
     // perceivable output; starts true so a stray turn-end before the first
     // turnStart never misfires. See `_checkEmptyTurn`.
     this._turnSawOutput = true;
+    // Turn timing warnings and the `turnTimings` event. Observes only. See turn-monitor.js.
+    this._turnMonitor = new TurnMonitor({
+      emit: (name, payload) => this.emit(name, payload), isAudioOnly: () => this.mode === 'audio', isPaused: () => this.paused,
+      speechStartGraceMs: cfg.speechStartGraceMs, slowTurnMs: cfg.slowTurnMs, toolHeavyLimit: cfg.toolHeavyLimit,
+    });
   }
 
   // ─────────────────────────── connect ───────────────────────────
@@ -680,6 +697,7 @@ export class KalturaAvatarSession extends Emitter {
       if (prep) {
         // Steps 1 to 3 are done: report them as of now (the app listens from connect()).
         this._clientConfig = prep.cc;
+        this._turnMonitor.configReady(prep.cc);
         this._mark('socketOpen'); this._mark('serverConnected'); this._mark('joinComplete');
         this.emit('streamReady', { finalUrl: prep.onConn?.finalUrl, agentName: prep.onConn?.agentName, hostName: prep.onConn?.hostName });
       } else {
@@ -754,6 +772,7 @@ export class KalturaAvatarSession extends Emitter {
     ]);
     const c = cc?.clientConfiguration || cc;
     this._clientConfig = withoutTurn(c);
+    this._turnMonitor.configReady(this._clientConfig);
     this._mark('joinComplete');
     return ready;
   }
@@ -833,6 +852,29 @@ export class KalturaAvatarSession extends Emitter {
   async getIceReport() {
     const [asr, stv] = await Promise.all([this._ice.asr?.report() ?? null, this._ice.stv?.report() ?? null]);
     return { asr, stv };
+  }
+
+  /**
+   * A content-free record of this session for a bug report: state, language settings, connect
+   * timings, warning counts, the last 200 events and the ICE report. It holds no speech, names,
+   * URLs, tokens or tool arguments. Read-only. Never rejects. Format it with `formatDiagnostics`.
+   * @returns {Promise<import('./diagnostics.js').SessionDiagnostics>}
+   */
+  async diagnostics() {
+    const cc = this._clientConfig;
+    return {
+      schemaVersion: 1,
+      session: { state: String(this.state), mode: this.mode ?? null, paused: !!this.paused },
+      config: cc ? {
+        ...(typeof cc.languageCode === 'string' ? { languageCode: cc.languageCode } : {}),
+        ...(cc.asr && typeof cc.asr === 'object' ? { asr: { language: typeof cc.asr.language === 'string' ? cc.asr.language : undefined, provider: typeof cc.asr.provider === 'string' ? cc.asr.provider : undefined } } : {}),
+        ...(typeof cc.isTapToTalk === 'boolean' ? { isTapToTalk: cc.isTapToTalk } : {}),
+      } : null,
+      connectTimings: this.timings,
+      warnings: this._diagnostics.warningCounts(),
+      events: this._diagnostics.events(),
+      ice: await this.getIceReport(),
+    };
   }
 
   /** The typed error for a peer that never connected. @param {'asr'|'stv'} channel */
@@ -1575,6 +1617,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._debug) this._socket.emit('debug_text_entered', buildTextEntered(finalText, true)); // debug only
     this._armBrainWatchdog();      // expect a brain response; warn if it stalls
     this._armResponsePending();    // positive "awaiting the brain" signal so the app can mask the gap
+    this._turnMonitor.sent();
     this._lastTurnText = rawText;  // for a possible spiral-recovery resend — see `recoverFromSpiral`
   }
 
@@ -1665,6 +1708,7 @@ export class KalturaAvatarSession extends Emitter {
     this._socket.emit('tapToTalkEnd', {});
     this._armBrainWatchdog();
     this._armResponsePending();
+    this._turnMonitor.sent();
     this.emit('tapToTalkEnded', {});
   }
 
@@ -1832,6 +1876,12 @@ export class KalturaAvatarSession extends Emitter {
   mute() { this._setMic(false); }
   /** Unmute the user's mic (resume sending audio) + tell the server. */
   unmute() { this._setMic(true); }
+
+  /** Records the event for `diagnostics()`, then calls the listeners. @param {string} event @param {...any} args */
+  emit(event, ...args) {
+    this._diagnostics?.record(event, args[0]);
+    super.emit(event, ...args);
+  }
 
   /**
    * Overridden so a local VAD (client-side `localSpeakingChanged`/`localMicLevel`,
@@ -2182,7 +2232,7 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /** Pause the live turn loop. */
-  pause() { this._requireConnected('pause'); this.paused = true; this._socket.emit('pauseConversation', {}); }
+  pause() { this._requireConnected('pause'); this.paused = true; this._turnMonitor.quiet(); this._socket.emit('pauseConversation', {}); }
   /**
    * Ask the server to start the pause window again while paused. Sends `extendPause`.
    * Each accepted call starts the window from the beginning. The server sends no reply:
@@ -2416,9 +2466,9 @@ export class KalturaAvatarSession extends Emitter {
   }
 
   /**
-   * Record the viewer's structured-data-form submission. Emits `setFormLeadInfo`
-   * on the socket and returns nothing. It does NOT change what the agent knows:
-   * send the values in a message (`speak()`) or as request variables
+   * Send the viewer's structured-data-form values to the server. Emits `setFormLeadInfo`
+   * on the socket and returns nothing. The agent does NOT see the values:
+   * send them in a message (`speak()`) or as request variables
    * (`updateRequestVars()`) to make the agent act on them. Logs one
    * `console.warn` per session the first time it is called. APP-initiated, so it
    * is UNGATED: the `_gateAgentAction` guardrail is for AGENT-pushed actions,
@@ -2428,9 +2478,9 @@ export class KalturaAvatarSession extends Emitter {
   submitStructuredDataForm(values) {
     this._requireConnected('submitStructuredDataForm');
     this._touchActivity();
-    if (!this._warned.has('form-records-only')) {
-      this._warned.add('form-records-only');
-      if (typeof console !== 'undefined') console.warn(FORM_RECORDS_ONLY_MSG);
+    if (!this._warned.has('form-not-seen')) {
+      this._warned.add('form-not-seen');
+      if (typeof console !== 'undefined') console.warn(FORM_NOT_SEEN_MSG);
     }
     this._socket.emit('setFormLeadInfo', sanitizeJson(values || {}));
   }
@@ -3084,6 +3134,7 @@ export class KalturaAvatarSession extends Emitter {
         // or the bounded window to expire — then end cleanly. NEVER hang here.
         this._reconnectAttempt++;
         this._setState('reconnecting');
+        this._turnMonitor.reset();
         this.emit('reconnecting', { reason: r, attempt: this._reconnectAttempt, maxAttempts: this._maxReconnect });
         this._armReconnectTimer();
       } else {
@@ -3151,6 +3202,7 @@ export class KalturaAvatarSession extends Emitter {
       // ergonomic peer of the headless collectConverse().toolCalls.
       if (action && action.type === 'tool-call') {
         this._dispatchToolCall(action.payload);
+        this._turnMonitor.toolCall();
         this._checkToolSpiral();
       }
       // Fused-segment recovery (see `_dispatchToolCall`/`_recoverFusedToolResponse`):
@@ -3170,6 +3222,7 @@ export class KalturaAvatarSession extends Emitter {
       // condition. It must NOT reset on agent_start_speech/turnStart but SHOULD reset once the
       // brain genuinely recovers.
       if (d && (SPOKEN_TYPES.has(d.type) || (action && action.type === 'render-genui'))) { this._clearBrainWatchdog(); this._sessionToolSegCount = 0; this._hardSpiralRecovering = false; this._turnSawOutput = true; }
+      if (d && SPOKEN_TYPES.has(d.type)) this._turnMonitor.segment(typeof d.content === 'string' ? d.content : undefined);
       // A `think` segment is the server acknowledging the turn — it is working, but has
       // produced nothing perceivable yet, so it ARMS the dead-air signal (a UI can show
       // "thinking" from here). The first real OUTPUT segment (avatar/text/tool/genui) settles it.
@@ -3203,6 +3256,7 @@ export class KalturaAvatarSession extends Emitter {
     // sub-turn 1 is a distinct call from that same name arriving fused in sub-turn 2's
     // segment, and a stale entry would skip the sub-turn-2 recovery.
     socket.on('agent_start_speech', (p) => {
+      if (p?.speechId) this._replySpeechId = p.speechId;
       this._armBrainWatchdog();
       this._pendingFusedBlobs = []; this._turnDispatchedToolNames.clear();
       if (p?.isNewTurn) {
@@ -3212,24 +3266,27 @@ export class KalturaAvatarSession extends Emitter {
         this._turnSawOutput = false;
         if (p?.speechId) this._tracker.beginUtterance(p.speechId);
       }
+      this._turnMonitor.turnStart({ turnId: p?.turnId, speechId: p?.speechId, isNewTurn: p?.isNewTurn });
       this.emit('turnStart', { speechId: p?.speechId, turnId: p?.turnId, isNewTurn: p?.isNewTurn });
     });
     socket.on('agent_end_turn', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId, turnId: p?.turnId }); });
-    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this.emit('turnEnd', { speechId: p?.speechId }); });
+    socket.on('stvFinishedGenerating', (p) => { this._settleResponsePending(); this._checkEmptyTurn(); this._turnMonitor.finishedGenerating(); this.emit('turnEnd', { speechId: p?.speechId }); });
     socket.on('generatingSpeech', (p) => {
-      if (p?.speechId) this._tracker.beginUtterance(p.speechId);
+      if (p?.speechId) { this._tracker.beginUtterance(p.speechId); this._replySpeechId = p.speechId; }
       // The server's own check-in ("are you still there?") and goodbye turns cannot be
       // interrupted and drop any text sent during them — hold speak() until they end.
-      if (isUninterruptibleSpeechId(p?.speechId)) this._uninterruptibleTurn = true;
+      this._turnMonitor.speechId(p?.speechId);
+      if (isUninterruptibleSpeechId(p?.speechId)) { this._uninterruptibleTurn = true; this._turnMonitor.quiet(); }
       const label = openingText(p?.speechId, p?.text);
-      if (label) this._silentOpening = true;
+      if (label) { this._silentOpening = true; this._turnMonitor.quiet(); }
       this.emit('transcript', { text: label ?? clampInbound(p?.text || ''), type: 'final', speechId: p?.speechId, words: [] });
     });
 
     // Captions (authoritative).
     socket.on('stvSpeechChunk', (p) => {
       const label = openingText(p?.speechId, p?.text);
-      if (label) this._silentOpening = true;
+      if (label) { this._silentOpening = true; this._turnMonitor.quiet(); }
+      else this._turnMonitor.speechChunk();
       const text = label ?? clampInbound(p?.text);
       this.emit('speechChunk', { text, durationMs: p?.durationMs, speechId: p?.speechId });
       const tr = this._tracker.ingestChunk({ ...p, text });
@@ -3238,7 +3295,7 @@ export class KalturaAvatarSession extends Emitter {
 
     // Talking state. Content-free turn audit events (HIPAA 164.312(b) — record that a
     // PHI-bearing exchange occurred, NEVER its content) + activity touch (auto-logoff reset).
-    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
+    socket.on('stvStartedTalking', () => { this._clearBrainWatchdog(); this._settleResponsePending(); this._touchActivity(); this._completer.touch(); this.speaking = true; this._turnSawOutput = true; this._turnMonitor.startedTalking(); this._audit('turn.avatar_spoke', 'success', {}); this.emit('avatarStartTalking', {}); });
     // _endUninterruptibleTurn() runs before the app-facing event so text held by speak() is on
     // the wire first, and a speak() called from inside the listener is sent, not held again.
     socket.on('stvFinishedTalking', (p) => {
@@ -3246,20 +3303,23 @@ export class KalturaAvatarSession extends Emitter {
       const silent = this._silentOpening; this._silentOpening = false;
       this.emit('avatarStopTalking', { text: silent ? SILENT_OPENING_LABEL : clampInbound(p?.agentContent) });
     });
-    socket.on('agentInterrupted', () => { this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
+    socket.on('agentInterrupted', () => { this._turnMonitor.quiet(); this.speaking = false; this._silentOpening = false; this._endUninterruptibleTurn(); this._settleResponsePending(); this._turnSawOutput = true; this.emit('interrupted', {}); });
     socket.on('userStartedTalking', () => { this._clearBrainWatchdog(); this._touchActivity(); this.emit('userStartedTalking', {}); });
     // The user's turn produced a transcription → the brain should now respond; watch for a stall
     // and flip the response-pending signal so the app can mask the dead-air gap until output lands.
     socket.on('agentTurnToTalk', (p) => {
-      this._armBrainWatchdog(); this._armResponsePending(); this._touchActivity(); this._completer.touch();
+      this._armBrainWatchdog(); this._armResponsePending(); this._turnMonitor.sent(); this._touchActivity(); this._completer.touch();
       if (!(p && p.userTranscription)) return;
       this._audit('turn.user_captured', 'success', {});
       this._lastTurnText = /** @type {string} */ (clampInbound(p.userTranscription));
+      // Claim the newest reply speechId, once. A user line with no unclaimed reply stays null.
+      const speechId = this._replySpeechId !== this._claimedSpeechId ? this._replySpeechId : null;
+      this._claimedSpeechId = this._replySpeechId;
       // The kickoff is the app's own text, not the user's: drop its server echo from the user
       // transcript, exactly once, by text match, no timer. Anything else the same turn carries
       // (a held speak(), or what the mic heard meanwhile) is still surfaced.
       const shown = this._stripKickoffEcho(this._lastTurnText);
-      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId: null, words: [] });
+      if (shown !== null) this.emit('transcript', { text: shown, type: 'user', speechId, words: [] });
     });
     // Forwarded smart-turn VAD end-of-turn indicator (WIRE-PROTOCOL §4b) — passthrough, no SDK-side logic depends on it yet.
     socket.on('smartTurnStatus', (p) => this.emit('smartTurnStatus', { status: p?.status, timeoutMs: p?.timeout_ms, probability: p?.probability }));
@@ -3268,17 +3328,21 @@ export class KalturaAvatarSession extends Emitter {
     socket.on('conversationTimeWarning', (p) => this.emit('timeWarning', { remainingTime: p?.remainingTime }));
     socket.on('conversationTimeExpired', () => this.emit('timeExpired', {}));
     socket.on('conversationEnded', () => { this.emit('ended', {}); this.disconnect({ final: this._completeOnServerEnd, reason: 'conversation_ended' }); });
-    socket.on('conversationResumed', () => { this.paused = false; this.emit('resumed', {}); });
+    socket.on('conversationResumed', () => { this.paused = false; this._replySpeechId = this._claimedSpeechId = null; this.emit('resumed', {}); });
     socket.on('stvTaskFail', () => this.emit('error', new KalturaError({ type: 'about:blank', title: 'STV task failed', code: 'stv_task_fail', detail: 'The server failed to render/send the avatar video.' })));
 
     // Fatal error events.
+    // A configuration-error frame can arrive just before a refusal. It is NOT surfaced on purpose:
+    // the session reports only the stable code below and never the frame's reason or message, and a
+    // config-error frame alone changes nothing. Pinned by the "config error frame" tests in
+    // test/e2e/connect-fatal.test.js. Do not add a listener for it.
     for (const ev of Object.keys(FATAL_CODE)) {
-      socket.on(ev, () => {
-        this.emit('error', fatalError(ev));
+      socket.on(ev, (payload) => {
+        this.emit('error', fatalError(ev, payload));
         // After this event the connection ends, so no setup wait can succeed.
         // A live session (outside a resume() rebuild) keeps its path: the disconnect ends it.
         if (ev === 'unsupportedClient' && (this.state !== 'connected' || this._resuming)) {
-          const err = fatal(ev);
+          const err = fatal(ev, payload);
           ANNOUNCED.add(err);   // already emitted above: _endWith() must not emit it again
           this._failPending(err);
         }
@@ -3787,6 +3851,7 @@ export class KalturaAvatarSession extends Emitter {
     if (this._coldReconnecting && attempt === 0) return;   // a retry is the same reconnect: the flag stays set across the backoff
     this._coldReconnecting = true;
     this._clearReconnectTimer();
+    this._turnMonitor.reset();   // the old session's turn can never finish
     // A cold reconnect gets a brand-new server-side session — any ACK the old session was
     // waiting on can never arrive now. Drop them rather than let respondToTool()
     // later resolve against a dead session. Bump the generation too, so a respondToTool()
@@ -3939,6 +4004,7 @@ export class KalturaAvatarSession extends Emitter {
     this._uninterruptibleTurn = false;
     this._silentOpening = false;
     this.speaking = false;
+    this._turnMonitor.reset();
     this._clearBrainWatchdog();
     this._stopHealthWatchdog();
     this._settleResponsePending();   // never leave the pending signal stuck across teardown
@@ -4103,14 +4169,24 @@ function openingText(speechId, text) {
 
 /** Fatal errors whose `error` event already fired, so `_endWith()` skips a second one. */
 const ANNOUNCED = new WeakSet();
-/** The SDK error for a fatal socket event. */
-function fatalError(event) {
-  const info = FATAL_CODE[event];
-  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: info.detail, retryable: info.retry });
+/**
+ * The server's reason code from an `unsupportedClient` payload, or undefined. Only an upper-case
+ * word of 1 to 64 characters passes. Nothing else from the frame is read.
+ * @param {unknown} payload
+ */
+function serverCodeOf(payload) {
+  const code = payload && typeof payload === 'object' ? /** @type {any} */ (payload).code : undefined;
+  return typeof code === 'string' && /^[A-Z_]{1,64}$/.test(code) ? code : undefined;
 }
-/** A fatal socket event that ended `connect()`. */
-function fatal(event) {
-  const err = fatalError(event);
+/** The SDK error for a fatal socket event. @param {string} event @param {unknown} [payload] */
+function fatalError(event, payload) {
+  const info = FATAL_CODE[event];
+  const serverCode = event === 'unsupportedClient' ? serverCodeOf(payload) : undefined;
+  return new KalturaError({ type: `https://docs.kaltura.com/agentic/errors/${info.code}`, title: info.code.replace(/_/g, ' '), code: info.code, status: info.num || undefined, detail: info.detail, retryable: info.retry, serverCode });
+}
+/** A fatal socket event that ended `connect()`. @param {string} event @param {unknown} [payload] */
+function fatal(event, payload) {
+  const err = fatalError(event, payload);
   err.phase = 'connect';
   return err;
 }

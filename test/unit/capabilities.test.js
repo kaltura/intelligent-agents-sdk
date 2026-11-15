@@ -17,19 +17,19 @@ import {
 const OFF_DEFAULTS = [
   'avatar', 'avatar_filler', 'avatar_show_content', 'video_gallery',
   'external_video', 'show_link', 'use_web_search', 'screen_share_analysis',
-  'think_process', 'set_vars_tool',
+  'think_process', 'set_vars_tool', 'avatar_emotions',
 ];
 
 // ── const tables ────────────────────────────────────────────────────────────
 
-test('CAPABILITIES is the frozen 17-name set in canonical order', () => {
-  assert.equal(CAPABILITIES.length, 17);
+test('CAPABILITIES is the frozen 18-name set in canonical order', () => {
+  assert.equal(CAPABILITIES.length, 18);
   assert.ok(Object.isFrozen(CAPABILITIES));
   assert.deepEqual([...CAPABILITIES], [
     'use_knowledge_base', 'use_content_search', 'use_get_entry_content',
     'generate_followup_questions', 'include_sources', 'use_related_files',
     'video_gallery', 'external_video', 'show_link', 'avatar', 'avatar_filler',
-    'avatar_show_content', 'kaltura_genie_experiences', 'use_web_search',
+    'avatar_show_content', 'avatar_emotions', 'kaltura_genie_experiences', 'use_web_search',
     'screen_share_analysis', 'think_process', 'set_vars_tool',
   ]);
 });
@@ -39,7 +39,7 @@ test('CAPABILITY_STATE is the frozen on/off/disabled enum', () => {
   assert.deepEqual(CAPABILITY_STATE, { ON: 'on', OFF: 'off', DISABLED: 'disabled' });
 });
 
-test('CAPABILITY_DEFAULTS: 10 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
+test('CAPABILITY_DEFAULTS: 11 OFF, 7 ON (kaltura_genie_experiences ON); frozen snapshot', () => {
   assert.ok(Object.isFrozen(CAPABILITY_DEFAULTS));
   const off = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'off');
   const on = CAPABILITIES.filter((c) => CAPABILITY_DEFAULTS[c] === 'on');

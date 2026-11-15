@@ -12,6 +12,8 @@
  * is not a pass. Runs are sequential: the scripts create real agents and must not overlap.
  *
  * Credentials come from `scripts/lib/target.mjs` in each child. This runner never reads them.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, createWriteStream } from 'node:fs';

@@ -89,10 +89,17 @@ function waitFor(session, event, ms = 3000) {
   });
 }
 
-/** Drive the decoder like a real browser: metadata then canplay, shortly after ontrack. */
+/**
+ * Drive the decoder like a real browser: metadata then canplay, after both tracks arrived.
+ * Waits for the tracks themselves, not for a fixed time. The fake handshake is a chain of
+ * macrotask hops, so on a loaded machine a timer can fire before `ontrack`. The element
+ * then already reports a size on the video track, and `videoMetadata` comes before `track:audio`.
+ */
 async function connectDriven(session, videoEl) {
+  let tracks = 0;
+  const bothTracks = new Promise((resolve) => session.on('track', () => { if (++tracks === 2) resolve(); }));
   const p = session.connect();
-  await delay(20);
+  await Promise.race([bothTracks, p]);   // a connect() that rejects first ends the wait
   videoEl.fireLoadedMetadata(960, 540);
   videoEl.fireCanPlay();
   await p;

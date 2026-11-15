@@ -4,7 +4,7 @@
  * structured-data form the model emits per `user_properties_forms`. Each field
  * is `{key, type, label, knownValue}` (the model may pre-fill a `known_value` it
  * already extracted). The host renders inputs, collects, and sends the values with
- * `speak()` or `updateRequestVars()` (`submitStructuredDataForm` only records them).
+ * `speak()` or `updateRequestVars()` (`submitStructuredDataForm` sends them to the server, and the agent does not see them).
  * `formId` (from `form_id`) identifies the form and is passed back on submit.
  * Framework-agnostic `{kind:'user-properties-form', data}`.
  */

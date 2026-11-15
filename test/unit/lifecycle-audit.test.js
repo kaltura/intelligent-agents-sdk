@@ -119,6 +119,9 @@ const TABLE = [
   ['badges_unfiltered: not flagged on other event types', badgeRule({ eventType: 'session_ended', eventConditions: scope('a1') }), {}, []],
   ['createBadges: odd badges input does not throw', badgeRule({ action: { actionType: 'createBadges', badges: 'x' } }), {}, []],
   ['createBadges: entries without a string badgeId are ignored', badgeRule({ action: { actionType: 'createBadges', badges: [null, { type: 'boolean' }, { badgeId: 5 }] } }), {}, []],
+  ['rule_operator_never_matches: not_empty', insightRule({ eventConditions: [...scope('a1'), { field: 'object.user_id', operator: 'not_empty', value: 'x' }] }), {}, ['rule_operator_never_matches']],
+  ['rule_operator_never_matches: one finding per not_empty condition', insightRule({ eventConditions: [...scope('a1'), { field: 'object.user_id', operator: 'not_empty', value: 'x' }, { field: 'object.origin', operator: 'not_empty', value: 'x' }] }), {}, ['rule_operator_never_matches', 'rule_operator_never_matches']],
+  ['rule_operator_never_matches: a working operator is clean', insightRule({ eventConditions: [...scope('a1'), { field: 'object.user_id', operator: 'neq', value: 'x' }] }), {}, []],
   ['rule_disabled: only that finding', insightRule({ status: 'disabled', eventConditions: [], action: { actionType: 'triggerInsightSettingsKai', insightSettingsIds: ['gone'] } }), {}, ['rule_disabled']],
   ['clean email rule reports nothing', emailRule(), {}, []],
   ['clean insight rule reports nothing', insightRule(), {}, []],
@@ -319,6 +322,21 @@ test('lifecycle.audit({agentIds}) keeps rules that run for those agents, plus un
   const { mgmt } = harness({ rules, agents: AGENTS });
   const report = await mgmt.lifecycle.audit(ADMIN_KS, { agentIds: ['a1'] });
   assert.deepEqual(report.findings.map((f) => f.ruleId).sort(), ['x1', 'x3']);
+});
+
+test('lifecycle.audit({agentIds}) counts only the selected agents and the rules it kept', async () => {
+  const rules = [
+    insightRule({ id: 'x1', eventConditions: scope('a1') }),
+    insightRule({ id: 'x2', eventConditions: scope('a2') }),
+    insightRule({ id: 'x3', eventConditions: [] }),
+  ];
+  const { mgmt } = harness({ rules, agents: AGENTS });
+  const all = await mgmt.lifecycle.audit(ADMIN_KS);
+  const one = await mgmt.lifecycle.audit(ADMIN_KS, { agentIds: ['a1'] });
+  assert.equal(all.checked.rules, 3);
+  assert.equal(all.checked.agents, AGENTS.length);
+  assert.equal(one.checked.rules, 2, 'x1 plus the unscoped x3');
+  assert.equal(one.checked.agents, 1);
 });
 
 test('lifecycle.audit needs an admin token', async () => {

@@ -306,12 +306,13 @@ test('lintPrompts: non-array throws KalturaError', () => {
 
 // ─── §4a.3: gate/placeholder mismatch + the canonical page-context block ───
 
-test('lintPrompts: gate explicitly ON with no client {{var}} anywhere → vars_gate_unreferenced warning', () => {
+test('lintPrompts: gate explicitly ON with no client {{var}} anywhere → vars_gate_unreferenced info', () => {
   const r = lintPrompts([
     { key: 'goal', headerTemplate: 'Goal', type: 'custom', value: 'Help users. {{sys__user_id}}' },
   ], { allowClientVariables: true });
   assert.equal(hasFinding(r.findings, 'vars_gate_unreferenced'), true);
-  assert.equal(r.ok, true, 'a warning, never an error');
+  assert.equal(r.findings.find((f) => f.code === 'vars_gate_unreferenced').severity, 'info', 'the gate is on by default, so this is not a fault');
+  assert.equal(r.ok, true, 'never an error');
   assert.deepEqual(r.clientVariables, []);
 });
 

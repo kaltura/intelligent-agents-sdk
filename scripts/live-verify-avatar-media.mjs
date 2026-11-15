@@ -27,6 +27,8 @@
  * Credentials: AGENTIC_PARTNER_ID / AGENTIC_ADMIN_SECRET from the environment or a
  * repo-root .env — never from a tracked file. Artifact JSON lands in
  * live-verify-artifacts/ (gitignored) and contains only ids and measurements.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { writeFileSync, mkdirSync, createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve, dirname, extname, normalize } from 'node:path';

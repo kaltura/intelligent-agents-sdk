@@ -40,7 +40,7 @@ This is a normal intellect write. `capabilities` is a full-replace dict, so send
 
 ## Step 3: Upload content into a category
 
-`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.upload(id, { fileName }, ks)` starts an upload from the record id. It creates one entry and an upload token and returns `{upload_token_id, entry_id, category_id}`. It sends no file bytes, so you upload the file to the token yourself. When the record has no category, the call creates one and adds it to the record. Later calls without `categoryId` reuse it. A `categoryId` the record does not use gives `bad_request`. An unsupported file extension gives `bad_request` with the list of supported types.
+`knowledge.uploadDocument()` (SDK) or the Kaltura OVP media ingest APIs put the actual media entries into a media category. `knowledge.upload(id, { fileName }, ks)` starts an upload from the record id. It creates one entry and an upload token and returns `{upload_token_id, entry_id, category_id}`. It sends no file bytes, so you upload the file to the token yourself. When the record has no category, the call creates one and adds it to the record. Later calls without `categoryId` reuse it. A `categoryId` the record does not use gives `bad_request`. An unsupported file extension gives `bad_request` with the list of supported types. An account that restricts the file type makes `uploadDocument` and `uploadMarkdown` throw `upload_file_type_restricted` (see [Common Errors](../../../API-REFERENCE.md#common-errors)).
 
 `knowledge.createCategory()` creates a category if you don't already have one. A category made this way is only a container. It is not connected to the knowledge record from Step 1 until Step 4.
 
@@ -60,7 +60,7 @@ await mgmt.knowledge.addSource(
 
 `knowledge.addSource(id, source, ks)` is the step that actually makes the uploaded content retrievable. A knowledge record with no `config.sources[]` entry has nothing to search, even with `knowledge_ids` linked and `use_knowledge_base: "on"`.
 
-`knowledge.removeSource(id, source, ks)` is the inverse. Both calls change one entry of `config.sources[]` without disturbing the others, and are idempotent. Call them one at a time for the same record id, because two overlapping calls can lose one of the changes. To change sources, use these two calls. If you call `updateRecord({config}, ks)` directly, send the full `config`.
+`knowledge.removeSource(id, source, ks)` is the inverse, but a source that lists `categoryIds` cannot be removed: the call is refused with `bad_request`. Delete the record instead. Both calls change one entry of `config.sources[]` without disturbing the others, and are idempotent. Call them one at a time for the same record id, because two overlapping calls can lose one of the changes. To change sources, use these two calls. If you call `updateRecord({config}, ks)` directly, send the full `config`.
 
 `buildIndexerObjects()` defaults to all three modalities (in this order: `document`, `caption`, `ocr`) when called with no arguments or an empty array:
 

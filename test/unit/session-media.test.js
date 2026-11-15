@@ -11,6 +11,7 @@ import { KalturaAvatarSession } from '../../src/experience/index.js';
 import { FakeSocket, scriptHappyPath } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 import { assertInvariants } from './helpers/avatar-media-invariants.js';
+import { until, bothTracks } from './helpers/wait.js';
 
 const CONV_KS = 'djJ8' + Buffer.from('v2|123|geniegpcid:1222').toString('base64url');
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +44,7 @@ test('gate listeners on videoEl are removed once mediaReady settles (normal fini
   const { session, socket } = newSession({ videoEl });
   scriptHappyPath(socket);
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   assert.equal(videoEl.listenerCount('canplay'), 1); assert.equal(videoEl.listenerCount('loadedmetadata'), 1);
   videoEl.fireLoadedMetadata(640, 360); videoEl.fireCanPlay();
   await connectP;
@@ -56,7 +57,7 @@ test('R-m: disconnect() mid-connect removes the gate listeners and never plays/w
   const { session, socket } = newSession({ videoEl });
   scriptHappyPath(socket);
   const connectP = session.connect();
-  await delay(20);
+  await bothTracks(session, connectP);
   session.disconnect();
   await connectP.catch(() => {});
   assert.equal(videoEl.listenerCount('canplay'), 0); assert.equal(videoEl.listenerCount('loadedmetadata'), 0);
@@ -77,7 +78,7 @@ test('R-e: setAudioEl() between the video and audio ontrack → split shape, one
   scriptHappyPath(socket);
   const ready = count(session, 'mediaReady');
   const connectP = session.connect();
-  await delay(20);
+  await until(() => stvPeer()?.remoteDescription);   // answer applied; tracks are fired by hand
   stvPeer().fireTrack('video');
   session.setAudioEl(audioEl);
   stvPeer().fireTrack('audio');
@@ -136,7 +137,7 @@ test('R-l: setVideoEl(newEl) after ontrack but before the gate settles → media
   const ready = [];
   session.on('mediaReady', (p) => ready.push(p));
   const connectP = session.connect();
-  await delay(20);   // both tracks attached to oldEl, canplay pending
+  await bothTracks(session, connectP);   // both tracks attached to oldEl, canplay pending
   session.setVideoEl(newEl);
   assert.equal(oldEl.srcObject, null);
   assert.deepEqual(kinds(newEl), ['audio', 'video']);
@@ -406,7 +407,7 @@ test('P11: mediaReady/videoMetadata carry real dims from videoEl.loadedmetadata 
   session.on('videoMetadata', (p) => videoMetadata.push(p));
   await withReversedTrackOrder(async () => {
     const connectP = session.connect();
-    await delay(20);
+    await bothTracks(session, connectP);
     videoEl.fireLoadedMetadata(960, 540);
     videoEl.fireCanPlay();
     await connectP;
@@ -426,7 +427,7 @@ test('P11 split: mediaReady/videoMetadata still carry real dims from videoEl (ne
   session.on('videoMetadata', (p) => videoMetadata.push(p));
   await withReversedTrackOrder(async () => {
     const connectP = session.connect();
-    await delay(20);
+    await bothTracks(session, connectP);
     videoEl.fireLoadedMetadata(1280, 720);
     videoEl.fireCanPlay();
     await connectP;
@@ -467,7 +468,7 @@ test("R-b: a 0×0 loadedmetadata firing between the two ontracks pins videoMetad
   session.on('mediaReady', (p) => mediaReady.push(p));
   session.on('videoMetadata', (p) => videoMetadata.push(p));
   const connectP = session.connect();
-  await delay(20);
+  await until(() => stvPeer()?.remoteDescription);   // answer applied; tracks are fired by hand
   stvPeer().fireTrack('video');
   videoEl.fireLoadedMetadata(0, 0);   // decoder reports metadata before it knows the real dims
   videoEl.fireCanPlay();
@@ -549,7 +550,7 @@ test('swap during re-subscribe: setVideoEl()/setAudioEl() while the recovery WHE
   const recovering = new Promise((resolve) => session.on('mediaRecovering', resolve));
   stvPeer().setIce('failed');
   await recovering;
-  await delay(0);   // _recoverMedia closed the old STV pc and called _connectStv() again; its WHEP POST is now held
+  await until(() => resolveRecoveryWhep);   // _recoverMedia closed the old STV pc and called _connectStv() again; its WHEP POST is now held
 
   const newVideoEl = new FakeVideoEl({ autoCanPlay: true });
   const newAudioEl = new FakeVideoEl({ autoCanPlay: true });
@@ -560,7 +561,7 @@ test('swap during re-subscribe: setVideoEl()/setAudioEl() while the recovery WHE
   const recovered = new Promise((resolve) => session.on('mediaRecovered', resolve));
   resolveRecoveryWhep();
   await recovered;
-  await delay(20);   // let the new pc's ontrack land and attach() reconcile the swapped-in tracks
+  await until(() => newVideoEl.srcObject && newAudioEl.srcObject);   // the new pc's ontrack landed and attach() reconciled the swapped-in tracks
 
   assert.deepEqual(kinds(newVideoEl), ['video']);
   assert.deepEqual(kinds(newAudioEl), ['audio']);

@@ -101,9 +101,16 @@ export const SKILL_MODES = Object.freeze(['adhoc', 'adhoc-save', 'preloaded']);
 
 /**
  * Known `model_configuration.model_id` values. `us.`/`eu.` prefixes pick the
- * Claude region; Gemini ids are global. `setModelConfiguration` sends any
- * non-empty string, so you can send an id that is not listed here. Check a new
- * id with one live turn.
+ * Claude region; the unprefixed `claude-*` names are provider-neutral; Gemini
+ * ids are global. On the default production environment, one live turn
+ * answered for `claude-sonnet-5`, `claude-haiku-4-5`,
+ * `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`
+ * and `gemini-3.1-flash-lite` to `gemini-3.8-flash`. These failed in the
+ * live turn we ran: `gemini-3-flash-preview`, `gemini-2.5-flash`,
+ * `us.anthropic.claude-sonnet-4-20250514-v1:0` and every `eu.` id. The failure
+ * was a server error, so retry before you rule one out.
+ * `setModelConfiguration` sends any non-empty string, so you can
+ * send an id that is not listed here. Check an id with one live turn.
  * @type {readonly string[]}
  */
 export const MODEL_IDS = Object.freeze([
@@ -113,6 +120,8 @@ export const MODEL_IDS = Object.freeze([
   'eu.anthropic.claude-sonnet-4-20250514-v1:0',
   'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'claude-sonnet-5',
+  'claude-haiku-4-5',
   'gemini-3-flash-preview',
   'gemini-2.5-flash',
   'gemini-3.1-flash-lite',
@@ -138,7 +147,8 @@ export const THINKING_LEVELS = Object.freeze(['none', 'minimal', 'low', 'medium'
  */
 export const SUMMARY_CONTENT_TYPES = Object.freeze(['text', 'html', 'html_with_js']);
 
-const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'include_thoughts', 'temperature']);
+const MODEL_CONFIGURATION_KEYS = Object.freeze(['model_id', 'max_output_tokens', 'thinking_level', 'include_thoughts', 'temperature', 'provider']);
+const MODEL_PROVIDERS = Object.freeze(['vertex', 'bedrock']);
 const AVATAR_SUMMARY_CONFIG_KEYS = Object.freeze(['prompt', 'analysis', 'template', 'content_type']);
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
@@ -211,12 +221,13 @@ export class IntellectConfig {
    * is looked up in `skills.list`. Then it runs {@link auditIntellectConfig},
    * which lists the finding codes.
    * @param {number} configId @param {string} ks (admin)
+   * @param {{config?:Record<string, any>, tools?:any[], skills?:any[]}} [opts] `config` is the intellect you already read with `intellects.get`. `tools` and `skills` are the entities you already read for it (the ones that exist). Each saves its reads.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
-  async audit(configId, ks) {
+  async audit(configId, ks, opts = {}) {
     this._.assertAdmin(ks, 'intellectConfig.audit');
     requireInt(configId, 'intellectConfig.audit configId');
-    const config = await this._intellects.get(configId, ks);
+    const config = opts.config ?? await this._intellects.get(configId, ks);
     const { tools, skills } = this._siblings;
     /** @param {{get:(id:string, ks:string)=>Promise<any>}|undefined} resource @param {unknown[]} ids @param {(id:string)=>Promise<any>} [fallback] Tried for an id that `get` does not find. */
     const fetchAll = async (resource, ids, fallback) => {
@@ -240,7 +251,8 @@ export class IntellectConfig {
     };
     const toolIds = [...(config?.tool_ids ?? []), ...(config?.thread_start_tools ?? [])].map(toolRefId).filter(Boolean);
     const skillIds = (config?.skill_ids ?? []).map((/** @type {any} */ s) => s?.id ?? s);
-    const [toolList, skillList] = [await fetchAll(tools, toolIds), await fetchAll(skills, skillIds, fromList)];
+    const toolList = opts.tools ?? await fetchAll(tools, toolIds);
+    const skillList = opts.skills ?? await fetchAll(skills, skillIds, fromList);
     const findings = auditIntellectConfig(config, { tools: toolList, skills: skillList });
     return auditReport(findings, { intellects: 1, tools: toolList?.length ?? 0, skills: skillList?.length ?? 0 });
   }
@@ -421,12 +433,14 @@ export class IntellectConfig {
    * client-side: `model_id` a non-empty string (known ids: {@link MODEL_IDS}),
    * `thinking_level` in {@link THINKING_LEVELS} (not every model uses it),
    * `include_thoughts` a boolean, `max_output_tokens` a positive integer,
-   * `temperature` a number in [0, 1]. Unknown keys are rejected.
+   * `temperature` a number in [0, 1] (replies can still differ at `0`, so do not rely on it for
+   * repeatable output), `provider` `'vertex'` or `'bedrock'` (the
+   * cloud that serves the model). Unknown keys are rejected.
    * With the `avatar_show_content` capability on, unset `thinking_level`
    * defaults to `low` and unset `max_output_tokens` to 4096.
    * WRITE, idempotent.
    * @param {number} configId
-   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'none'|'minimal'|'low'|'medium'|'high', include_thoughts?:boolean, temperature?:number}|null} config
+   * @param {{model_id?:string, max_output_tokens?:number, thinking_level?:'none'|'minimal'|'low'|'medium'|'high', include_thoughts?:boolean, temperature?:number, provider?:'vertex'|'bedrock'}|null} config
    * @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
    */
@@ -435,7 +449,7 @@ export class IntellectConfig {
     requireInt(configId, 'intellectConfig.setModelConfiguration configId');
     if (config !== null) {
       if (!config || typeof config !== 'object' || Array.isArray(config)) {
-        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature? } object or null.');
+        throw bad('intellectConfig.setModelConfiguration needs a { model_id?, max_output_tokens?, thinking_level?, include_thoughts?, temperature?, provider? } object or null.');
       }
       for (const k of Object.keys(config)) {
         if (!MODEL_CONFIGURATION_KEYS.includes(k)) {
@@ -453,6 +467,9 @@ export class IntellectConfig {
       }
       if (config.include_thoughts !== undefined && typeof config.include_thoughts !== 'boolean') {
         throw bad(`intellectConfig.setModelConfiguration: include_thoughts must be true or false, got ${JSON.stringify(config.include_thoughts)}.`);
+      }
+      if (config.provider !== undefined && !MODEL_PROVIDERS.includes(config.provider)) {
+        throw bad(`intellectConfig.setModelConfiguration: provider must be one of ${MODEL_PROVIDERS.join('/')}, got ${JSON.stringify(config.provider)}.`);
       }
       if (config.temperature !== undefined && (typeof config.temperature !== 'number' || Number.isNaN(config.temperature) || config.temperature < 0 || config.temperature > 1)) {
         throw bad(`intellectConfig.setModelConfiguration: temperature must be a number between 0 and 1, got ${JSON.stringify(config.temperature)}.`);
@@ -504,7 +521,8 @@ export class IntellectConfig {
    * `analysis` maps output keys to descriptions; `template` is a template over the
    * `analysis` keys; `content_type` is one of {@link SUMMARY_CONTENT_TYPES}.
    * Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when
-   * `analysis` is unset). The summary reaches the client as a `summary` message
+   * `analysis` is unset). A template the server rejects returns 400
+   * `bad_request`. The summary reaches the client as a `summary` message
    * and is skipped when the thread has no human messages. WRITE, idempotent.
    * @param {number} configId
    * @param {{prompt?:string, analysis?:Record<string,string>, template?:string, content_type?:'text'|'html'|'html_with_js'}|null} config

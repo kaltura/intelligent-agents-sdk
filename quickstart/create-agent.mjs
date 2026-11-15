@@ -23,7 +23,7 @@ try {
   const env = readFileSync(resolve(__dirname, '../.env'), 'utf8');
   for (const line of env.split('\n')) {
     const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
   }
 } catch {
   // No .env file — credentials must be in the environment already.

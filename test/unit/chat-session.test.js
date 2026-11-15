@@ -29,6 +29,7 @@ function newSession(opts = {}) {
 test('requires a token; validates requestVars and capabilities at construction', () => {
   assert.throws(() => new KalturaChatSession({}), /token/);
   assert.throws(() => new KalturaChatSession({ token: CONV_KS, requestVars: { sys__user_id: 'x' } }), (e) => e.code === 'validation_error');
+  assert.throws(() => new KalturaChatSession({ token: CONV_KS, requestVars: { sys__custom: 'x' } }), (e) => e.code === 'validation_error');
   assert.throws(() => new KalturaChatSession({ token: CONV_KS, requestVars: { nested: { a: 1 } } }), (e) => e instanceof KalturaError);
   assert.throws(() => new KalturaChatSession({ token: CONV_KS, capabilities: { avatar: 'maybe' } }), (e) => e instanceof KalturaError);
 });
@@ -141,6 +142,7 @@ test('request_vars ride every turn; updateRequestVars merges; setDynamicPrompt s
   assert.equal(vars.plan, 'pro');
   assert.deepEqual(JSON.parse(vars.page_context), { page: '/pricing', headings: ['Plans'] });
   assert.throws(() => session.updateRequestVars({ sys__user_id: 'nope' }), (e) => e.code === 'validation_error');
+  assert.throws(() => session.updateRequestVars({ sys__custom: 'nope' }), (e) => e.code === 'validation_error' && e.detail.includes('"sys__custom"'));
 });
 
 test('capabilities: omitted by default, sent verbatim when configured', async () => {

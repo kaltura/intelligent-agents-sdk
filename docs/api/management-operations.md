@@ -33,6 +33,17 @@ The request also takes a top-level `orderBy`, next to `filter`, not inside it. `
 | Delete | `POST /v1/avatar/delete` | `{"id":"24-char-hex"}` |
 | List templates | `POST /v1/avatar-template/list` | `{"pager":{"offset":0,"limit":30}}`. Curated presets, each pairing a `voice` with either a ready `visual` or a `face`/`background` pair ([build/avatar-and-agent.md § Three ways to get a visual](build/avatar-and-agent.md#three-ways-to-get-a-visual)). SDK: `mgmt.avatars.listTemplates(ks, opts)`; `opts.idsIn` filters to specific template ids. |
 
+**Failures in the response body.** `avatars.get`, `avatars.create` and `avatars.update` can fail with HTTP 200. `code` is `api_exception`, or a more specific SDK code such as `catalog_item_not_found` when the cause is a missing catalog item. The reason is always in `err.title`. Branch on `title`, not `code`.
+
+| `title` | Meaning | Where |
+|---|---|---|
+| `INVALID_VISUAL_ID` | `visual.id` is not in the catalog | create and update |
+| `AVATAR_TEMPLATE_NOT_FOUND` | `templateId` does not exist | create only |
+| `AVATAR_MISSING_VISUAL_RESOLUTION` | No usable visual: none sent, or only one of `face` and `background` | create |
+| `AVATAR_FAILED_TO_COMPOSE_VISUAL` | `face` and `background` could not be combined, for example an unknown face id | create |
+| `AVATAR_MISSING_VOICE` | No `voice` sent | create |
+| `AVATAR_NOT_FOUND` | Unknown avatar id | get |
+
 **Changing the look on update.** On create, `face` and `background` travel together. On update:
 
 - To change the background, send `background` alone. It applies to the avatar's current face.
@@ -49,6 +60,8 @@ Avatars carry no `adminTags`. `avatars.create` and `avatars.update` throw `bad_r
 | Update | `POST /v1/intellect/update` | See § Configure an Intellect |
 | Delete | `POST /v1/intellect/delete` | `{"id":1389}` |
 
+`filter.nameLike` on intellects, tools and skills matches the whole name, case-insensitive. Add `%` for a partial match, for example `'%support%'`. On knowledge records it is a partial match without `%`.
+
 Create (`POST /v1/intellect/add`) isn't listed here. See [build/intellect.md](build/intellect.md) for creating an intellect with the SDK's default-applying `mgmt.intellects.create()`.
 
 Deleting an agent does **not** delete its avatar or intellect.
@@ -59,7 +72,7 @@ Typed setters on `mgmt.intellectConfig` for the other single-purpose fields, all
 
 | Setter | Field | Clear with |
 |---|---|---|
-| `setModelConfiguration` | `model_configuration` (`model_id`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `include_thoughts`, `temperature`) | `null` |
+| `setModelConfiguration` | `model_configuration` (`model_id`, `max_output_tokens`, `thinking_level` in `THINKING_LEVELS`, `include_thoughts`, `temperature`, `provider`) | `null` |
 | `setOpeningPhrase` | `opening_phrase` (the opening line of every avatar session; a template over `requestVars` and `sys__*`; `SILENT_OPENING` for no spoken opening, see [START-THE-CONVERSATION.md](../START-THE-CONVERSATION.md#personalize-the-opening)) | `null` |
 | `setThreadStartTools` | `thread_start_tools`: unique tool ids run in order when a thread starts, before the first user turn[^1] | `[]` |
 | `setAvatarSummaryConfig` | `avatar_summary_config` (`prompt`, `analysis`, `template`, `content_type` in `SUMMARY_CONTENT_TYPES`)[^2] | `null` |
@@ -69,11 +82,11 @@ Each validates client-side and throws `bad_request` before any network call. See
 
 [^1]: Use `api` and `code` tools here. An `api` tool with `wait_for_response:false` runs without waiting; every other thread-start tool is waited for. The result is not given to the model. A failing tool does not fail the conversation. A thread-start tool never appears as a `tool` segment in the stream.
 
-[^2]: `null` restores the defaults (`analysis: { summary }`, `template: '{{ summary }}'`, `content_type: 'text'`). Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when `analysis` is unset). The SDK rejects a mismatch client-side. The summary is skipped entirely when the thread has no human messages.
+[^2]: `null` restores the defaults (`analysis: { summary }`, `template: '{{ summary }}'`, `content_type: 'text'`). Every `{{ key }}` in `template` must be an `analysis` key (or `summary` when `analysis` is unset). The SDK rejects a mismatch client-side. A template the server rejects returns 400 `bad_request`. The summary is skipped entirely when the thread has no human messages.
 
 ## Tools
 
-A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409. Skills below follow the same rule.
+A standalone, partner-level entity, not embedded in an intellect. A name that is already in use returns 409.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
@@ -87,17 +100,17 @@ A standalone, partner-level entity, not embedded in an intellect. A name that is
 
 ## Skills
 
-A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. A name that is already in use returns 409. Tools above follow the same rule.
+A standalone, partner-level reusable-instruction entity: `{id (uuid), name, description, instructions, condition?}`. `condition` is a bare [condition](build/intellect.md#conditions) expression, checked before the call. A template form like `{{ x }}` throws `bad_request`. SDK: `mgmt.skills`. Names are unique ignoring case. A name that is already in use returns 409 on add and on rename.
 
 | Operation | Endpoint | Body |
 |-----------|----------|------|
 | List | `POST /v1/skill/list` | `{"filter":{"objectType":"SkillListFilter"},"pager":{"pageIndex":1,"pageSize":30}}` |
 | Get | `POST /v1/skill/get` | `{"id":"SKILL_UUID"}` |
 | Add | `POST /v1/skill/add` | `{"name":"...", "description":"...", "instructions"?, "condition"?}`. `name` may use only letters, digits, `_` and `-`. The SDK throws `bad_request` before the request otherwise. |
-| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A rename to a name already in use returns 409 |
+| Update | `POST /v1/skill/update` | `{"id":"SKILL_UUID", "name"?, "description"?, "instructions"?, "condition"?}`. Idempotent. `condition: ''` clears it. A new `name` uses the same character rule as add, checked before the request |
 | Delete | `POST /v1/skill/delete` | `{"id":"SKILL_UUID"}`. Replies `{id}`. A follow-up get returns 404 |
 
-**Variables in skills.** The `instructions` of a skill attached with mode `'preloaded'` render `{{ variable }}` placeholders and template tags, like prompt blocks. A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
+**Variables in skills.** The `instructions` of a skill render `{{ variable }}` placeholders and template tags, like prompt blocks, in every mode (`'adhoc'`, `'adhoc-save'` and `'preloaded'`). A literal `{{` or `{%` in instructions is read as template syntax, so avoid it in plain text.
 
 **Shared skills.** A shared skill (`partner_id: 0`) appears in `skills.list` and can be attached with `setSkillIds`. `skills.get`, `skills.update` and `skills.delete` answer 404 `not_found` for it, so you cannot read, edit or delete it. `setSkillIds` rejects a skill id that does not exist or that you cannot use with 403 `forbidden`. `intellectConfig.audit` and `doctor` accept an attached shared skill.
 
@@ -114,16 +127,16 @@ Token rules per method: [operate.md § Threads](operate.md#threads). `threads.pu
 | Rename | `POST /v1/thread/update` | `{"id":"UUID","title":"New name"}` |
 | Set analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{"analysis":{...}}}`. Shallow merge one level under `analysis`. A key whose value changes fires `analysis_updated`. A patch that changes nothing fires no event. SDK: `mgmt.threads.setAnalysis(id, patch, ks)`. |
 | Clear analysis | `POST /v1/thread/update` | `{"id":"UUID","thread_metadata":{}}`. Clears `analysis`. SDK: `mgmt.threads.clearAnalysis(id, ks)`. |
-| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. A 403 that reports disabled client variables throws `client_variables_disabled`, as on converse. A body or `request_vars` over the server's size limit throws `payload_too_large`. |
+| Push | `POST /thread/push` (no `v1/` prefix on this route) | `{"id":"UUID","content":"...","request_vars"?:{...},"system_message"?:"..."}`. `delivered:false` in the reply means no live socket is attached. The message is still saved and appears in the Messages list. SDK: `mgmt.threads.push({id,content,request_vars?,system_message?}, ks)`. Push needs an admin key. The SDK throws `wrong_token_scope` for a non-admin token it can recognize, and the server answers 403 to any other non-admin key. An oversized `content`, `request_vars` or `system_message` returns 413 and throws `payload_too_large`. Limits: [operate.md § Size limits](operate.md#size-limits). |
 | Delete | `POST /v1/thread/delete` | `{"thread_ids":["UUID"]}`. See [operate.md § Threads](operate.md#threads) for delete behavior |
 | Transcript | `POST /v1/thread/get_transcripts` | `{"id":"UUID"}` |
 
-**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `partnerIdEquals`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [operate.md § Threads](operate.md#threads).
+**Filter fields (list):** `agentIdEquals`, `agentIdIn`, `contextIdEqual`, `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `idEquals`, `idsIn`, `isEverywhere`, `orderBy`, `originEquals`, `originIn`, `statusEquals`, `statusIn`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Origin values: [operate.md § Threads](operate.md#threads).
 
 Rules to know:
 
 - Put `orderBy` inside `filter` (one of `+createdAt`, `-createdAt`, `+updatedAt`, `-updatedAt`).
-- Send `statusEquals`/`statusIn` as numbers, `0` or `1`.
+- Send `statusEquals`/`statusIn` as numbers, `0` or `1`. `statusEquals: 1` returns deleted threads, which the default list omits ([operate.md § Threads](operate.md#threads)).
 - Use only the filter fields listed above. `partnerIdIn` is not supported.
 - Pager is `{pageIndex, pageSize}` (1-based). Use `pageIndex`/`pageSize`, not `{offset, limit}`.
 - `pageSize` is at most 500. This applies to every list and report pager in this section (Threads, Messages, Feedback).
@@ -143,7 +156,7 @@ SDK: `mgmt.messages`, `mgmt.feedback`. `messages.list`, `get` and `share` accept
 | List messages | `POST /message/list` | `{"filter":{"objectType":"GenieListMessageFilter"},"pager":{"pageIndex":1,"pageSize":50}}`. `opts.threadId` is sugar for `filter.threadIdEquals` and wins if both are given. |
 | Share a message | `POST /message/share` | `{"id":"MSG_ID","newTitle":"..."}` → `{"status":"success","data":{"newMessageId":"..."}}`. SDK: `mgmt.messages.share(id, newTitle, ks)` unwraps this and returns `{newMessageId}`. It throws `server_error` if no id comes back. The clone is readable with `messages.get` and cannot be deleted. |
 | Message report (CSV) | `POST /message/report` | `{"filter":{"objectType":"GenieListMessageFilter"}}`. ⚠️ SENSITIVE: contains end-user ids and names plus verbatim question and feedback text. SDK: `mgmt.messages.report(ks, opts)` (raw CSV) or `reportSummary(ks, opts)` (parsed, with a `_meta` provenance receipt). `reportSummary` uses `pageSize` 500 (the maximum) when you omit it. It reads one page only, so the totals cover at most `pageSize` rows. |
-| Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}`. Idempotent for a given `(message_id, is_positive)` pair. Pass the conversation token of the user who sent the message. A token for any other user, admin included, can get `forbidden`. Read ratings back with `mgmt.feedback.list` (below). |
+| Add feedback | `POST /feedback/add` | `{"schemaVersion":1,"data":{"message_id":"...","is_positive":true,"comment"?:"..."}}`. Idempotent for a given `(message_id, is_positive)` pair. Pass the conversation token of the user who sent the message. A token for any other user, admin included, gets 403 `forbidden`. Read ratings back with `mgmt.feedback.list` (below). |
 | List feedback | *(built on `/message/list`, no dedicated endpoint)* | `mgmt.feedback.list(ks, opts)`. Details below. |
 
 **Message record** (`messages.list`, `messages.get`): `id`, `thread_id`, `genie_id`, `user_id`, `partner_id`, `created_at`, `updated_at`, `human` (the user text), `assistant` (a list of typed parts), `type`, `is_positive`, `comment`. `type` marks the kind of message, for example `0` for a normal turn and `4` for a message added with `threads.push`.
@@ -156,7 +169,7 @@ Unlike every other `list()` in this SDK, `await`ing `feedback.list(...)` collect
 
 Row shape: `{message_id, thread_id, genie_id, user_id, is_positive, comment, created_at, updated_at}`. ⚠️ SENSITIVE: comments are end-user-entered text.
 
-Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Send only the keys listed. Sort with `filter.orderBy`.
+Messages filter fields: `createdAtGreaterThanOrEqual`, `createdAtLessThanOrEqual`, `genieIdEquals`, `idEquals`, `idsIn`, `isPositiveEquals`, `isPositiveIn`, `orderBy`, `threadIdEquals`, `updatedAtGreaterThanOrEqual`, `updatedAtLessThanOrEqual`, `userIdEquals`. Send only the keys listed. Only `filter.orderBy` sorts. Without it the order of messages is not defined, so do not rely on it.
 
 `threads.list` and `messages.list` merge `opts.filter` under a fixed `objectType` that you cannot override. `feedback.list` has its own filter shape (above).
 
@@ -176,7 +189,7 @@ Full record lifecycle. SDK: `mgmt.knowledge`. An intellect links to a record thr
 
 `mgmt.knowledge.isIndexed(id, ks)` wraps Get and reads `status`/`config.sources[].indexers[].index_position`. `status` does not tell you that indexing is complete. For the completion check, see [build/knowledge-rag.md § Ground the Agent](build/knowledge-rag.md#ground-the-agent-in-your-content-rag).
 
-`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
+`mgmt.knowledge.addSource(id, source, ks)` / `removeSource(id, source, ks)` read-merge-write one source into/out of `config.sources` without disturbing the others. Both skip the write (`applied:false`) when an identical source object is already present / already absent. `removeSource` on a source that lists `categoryIds` is refused with `bad_request`: to drop the categories, delete the record. Call them one at a time for the same record id. Two overlapping calls can lose one of the changes.
 
 Before deleting a record, `mgmt.knowledge.deleteRecord` lists every intellect and refuses with a typed `knowledge_in_use` error naming each one still carrying the id in `knowledge_ids`. Pass `{confirmPermanent:true, force:true}` to delete anyway. `mgmt.tools.delete` and `mgmt.skills.delete` use the same guard.
 

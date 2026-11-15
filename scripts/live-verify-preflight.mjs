@@ -8,6 +8,8 @@
  * Exits 0 when every service answers below 500, 1 when one is still down at the
  * deadline. A failure means the backend was unavailable, not that the SDK broke:
  * re-run the job once the backend is back.
+ *
+ * QA note: non-production targets such as nvq2 are for employees and certified partners only.
  */
 import { waitForBackend } from './lib/backend-health.mjs';
 

@@ -42,7 +42,7 @@ export { KalturaScriptedVideoSession } from './scripted-video-session.js';
 export { CaptionService } from './captions.js';
 // Kaltura media-URL helpers (real thumbnail / player-embed from an entryId; external embeds).
 export { thumbnailUrl, playerEmbedUrl, externalEmbedUrl, EMBED_HOSTS } from '../core/kaltura-media.js';
-export { TranscriptTracker, apportion } from './transcript.js';
+export { TranscriptTracker, TranscriptLog, apportion } from './transcript.js';
 // Client-side-command parser (the headless/standalone peer of session.onToolCall).
 export { parseToolCall, parseToolResponseName, segmentKind, validateToolArgs } from '../core/stream.js';
 // OAuth consent-redirect parser (the headless/standalone peer of session.onOAuthRequired).
@@ -53,6 +53,7 @@ export {
   EXPERIENCES, MODEL_TYPES, modelTypeWire, classifyAgentAction,
 } from './wire.js';
 export { Emitter } from './emitter.js';
+export { formatDiagnostics } from './diagnostics.js';
 export { KalturaError } from '../core/errors.js';
 // Verified base URLs per region. Pass `region` to a session rather than reading this directly.
 export { REGIONS } from '../core/endpoints.js';

@@ -1,6 +1,6 @@
 {
   "name": "@kaltura/intelligent-agents",
-  "version": "1.37.0",
+  "version": "1.40.0",
   "private": true,
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
@@ -51,6 +51,7 @@
     "live-verify:capabilities": "node scripts/live-verify-capabilities.mjs",
     "live-verify:conversation-surface": "node scripts/live-verify-conversation-avatar-surface.mjs",
     "live-verify:session-complete": "node scripts/live-verify-session-complete.mjs",
+    "live-verify:feature-pages": "node scripts/live-verify-feature-pages.mjs",
     "live-verify:site-nav": "node scripts/live-verify-site-nav.mjs",
     "live-verify:force-language": "node scripts/live-verify-force-language.mjs",
     "live-verify:regions": "node scripts/live-verify-regions.mjs",
@@ -67,9 +68,13 @@
     "live-verify:avatars": "node scripts/live-verify-avatars.mjs",
     "live-verify:agents": "node scripts/live-verify-agents.mjs",
     "live-verify:lifecycle-audit": "node scripts/live-verify-lifecycle-audit.mjs",
+    "live-verify:doctor": "node scripts/live-verify-doctor.mjs",
+    "live-verify:doctor-matrix": "node scripts/live-verify-doctor-matrix.mjs",
     "audit:lifecycle": "node scripts/lifecycle-audit.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "live-verify:intellects-conversations": "node scripts/live-verify-intellects-conversations.mjs",
     "live-verify:tools": "node scripts/live-verify-tools.mjs",
+    "live-verify:limits": "node scripts/live-verify-limits.mjs",
     "live-verify:kickoff": "node scripts/live-verify-kickoff.mjs",
     "live-verify:opening-phrase": "node scripts/live-verify-opening-phrase.mjs",
     "live-verify:startup-faults": "node scripts/live-verify-startup-faults.mjs",
@@ -108,5 +113,8 @@
     "madge": "^8.0.0",
     "playwright": "^1.64.1",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

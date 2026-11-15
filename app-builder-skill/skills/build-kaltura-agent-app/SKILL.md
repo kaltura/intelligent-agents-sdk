@@ -78,7 +78,8 @@ Then print the installed version from `node_modules/@kaltura/intelligent-agents/
 1. Run it against the real account.
 2. For browser work, serve over `localhost` or HTTPS so microphone and camera work.
 3. On failure, print the error `code` and message, then look the code up in the docs before changing anything.
-4. Tell the user exactly how to try it, and what a working result looks like.
+4. When the agent mishears, speaks the wrong language, stays silent or answers slowly, and before you hand it over, run the doctor. Read [Doctor quickstart](https://kaltura.github.io/intelligent-agents-sdk/guides/doctor-quickstart/) first. Show the user each finding in plain words. Apply a fix only with the user's go-ahead.
+5. Tell the user exactly how to try it, and what a working result looks like.
 
 ## Hard rules
 

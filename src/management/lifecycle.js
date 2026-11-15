@@ -28,8 +28,9 @@
  * - `{actionType:'createBadges', badges:Array<{badgeId:string,
  *   type:'boolean'|'numeric', score?:number, scoreAction?:'upsert'|'delta'}>}`:
  *   gives the conversation's user a badge. `badgeId` is the insight key
- *   whose value sets the badge. A `boolean` badge needs `score` and is given
- *   when the insight is true. A `numeric` badge takes its score from the
+ *   whose value sets the badge: 1 to 64 characters, letters, digits, `_` and
+ *   `-` (no dot). A `boolean` badge needs `score` (-1,000,000 to 1,000,000)
+ *   and is given when the insight is true. A `numeric` badge takes its score from the
  *   insight value and must not set `score`. `scoreAction` sets (`upsert`) or
  *   adds to (`delta`) the user's score. Add a `changed_keys` filter on the
  *   badge keys, as `lifecycle.audit` advises (`badges_unfiltered`).
@@ -117,7 +118,7 @@ export class Lifecycle {
    * `template_missing_or_deleted`, `template_tokens_unproduced`,
    * `dtc_without_forms`, `rule_disabled`.
    * @param {string} ks (admin)
-   * @param {{agentIds?:string[], pageSize?:number}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope.
+   * @param {{agentIds?:string[], pageSize?:number, agents?:any[]}} [opts] `agentIds` keeps only findings for rules that run for one of those agents, including rules with no agent scope. `agents` is the agent list you already read with `agents.list`. It saves that read.
    * @returns {Promise<import('./audit-report.js').AuditReport>}
    */
   async audit(ks, opts = {}) {
@@ -126,7 +127,7 @@ export class Lifecycle {
     if (!s) throw new KalturaError({ type: 'about:blank', title: 'audit unavailable', code: 'bad_request', detail: 'lifecycle.audit needs the sibling resources. Use mgmt.lifecycle from a Management instance.' });
     const { pageSize } = opts;
     const [rules, insightSettings, agents] = await Promise.all([
-      this.list(ks, { pageSize }).all(), s.insightSettings.list(ks, { pageSize }).all(), s.agents.list(ks, { pageSize }).all(),
+      this.list(ks, { pageSize }).all(), s.insightSettings.list(ks, { pageSize }).all(), opts.agents ?? s.agents.list(ks, { pageSize }).all(),
     ]);
     const live = rules.filter((r) => r.status === undefined || r.status === 'active');
     /** @type {string[]} */
@@ -163,11 +164,15 @@ export class Lifecycle {
 
     let findings = auditLifecycleRules(rules, { insightSettings, agents, emailTemplates, intellects });
     const only = opts.agentIds;
+    let checkedRules = rules.length;
+    let checkedAgents = agents.length;
     if (only) {
       const keep = new Set(rules.filter((r) => { const ids = scopedAgentIds(r.eventConditions); return ids.length === 0 || ids.some((id) => only.includes(id)); }).map((r) => r.id));
       findings = findings.filter((f) => keep.has(/** @type {string} */ (f.ruleId)));
+      checkedRules = keep.size;
+      checkedAgents = agents.filter((a) => only.includes(a.agentId ?? a.id)).length;
     }
-    return auditReport(findings, { rules: rules.length, insightSettings: insightSettings.length, agents: agents.length, emailTemplates: emailTemplates?.length ?? 0, intellects: fetched.size }, skipped);
+    return auditReport(findings, { rules: checkedRules, insightSettings: insightSettings.length, agents: checkedAgents, emailTemplates: emailTemplates?.length ?? 0, intellects: fetched.size }, skipped);
   }
 
   /**

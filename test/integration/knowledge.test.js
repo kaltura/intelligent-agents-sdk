@@ -182,6 +182,25 @@ test('uploadDocument surfaces a per-slot link-step exception (was silently passe
   );
 });
 
+const FILE_TYPE_RESTRICTED = { objectType: 'KalturaAPIException', code: 'UPLOAD_TOKEN_FILE_TYPE_RESTRICTED_FOR_UPLOAD', message: 'Upload token is restricted due to the file type', args: [] };
+
+test('uploadDocument and uploadMarkdown raise upload_file_type_restricted when the upload answers HTTP 200 with the restriction code', async () => {
+  const f = fakeFetch([
+    { match: '/service/multirequest', respond: (req) => (req.body['0']?.service === 'baseentry' ? { body: [{ id: '1_doc' }, { id: '1_tok' }] } : { body: [{ id: '1_doc' }, { categoryId: 5, entryId: '1_doc' }] }) },
+    { match: '/uploadtoken/action/upload', respond: () => ({ status: 200, body: FILE_TYPE_RESTRICTED }) },
+    { match: '/service/uploadtoken/action/add', respond: () => ({ body: { id: '1_assettok' } }) },
+    { match: '/attachment_attachmentasset/action/add', respond: () => ({ body: { id: '1_asset' } }) },
+  ]);
+  const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });
+  const file = new Blob([new Uint8Array([1])], { type: 'text/markdown' });
+  const typed = (e) => e.code === 'upload_file_type_restricted' && e.status === 200 && e.title === 'UPLOAD_TOKEN_FILE_TYPE_RESTRICTED_FOR_UPLOAD'
+    && e.retryable === false && /Upload a different file type/.test(e.detail);
+  await assert.rejects(() => m.knowledge.uploadDocument({ file, name: 'a.md', categoryId: 5 }, ADMIN), typed);
+  await assert.rejects(() => m.knowledge.uploadMarkdown({ markdown: 'import x\n', name: 'a.md', categoryId: 5 }, ADMIN), typed);
+  // The restriction stops the flow: the link step never ran.
+  assert.equal(f.calls.filter((c) => c.url.includes('/service/multirequest')).length, 2, 'one create multirequest per attempt, no link multirequest');
+});
+
 test('attachEntry resolves (not throws) when the pair is already linked — idempotent as documented', async () => {
   const f = fakeFetch([{ match: '/categoryentry/action/add', respond: () => ({ body: { objectType: 'KalturaAPIException', code: 'CATEGORY_ENTRY_ALREADY_EXISTS', message: 'Entry already assigned to this category' } }) }]);
   const m = new Management({ partnerId: 1234567, adminSecret: 'a'.repeat(32), fetch: f });

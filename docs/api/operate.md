@@ -18,11 +18,7 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 ```
 
 ```json
-{
-  "userMessage": "How do I fix video buffering?",
-  "threadId": null,
-  "sse": false
-}
+{ "userMessage": "How do I fix video buffering?", "threadId": null, "sse": false }
 ```
 
 | Field | Notes |
@@ -32,15 +28,17 @@ CONV_KS=$(curl -s -X POST "https://www.kaltura.com/api_v3/service/session/action
 | `sse` | `false` = NDJSON (default); `true` = SSE |
 | `model_type` | Optional. `fast` or `smart`, lowercase. Omit it to use the default, `fast`. |
 | `force_experience` | Must be one of `markdown`, `summarization`, `flashcards`, `avatar_only`. Anything else throws a `validation_error` before any network call. A hint about which experience to render, not a guaranteed outcome. |
-| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects a client-supplied value for them. For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
+| `request_vars` | `{{var}}` interpolation values. Needs `allow_client_variables:true` on the intellect. It is on by default (see [Authentication § The Five Services](authentication.md#the-five-services) for what an intellect is). They interpolate into prompts and `api` tool templates. Reserved `sys__*` keys (including `sys__user_id`) are set by the server. The SDK rejects them: [Reserved Template Variables](#reserved-template-variables-sys__). For how `sys__user_id` gets its value, see [Authentication § Bind a session to a real end-user identity](authentication.md#authentication). Semantics in depth: [docs/DYNAMIC-DATA-INJECTION.md](../DYNAMIC-DATA-INJECTION.md). |
 | `capabilities` | Per-message capability override |
 | `context_id` | Optional. The id of the category or entry the turn is about, as a string. With `context_type: 'entry'` it must look like `0_abcd1234`. |
 | `context_type` | Optional. `entry`, `category`, `ancestor_category` or `global`. |
 | `preload_entry_ids` | Optional. Array of entry ids to add to the turn's context. |
 | `exclude_entry_ids` | Optional. Array of entry ids to keep out of the turn's context. |
 | `metadata` | Optional. `{ voice_start_time?, voice_end_time? }`. Each value you send must be a finite number. Saved with the user's message. |
+| `add_message_in_db` | Optional. Boolean. `false` answers the turn without storing it. The thread keeps the same messages. The returned `messageId` does not exist afterwards (`messages.get` gives `not_found`). Without a `threadId`, the returned `threadId` does not exist either. The SDK sends the request once. `recoverFromSpiral` sends no follow-up turn. |
+| `shared_message_id` | Optional. Non-empty message id string. Starts a new thread seeded from that message. The reply carries the new `threadId` and the source thread stays unchanged. `recoverFromSpiral` continues on the new thread. Send it without `threadId`. An id that does not exist, or the id of a turn sent with `add_message_in_db: false`, gives an empty reply with no thread: `send` throws `empty_reply`. |
 
-The SDK checks `context_type`, `context_id`, both entry id lists and `metadata` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
+The SDK checks `context_type`, `context_id`, both entry id lists, `metadata`, `add_message_in_db` and `shared_message_id` before it sends the converse request, and throws `validation_error` for a bad value. It sends only the fields in this table.
 
 **`allow_client_variables`** must be on to send `request_vars`. It is on by default. Pin it with `mgmt.intellects.setClientVariablesEnabled(configId, true, adminKs)` (WRITE, admin KS; also exposed as `mgmt.intellectConfig.setClientVariablesEnabled`).
 
@@ -63,6 +61,12 @@ Key envelope fields: `threadId` (save for follow-ups), `messageId` (save for fee
 
 **Token-kind check timing.** `conversations.send(...)` and `converseOnce(...)` check the token kind before they return. `conversations.stream(...)` is an async generator, so its check runs on the first iteration. Iterate it, or use `send`, to get the check up front.
 
+### Size limits
+
+Over a limit, the server answers 413 and the SDK throws `payload_too_large`. The SDK does not check these limits before it sends. An oversized `request_vars` on `converse` can instead end the turn with no text and no HTTP error. `conversations.send` and `converseOnce` throw `empty_reply` then.
+- `converse` `userMessage`; `threads.push` `content` and `system_message`: 4000 characters each. `err.detail` gives no number.
+- `threads.push` `request_vars`: 200 keys, 128 characters per key, 100,000 characters per value once serialized. `err.detail` names the limit.
+
 ### Refusals that arrive with HTTP 200
 
 The server reports some refusals in the stream, not in the HTTP status. The status is 200 and the body holds one `"error"` segment. The common case is a `threadId` that belongs to a different user: the segment reads `No permission for thread`, nothing is written, and the turn has no text.
@@ -79,11 +83,13 @@ The SDK raises these as a `KalturaError` so an empty reply is never mistaken for
 |---|---|---|
 | `thread_access_denied` | The `threadId` belongs to a different user. | Start without that `threadId`, or mint the token with the `userId` that created the thread. |
 | `stream_error` | Any other `error` segment. | Read `error.detail` and `error.body.errors`. |
-| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls or sources is not empty: it resolves with `text: ''`, so check `toolCalls`. | If you sent `context_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
+| `empty_reply` | The reply had no content: no segments, or only empty final chunks and empty `think` markers (`conversations.send`, `converseOnce` only). A turn with only tool calls, sources or a widget is not empty: it resolves with `text: ''`, so check `toolCalls` and `experiencesList`. A widget can replace the spoken text. See [capabilities](../genui/authoring-and-consuming.md#authoring-which-capability-turns-each-widget-on). | If you sent `context_id` or `shared_message_id`, check it. If you sent `request_vars`, check that `allow_client_variables` is on. `onErrorSegment: 'return'` returns the empty result. |
 
 `error.body` holds `errors` (the segments), `threadId`, and `partial` (the text, `threadId` and `messageId` that arrived before the refusal). For `empty_reply`, `error.body` holds `segments`. A stream line that is not JSON, such as a proxy error page, becomes an `error` segment too, so it is never dropped.
 
-The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error` naming the call.
+The same rule applies to every HTTP call. A 200 reply whose body is an error is thrown, with the server text in `error.detail`. The SDK throws for an exception object, `{error: "..."}`, `{success: false}`, and a body with only status and message keys and a status of 400 or above. A 200 reply that starts like JSON but does not parse throws `invalid_response`. A failed call inside a Kaltura multirequest throws `ovp_error`, and `error.detail` names the failing call.
+
+The Kaltura API (the media calls such as categories, entries and uploads) also answers HTTP 200 with an exception body. A single call throws `api_exception` (`error.status` is 200). Both kinds put the server's error code in `error.title`. Branch on `error.title`, not on the HTTP status.
 
 **Stop a running turn:**
 
@@ -98,7 +104,7 @@ The same rule applies to every HTTP call. A 200 reply whose body is an error is 
 
 The server sets these on every turn. They're available to `{{ ... }}` interpolation in `base_directive` / `prompts[].value` / `glossary` (see [Configure an Intellect](build/intellect.md#configure-an-intellect)) and in the `instructions` of a skill attached with mode `'preloaded'` (see [§ Skills](management-operations.md#skills)), regardless of `allow_client_variables`.
 
-Before any network call, the SDK's own `request_vars` pre-flight guard rejects a client-supplied value for any key in the table below, plus `secrets` (see `request_vars` above):
+Before any network call, the `request_vars` guard throws `validation_error` for `secrets` and for any key that starts with lowercase `sys__`, listed below or not. The match is case-sensitive: `Sys__x`, `SYS__X` and `sys_x` pass. The error names the key, never the value. These entry points share the check: `conversations.send` and `stream`, `threads.push`, and the `requestVars` option and `updateRequestVars` of the session classes (see `request_vars` above):
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
@@ -141,7 +147,7 @@ In this SDK, `threads.list`, `get`, `rename`, `delete`, `transcript`, `setAnalys
 
 `...` = `https://genie.nvp1.ovp.kaltura.com`
 
-**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`, `origin`, `agent_id`.
+**Thread list response** fields per object: `id`, `title`, `created_at`, `updated_at`, `status`, `origin`, `agent_id`. A thread started with an agent token carries that agent's id in `agent_id`. Only a thread started from an intellect alone shows `default`.
 
 **Origin.** Every thread has a numeric `origin`. The list returns only `origin: 0` unless the filter names an origin.
 
@@ -168,7 +174,9 @@ Filter with `originEquals: 2` or `originIn: [0, 2]`. `originIn: [0, 1, 2, 3, 4]`
 
 **Transcript response:** `{"status":"success","data":"human: …\nai: …"}`. Plain text, one turn per line.
 
-**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. `threads.delete` logs one warning naming the ids the response left out. It checks only that response, so it never re-reads the threads.
+**Delete** returns `{totalCount, objects[]}`: the threads it actually deleted. Any id it did not delete (one that does not exist, or another user's thread under a user session) is left out, and the status is still 200. So check `objects`, not the status: `totalCount: 0` means nothing was deleted. An empty list, or an id that is not a non-empty string, throws `validation_error` before any request. `threads.delete` logs one warning naming the ids the response left out. It checks only that response, so it never re-reads the threads.
+
+**Deleted threads.** A deleted thread is missing from the default `threads.list`. `filter: { statusEquals: 1 }` returns deleted threads. `threads.get` of a deleted thread answers 404.
 
 SDK: `mgmt.threads.{list, get, rename, delete, transcript}`. Three more write operations live only on the SDK (`setAnalysis`, `clearAnalysis`, `push`); see [management-operations.md § Threads](management-operations.md#threads) for their request shapes.
 
@@ -226,6 +234,8 @@ POST https://genie.nvp1.ovp.kaltura.com/mcp/search
 ```
 
 Returns `{status, data}`. A partner with no indexed content returns a `"couldn't find relevant information"` error response. SDK: `mgmt.knowledge.search(query, ks, opts)`.
+
+**Rate limit.** Each key can make 250 search calls per minute. The next call returns 429 and throws `rate_limited`, with the `x-ratelimit-*` response headers on `error.headers`.
 
 `opts` passes through five optional tuning params:
 
