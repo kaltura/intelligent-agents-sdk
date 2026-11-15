@@ -157,7 +157,7 @@ export const clientToolWaitBlocks = {
       .map((t) => about(iv, {
         severity: 'info', code: 'client_tool_wait_blocks', field: `tool_ids ${t.id}`,
         message: `Client tool "${t.name ?? t.id}" waits for your app. The turn is held up to ${cfgOf(t).timeout ?? 30} s until the app answers.`,
-        fix: 'If the app answers with session.respondToTool(), ignore this. If the app only reacts, set waitForResponse false.',
+        fix: 'If the app answers with session.respondToTool(), ignore this. If the app only reacts, set waitForResponse false. In mgmt.doctorProbe, answer it with clientTools.',
       }));
   },
 };

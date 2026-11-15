@@ -24,7 +24,7 @@ There is no build step and no npm registry package. Import the raw ESM from `src
 
 - **You own the source, no black box.** Raw ESM in `src/`. Read it line by line. There is no build step and no install step in the browser: import straight from a jsDelivr URL pinned to a git tag.
 - **Zero runtime dependencies.** No transitive supply-chain surface to audit.
-- **Voice and visual cloning is self-serve**, not a support ticket: `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia`, `catalog.createFace` + `catalog.createBackground` (or `catalog.createVisual` for one finished photo).
+- **Voice and visual cloning is self-serve**, not a support ticket: `catalog.createVoice` (from audio), `catalog.importVoiceFromElevenLabs`/`importVoiceFromCartesia` (by voice id), `catalog.createFace` + `catalog.createBackground` (or `catalog.createVisual` for one finished photo).
 - **Security designed in, not bolted on.** Pre-redacted audit events, short-lived tokens, and a NIST 800-53 control matrix, built for enterprise, HIPAA, and HITRUST deployments. Summary in [Security posture](#security-posture) below, full matrix in [SECURITY.md](SECURITY.md).
 
 ---
