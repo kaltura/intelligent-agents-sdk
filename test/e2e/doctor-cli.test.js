@@ -18,7 +18,7 @@ const SECRET = 'cli-test-secret-value-9f3';
 const VOICE = { itemId: 'v1', type: 'Voice', adminTags: ['preset'], attributes: { voice: { name: 'Maya', language: 'he' } } };
 
 const fresh = () => ({
-  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [], rules: [], converseBodies: [], intellectExtra: {},
+  asr: { language: 'en', provider: 'kaltura' }, forced: 'Hebrew', mintOk: true, writes: [], requests: [], rules: [], converseBodies: [], intellectExtra: {}, waitingTool: null,
 });
 const state = fresh();
 
@@ -41,7 +41,8 @@ before(async () => {
       if (path.endsWith('/assistant/converse')) {
         state.converseBodies.push(body);
         res.writeHead(200, { 'content-type': 'text/plain' });
-        return res.end(`${JSON.stringify({ type: 'think', content: '', threadId: 't', messageId: 'm' })}\n${JSON.stringify({ type: 'text', content: 'Hello there' })}\n`);
+        const tool = state.waitingTool ? `${JSON.stringify({ type: 'tool', content: state.waitingTool, tool_metadata: { id: 'turn-1', name: state.waitingTool, args: {}, type: 'client', wait_for_response: true } })}\n` : '';
+        return res.end(`${JSON.stringify({ type: 'think', content: '', threadId: 't', messageId: 'm' })}\n${tool}${JSON.stringify({ type: 'text', content: 'Hello there' })}\n`);
       }
       if (path.endsWith('/insight-settings/list') || path.endsWith('/email-template/list')) return page([]);
       if (path.endsWith('/agent/list')) return page([{ agentId: 'a1', intellect: { id: 10 }, avatarIds: ['av1'], asr: state.asr }]);
@@ -188,6 +189,12 @@ test('--probe sends one unstored message and prints timings and the limits', asy
   assert.match(r.stdout, /no speech recognition/);
   assert.equal(r.code, 0);
   assert.deepEqual(state.converseBodies, [{ userMessage: 'Hi', sse: false, add_message_in_db: false }]);
+});
+
+test('--probe names the client tools that held the turn and says this command cannot answer them', async () => {
+  const r = await run(['--agent', 'a1', '--only', 'orphans', '--probe'], { set: { waitingTool: 'navigate_to_slide' } });
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /1 client tool\(s\) held the turn: navigate_to_slide\. This command cannot answer them\. Use mgmt\.doctorProbe with clientTools\./);
 });
 
 test('--probe stops and lists the rules that match the agent, exit 2, nothing sent', async () => {

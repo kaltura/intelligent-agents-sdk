@@ -207,7 +207,7 @@ await mgmt.doctorProbe(adminKs, { agentId, message, clientTools: {
 } });
 ```
 
-The agent writes its reply from the answer, so make the stub look like your host's real one. `reply.toolAcks` lists each answer (`ok`, or `reason` and `status` when it failed). `reply.unansweredTools` names the waiting tools that got no answer, so the turn was held. On `probe_timeout` the `error.message` names them too.
+The key is the tool's exact name, which can carry a prefix: the timeout message shows it. The agent writes its reply from the answer, so make the stub look like your host's real one. An answer must be plain JSON and a function must finish within `timeoutMs`. `reply.toolAcks` lists each answer (`ok`, or `reason` and `status` when it failed, with `handler_timeout` for a function that did not finish). `reply.unansweredTools` names the waiting tools with no delivered answer, so the turn was held. On `probe_timeout` the `error.message` names them and says why.
 
 The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
 
