@@ -143,6 +143,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Understand how the whole system works under the hood | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Look up a term, or find which ID (`configId`, `agentId`, `avatarId`, `widgetId`) to use where | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
 | Make the agent speak and listen in one language | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| Hear how a voice says a number, an acronym or a name | [docs/EAR-TEST-RECIPE.md](docs/EAR-TEST-RECIPE.md) |
 | Run every demo in `examples/` | [docs/LIVE-DEMOS.md](docs/LIVE-DEMOS.md) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](examples/deck-presenter.html) |
