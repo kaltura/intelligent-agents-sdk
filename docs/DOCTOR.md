@@ -22,6 +22,7 @@ Run the doctor, then look for these codes. Session warnings (`slow_turn` and oth
 |---|---|
 | Callers in another language are misheard | `asr_language_mismatch`, `config_language_differs` |
 | The avatar speaks, but the words are garbled | `voice_reply_language_mismatch`, `reply_language_differs_from_config` |
+| Numbers, symbols or acronyms are read wrong | `spoken_text_digits_cross_language`, `respelling_hyphen_or_mixed_case`, `respelling_table_shared_across_providers`, `spoken_output_undeclared` |
 | A reply shows as text but no audio starts | `speech_not_started` |
 | A long silence before the avatar speaks | `latency_thinking`, `latency_prompt_size`, `latency_preloaded_skills`, `thread_start_tool_blocks`, `slow_turn` |
 | Replies run long | `latency_output_tokens` |
@@ -68,7 +69,7 @@ The doctor reads stored config. Problems that show only in a live conversation, 
 | `pageSize` | Page size of every list read |
 | `concurrency` | Most reads in flight at once. Default 4 |
 
-Categories: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speed`.
+Categories: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speech`, `speed`.
 
 ```js
 // Only the language checks, for one agent.
@@ -92,6 +93,19 @@ Codes the doctor defines. The rule and intellect codes are in [Audit your rules]
 | `opening_phrase_language_mismatch` | info | The opening line is written in a script the voice does not speak |
 
 The fix for `voice_reply_language_mismatch` is a voice made for the reply language. The API shows a voice's provider and language, not its speech model.
+
+### Speech
+
+How the text a voice speaks is written. Config only: the doctor cannot hear a voice, so each finding says what to listen for. [Write for speech](#write-for-speech) has the rules.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `spoken_text_digits_cross_language` | warn | An avatar voice is made for one language, replies are in another, and the opening line or a spoken-forms row holds digits or symbols (`% $ & € £ #`). The voice reads them in its own language or garbles them |
+| `respelling_hyphen_or_mixed_case` | info | A spoken-forms row (`Term -> "spoken"`) is written with hyphens or mixed case, such as `KAY-ger`. In listening tests, voices often spelled these out or stuttered. Hyphenated number words like `twenty-five` are fine |
+| `respelling_table_shared_across_providers` | info | One spoken-forms table is used by agents whose voices come from different providers (read from the voice's `ttsProvider`). The same respelling can win on one provider and fail on another |
+| `spoken_output_undeclared` | info | The agent has an avatar, but no prompt says the reply is spoken aloud. Skipped when replies are forced to a language other than English |
+
+`spoken_text_digits_cross_language` compares the voice language with the forced reply language, or with `asr.language` when none is forced. It reads only the opening line and rows written as `Term -> "spoken form"` (also `→` or `=>`, and quotes are optional when the prompt has three or more such rows) in the base directive and prompt blocks. It does not read model replies: to check those, pass `spoken` to [`mgmt.doctorProbe`](#time-a-real-turn).
 
 ### Agent and avatar
 
@@ -178,9 +192,24 @@ console.log(probe.timings, probe.reply, probe.config);
 | `rules` | Active thread rules that run for this agent |
 | `error` | `{ code, message }` when the request failed or timed out (`probe_timeout`) |
 
+Pass `spoken: { rawTerms: ['EBITDA', 'CAGR'] }` to also check the reply text. `reply.spoken` then holds `rawTerms` (the ones that appear), `digits` (digit runs) and `symbols` (distinct ones from `% $ & € £ #`). Matching is case-sensitive and whole-word, so `ebitda` does not match `EBITDA`. A reply that leaks a raw term, a digit or a symbol is one a voice may read badly.
+
 The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
 
 The text path uses no speech recognition, no voice and no avatar. It cannot show a silent avatar or a slow voice. `timeoutMs` (default 60000, at most 2147483647) and `message` (up to 500 characters) are the other options.
+
+## Write for speech
+
+A voice reads what the model writes. The model must know that, and write the spoken form itself. Rewriting the reply afterwards loses the model's sense of context. These held in listening tests on a cloned voice. Re-test on your own voice, because voices differ.
+
+| Do | Why |
+|---|---|
+| Tell the model in the prompt that its reply is spoken aloud by a voice | `spoken_output_undeclared` |
+| Write numbers and symbols as words in the reply language: "twelve percent", "the third quarter", "R and D" | A voice made for another language reads digits and symbols in its own language |
+| Leave acronyms that people say letter by letter (ARR, IDC, DRM) as they are | They read fine as written |
+| Respell acronyms that are said as a word, in plain lowercase with no hyphens: "ebitda", "kay ger" | Hyphenated and mixed-case respellings were often spelled out |
+| Keep one spoken-forms table per voice | The same respelling can win on one voice and fail on another |
+| Put the rule early, repeat it near the end of a long prompt, then run `mgmt.doctorProbe` with `spoken` | The probe shows whether the model followed it |
 
 ## Thresholds
 

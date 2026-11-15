@@ -30,7 +30,7 @@ import { DEFAULT_THRESHOLDS } from './doctor/model.js';
  * @typedef {object} DoctorOptions
  * @property {string[]} [agentIds] Limit the check to these agents, plus the rules that run for them.
  * @property {number} [pageSize] Page size of every list read.
- * @property {string[]} [only] Run only these checks. A name is a check id or a category: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speed`.
+ * @property {string[]} [only] Run only these checks. A name is a check id or a category: `lifecycle`, `intellect`, `orphans`, `agent`, `avatar`, `language`, `speech`, `speed`.
  * @property {string[]} [skip] Do not run these. Wins over `only`.
  * @property {DoctorIgnore[]} [ignore] Findings to hide. The report counts them in `summary.suppressed`.
  * @property {import('./doctor/model.js').DoctorThresholds} [thresholds] Limits the hint checks compare against.

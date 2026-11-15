@@ -18,23 +18,35 @@ const text = (v) => typeof v === 'string' && v.trim() !== '';
 const brain = (view) => (view.intellect && view.intellect.type !== 'external' ? view.intellect : null);
 
 /** The language the agent is told to reply in, as a code, or `null`. @param {AgentView} view */
-const forcedLanguage = (view) => normalizeLanguage(brain(view)?.force_language);
+export const forcedLanguage = (view) => normalizeLanguage(brain(view)?.force_language);
 
 /** The `attributes.voice` block of a catalog voice item. @param {any} item */
 const voiceAttributes = (item) => item?.attributes?.voice ?? {};
 
 /**
+ * The voice provider of a catalog voice item as a lower-case name with letters and digits only
+ * (`elevenLabs` and `ElevenLabs` both give `elevenlabs`), or `null` when the item has none.
+ * @param {any} item
+ * @returns {string|null}
+ */
+export function providerOf(item) {
+  const raw = voiceAttributes(item).ttsProvider;
+  const name = typeof raw === 'string' ? raw.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  return name || null;
+}
+
+/**
  * The voices of an agent's found avatars, with their language. A voice is
  * custom when it is not a preset: uploads and clones carry no `preset` tag.
  * @param {AgentView} view
- * @returns {Array<{avatarId:string, voiceId:string, name:string, custom:boolean, raw:unknown, language:string|null}>}
+ * @returns {Array<{avatarId:string, voiceId:string, name:string, custom:boolean, raw:unknown, language:string|null, provider:string|null}>}
  */
-function voicesOf(view) {
+export function voicesOf(view) {
   return view.avatars.flatMap((a) => (a.voice?.state === 'found' && a.voice.item
     ? [{
       avatarId: a.id, voiceId: a.voice.id, name: String(voiceAttributes(a.voice.item).name ?? a.voice.id),
       custom: !(Array.isArray(a.voice.item.adminTags) && a.voice.item.adminTags.includes('preset')),
-      raw: voiceAttributes(a.voice.item).language, language: normalizeLanguage(voiceAttributes(a.voice.item).language),
+      raw: voiceAttributes(a.voice.item).language, language: normalizeLanguage(voiceAttributes(a.voice.item).language), provider: providerOf(a.voice.item),
     }]
     : []));
 }
