@@ -271,9 +271,55 @@ test('doctorProbe: a throwing stub function and a non-object answer are recorded
 });
 
 test('doctorProbe: a tool named like an Object property is not answered by the prototype', async () => {
-  const { mgmt, ff } = harness({ reply: () => ({ body: toolReply(waitingTool('toString')) }) });
+  const { mgmt, ff } = harness({ reply: () => ({ body: toolReply(waitingTool('constructor'), waitingTool('toString')) }) });
   const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', clientTools: { other: { ok: true } } });
-  assert.deepEqual(r.reply.unansweredTools, ['toString']);
+  assert.deepEqual(r.reply.toolAcks, []);
+  assert.deepEqual(r.reply.unansweredTools, ['constructor', 'toString']);
+  assert.equal(acks(ff).length, 0);
+});
+
+test('doctorProbe: an answer that settles after the last segment is still sent and reported', async () => {
+  const { mgmt, ff } = harness({ reply: () => ({ body: toolReply(waitingTool('slow')) }) });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', timeoutMs: 5000, clientTools: { slow: async () => { await new Promise((ok) => setTimeout(ok, 40)); return { ok: true }; } } });
+  assert.deepEqual(r.reply.toolAcks, [{ name: 'slow', ok: true }]);
+  assert.deepEqual(r.reply.unansweredTools, []);
+  assert.equal(acks(ff).length, 1);
+});
+
+test('doctorProbe: a handler that never settles ends at timeoutMs and is reported as handler_timeout', async () => {
+  const { mgmt, ff } = harness({ reply: () => ({ body: toolReply(waitingTool('stuck')) }) });
+  const started = Date.now();
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', timeoutMs: 60, clientTools: { stuck: () => new Promise(() => {}) } });
+  assert.ok(Date.now() - started < 2000, 'returned near timeoutMs');
+  assert.deepEqual(r.reply.toolAcks, [{ name: 'stuck', ok: false, reason: 'handler_timeout' }]);
+  assert.deepEqual(r.reply.unansweredTools, ['stuck']);
+  assert.equal(acks(ff).length, 0);
+});
+
+test('doctorProbe: a handler that rejects after the timeout raises no unhandled rejection', async () => {
+  const { mgmt } = harness({ reply: () => ({ body: toolReply(waitingTool('late')) }) });
+  const seen = [];
+  const onRejection = (e) => seen.push(e);
+  process.on('unhandledRejection', onRejection);
+  try {
+    const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', timeoutMs: 30, clientTools: { late: () => new Promise((_, no) => setTimeout(() => no(new Error('late')), 80)) } });
+    assert.equal(r.reply.toolAcks[0].reason, 'handler_timeout');
+    await new Promise((ok) => setTimeout(ok, 150));
+  } finally { process.off('unhandledRejection', onRejection); }
+  assert.deepEqual(seen, []);
+});
+
+test('doctorProbe: a handler is not waited for when the timeout has already fired', async () => {
+  const { mgmt } = harness();
+  const call = { name: 'nav', args: {}, toolMetadata: { id: 't1', waitForResponse: true } };
+  assert.deepEqual(await mgmt._doctorProbe._answer('token', call, () => new Promise(() => {}), AbortSignal.abort()), { name: 'nav', ok: false, reason: 'handler_timeout' });
+});
+
+test('doctorProbe: an answer that is not plain JSON is bad_response and nothing is sent', async () => {
+  const { mgmt, ff } = harness({ reply: () => ({ body: toolReply(waitingTool('big'), waitingTool('loop')) }) });
+  const loop = {}; loop.self = loop;
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', clientTools: { big: { n: 10n }, loop } });
+  assert.deepEqual(r.reply.toolAcks.map((a) => [a.name, a.ok, a.reason]).sort(), [['big', false, 'bad_response'], ['loop', false, 'bad_response']]);
   assert.equal(acks(ff).length, 0);
 });
 
@@ -309,6 +355,40 @@ test('doctorProbe: a timeout names the client tools that were waiting and shows 
   assert.match(r.error.message, /No reply within 80 ms\./);
   assert.match(r.error.message, /"navigate_to_slide", "second"/);
   assert.match(r.error.message, /clientTools: \{ navigate_to_slide: \{ \.\.\. \} \}/);
+});
+
+test('doctorProbe: a timeout after a failed or unfinished answer says so instead of asking for clientTools', async () => {
+  const inner = fakeFetch([
+    { match: '/service/session/action/start', respond: () => ({ body: CONV_KS }) },
+    { match: 'lifecycle/list', respond: () => ({ body: { objects: [], totalCount: 0 } }) },
+    { match: 'agent/get', respond: () => ({ body: { agentId: 'a1', intellect: { id: 10 } } }) },
+    { match: 'v1/intellect/get', respond: () => ({ body: { id: 10, type: 'brain' } }) },
+    { match: '/assistant/tool_response', respond: () => ({ status: 500, body: { message: 'no' } }) },
+  ]);
+  const head = toolReply(waitingTool('rejected'), waitingTool('unfinished'), waitingTool('missing')).split('\n').slice(0, 4).join('\n') + '\n';
+  const mgmt = new Management({ partnerId: '123', adminSecret: 's3cret', fetch: hangingFetch(inner, head) });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', timeoutMs: 120, clientTools: { rejected: { ok: true }, unfinished: () => new Promise(() => {}) } });
+  assert.equal(r.error.code, 'probe_timeout');
+  assert.deepEqual(r.error.unansweredTools.sort(), ['missing', 'rejected', 'unfinished']);
+  assert.match(r.error.message, /Pass clientTools: \{ missing: \{ \.\.\. \} \}/);
+  assert.match(r.error.message, /The answer for client tool "rejected" failed \(http_error 500\)\./);
+  assert.match(r.error.message, /The answer for client tool "unfinished" failed \(handler_timeout\)\./);
+  assert.doesNotMatch(r.error.message, /clientTools: \{ (rejected|unfinished)/);
+});
+
+test('doctorProbe: a timeout while the answer is still being sent says it had not finished', async () => {
+  const inner = fakeFetch([
+    { match: '/service/session/action/start', respond: () => ({ body: CONV_KS }) },
+    { match: 'lifecycle/list', respond: () => ({ body: { objects: [], totalCount: 0 } }) },
+    { match: 'agent/get', respond: () => ({ body: { agentId: 'a1', intellect: { id: 10 } } }) },
+    { match: 'v1/intellect/get', respond: () => ({ body: { id: 10, type: 'brain' } }) },
+  ]);
+  const stalled = Object.assign((url, init) => (String(url).endsWith('/assistant/tool_response') ? new Promise(() => {}) : inner(url, init)), { calls: inner.calls });
+  const head = toolReply(waitingTool('sending')).split('\n').slice(0, 2).join('\n') + '\n';
+  const mgmt = new Management({ partnerId: '123', adminSecret: 's3cret', fetch: hangingFetch(stalled, head) });
+  const r = await mgmt.doctorProbe(ADMIN_KS, { agentId: 'a1', timeoutMs: 80, clientTools: { sending: { ok: true } } });
+  assert.deepEqual(r.error.unansweredTools, ['sending']);
+  assert.match(r.error.message, /The answer for client tool "sending" had not finished\./);
 });
 
 test('doctorProbe: a plain timeout (no waiting tools) keeps the short message, and other errors list no tools', async () => {

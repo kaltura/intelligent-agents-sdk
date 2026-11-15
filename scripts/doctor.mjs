@@ -137,6 +137,8 @@ function probeLines(p) {
     if (p.config) out.push(`  config: ${p.config.type}, thinking_level ${p.config.thinkingLevel ?? 'unset'}, include_thoughts ${p.config.includeThoughts ?? 'unset'}, max_output_tokens ${p.config.maxOutputTokens ?? 'unset'}`);
     out.push(`  first segment ${ms(p.timings.firstSegmentMs)}, first text ${ms(p.timings.firstTextMs)}, total ${ms(p.timings.totalMs)}`);
     if (p.reply) out.push(`  ${p.reply.toolCalls} tool segment(s), ${p.reply.replyChars} reply characters${p.reply.spiralStopped ? ', stopped as a tool spiral' : ''}${p.reply.errorSegments ? `, ${p.reply.errorSegments} error segment(s)` : ''}`);
+    const held = p.reply?.unansweredTools ?? p.error?.unansweredTools ?? [];
+    if (held.length) out.push(`  ${held.length} client tool(s) held the turn: ${held.join(', ')}. This command cannot answer them. Use mgmt.doctorProbe with clientTools.`);
     if (p.error) out.push(`  failed (${p.error.code}): ${redact(p.error.message)}`);
   }
   out.push(`  ${p.limits}`);

@@ -43,7 +43,7 @@ export const PROBE_LIMITS = 'The probe sends text. It uses no speech recognition
  * @typedef {object} ToolAck
  * @property {string} name  The client tool.
  * @property {boolean} ok  True when the server accepted the answer.
- * @property {'handler_error'|'bad_response'|'http_error'} [reason]  Why `ok` is false.
+ * @property {'handler_error'|'handler_timeout'|'bad_response'|'http_error'} [reason]  Why `ok` is false.
  * @property {number} [status]  The HTTP status, with `http_error`. Absent when no response came back.
  */
 
@@ -126,6 +126,8 @@ export class DoctorProbe {
     /** @type {number|null} */ let firstTextMs = null;
     /** @type {ToolAck[]} */ const toolAcks = [];
     /** @type {Set<string>} */ const unanswered = new Set();
+    /** @type {Set<string>} */ const noHandler = new Set();
+    /** @type {string[]} */ const inFlight = [];
     /** @type {Promise<void>[]} */ const acks = [];
     const timed = async function* (/** @type {AsyncIterable<any>} */ source, /** @type {() => number} */ now, /** @type {(call: any, handler: ClientToolAnswer) => Promise<ToolAck>} */ answer) {
       for await (const seg of source) {
@@ -135,15 +137,22 @@ export class DoctorProbe {
         const call = parseToolCall(seg);
         if (call?.toolMetadata?.waitForResponse) {
           const handler = clientTools && Object.hasOwn(clientTools, call.name) ? clientTools[call.name] : undefined;
-          if (handler === undefined) unanswered.add(call.name);
-          else acks.push(answer(call, handler).then((ack) => { toolAcks.push(ack); if (!ack.ok) unanswered.add(ack.name); }));
+          if (handler === undefined) { unanswered.add(call.name); noHandler.add(call.name); }
+          else {
+            inFlight.push(call.name);
+            acks.push(answer(call, handler).then((ack) => {
+              inFlight.splice(inFlight.indexOf(call.name), 1);
+              toolAcks.push(ack);
+              if (!ack.ok) unanswered.add(ack.name);
+            }));
+          }
         }
         yield seg;
       }
     };
     try {
       const stream = this._d.conversations.stream({ userMessage: message, add_message_in_db: false, signal: ctl.signal }, token);
-      const r = await collectConverse(timed(stream, this._now, (call, handler) => this._answer(token, call, handler)));
+      const r = await collectConverse(timed(stream, this._now, (call, handler) => this._answer(token, call, handler, ctl.signal)));
       await Promise.all(acks);
       return {
         ...base, ran: true, error: null,
@@ -159,8 +168,15 @@ export class DoctorProbe {
       if (isTokenError(e)) throw e;
       const err = /** @type {any} */ (e);
       const code = ctl.signal.aborted ? 'probe_timeout' : String(err?.code ?? err?.status ?? 'error');
-      const waiting = [...unanswered];
-      const hint = waiting.length ? ` The agent was waiting for a reply to client tool ${waiting.map((n) => `"${n}"`).join(', ')}. Pass clientTools: { ${waiting[0]}: { ... } } to answer it.` : '';
+      const open = [...new Set(inFlight)].filter((n) => !unanswered.has(n));
+      const waiting = [...unanswered, ...open];
+      const missing = [...noHandler];
+      const failed = toolAcks.filter((a) => !a.ok);
+      const hint = [
+        missing.length ? ` The agent was waiting for a reply to client tool ${missing.map((n) => `"${n}"`).join(', ')}. Pass clientTools: { ${missing[0]}: { ... } } to answer it.` : '',
+        ...failed.map((a) => ` The answer for client tool "${a.name}" failed (${a.reason}${a.status ? ` ${a.status}` : ''}).`),
+        ...open.map((n) => ` The answer for client tool "${n}" had not finished.`),
+      ].join('');
       const msg = ctl.signal.aborted ? `No reply within ${timeoutMs} ms.${hint}` : String(err?.detail ?? err?.message ?? err);
       return { ...base, ran: true, timings: { firstSegmentMs, firstTextMs, totalMs: this._now() - t0 }, reply: null, error: { code, message: msg, unansweredTools: waiting } };
     } finally {
@@ -173,16 +189,24 @@ export class DoctorProbe {
    * @param {any} token  The probe's conversation token.
    * @param {import('../../core/stream.js').ToolCall} call  A call with `toolMetadata`.
    * @param {ClientToolAnswer} handler
+   * @param {AbortSignal} signal  The probe's timeout signal. A handler still running when it fires is reported as `handler_timeout`.
    * @returns {Promise<ToolAck>}
    */
-  async _answer(token, call, handler) {
+  async _answer(token, call, handler, signal) {
     const name = call.name;
+    const timedOut = Symbol('timeout');
+    const expiry = new Promise((resolve) => { if (signal.aborted) resolve(timedOut); else signal.addEventListener('abort', () => resolve(timedOut), { once: true }); });
+    const pending = Promise.resolve().then(() => (typeof handler === 'function' ? handler(call.args, call) : handler));
+    pending.catch(() => {});
     let response;
-    try { response = typeof handler === 'function' ? await handler(call.args, call) : handler; } catch { return { name, ok: false, reason: 'handler_error' }; }
+    try { response = await Promise.race([pending, expiry]); } catch { return { name, ok: false, reason: 'handler_error' }; }
+    if (response === timedOut) return { name, ok: false, reason: 'handler_timeout' };
     if (!response || typeof response !== 'object' || Array.isArray(response)) return { name, ok: false, reason: 'bad_response' };
     const id = /** @type {string} */ (call.toolMetadata?.id);
+    let clean;
+    try { clean = sanitizeJson(response); JSON.stringify(clean); } catch { return { name, ok: false, reason: 'bad_response' }; }
     try {
-      await this._.genie('assistant/tool_response', { tool_name: name, tool_id: id, tool_invocation_id: id, response: sanitizeJson(response) }, token);
+      await this._.genie('assistant/tool_response', { tool_name: name, tool_id: id, tool_invocation_id: id, response: clean }, token);
       return { name, ok: true };
     } catch (e) {
       const status = /** @type {any} */ (e)?.status;
