@@ -168,6 +168,18 @@ export const manifest = [
     generated: true,
   },
   {
+    source: 'docs/EAR-TEST-RECIPE.md',
+    target: 'guides/ear-test-recipe.md',
+    url: '/guides/ear-test-recipe/',
+    title: 'Hear how a voice says your text',
+    description: 'Record a short clip of an agent voice saying a number, an acronym or a name, so you can judge a spoken form by ear. Uses only the public API.',
+    eyebrow: 'How-to Guide',
+    h1: 'Hear how a voice says your text',
+    group: 'How-to Guides',
+    navTitle: 'Ear test recipe',
+    generated: true,
+  },
+  {
     source: 'docs/LIVE-DEMOS.md',
     target: 'guides/live-demos.md',
     url: '/guides/live-demos/',

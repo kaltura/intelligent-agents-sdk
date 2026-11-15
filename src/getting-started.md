@@ -151,6 +151,7 @@ You now know how to create an agent and talk to it. Here's where to go for more:
 | Understand how the whole system works under the hood | [Platform Overview](/explanation/architecture/) |
 | Look up a term, or find which ID (`configId`, `agentId`, `avatarId`, `widgetId`) to use where | [Glossary](/reference/glossary/) |
 | Make the agent speak and listen in one language | [Languages](/guides/languages/) |
+| Hear how a voice says a number, an acronym or a name | [Hear how a voice says your text](/guides/ear-test-recipe/) |
 | Run every demo in `examples/` | [Live Demos](/guides/live-demos/) |
 | See a complete browser example with a live avatar | [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html) |
 | See a complete avatar-guided slide deck | [examples/deck-presenter.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/deck-presenter.html) |
