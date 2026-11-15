@@ -68,7 +68,7 @@ Returns a catalog item whose `itemId` is the cloned voice. Pair it with any avat
 - Use an audio sample longer than about 6 seconds.
 - Send `adminTags=custom` bare, not as a JSON array string.
 
-**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`. `language` is a language code, for example `"en"` or `"he"`, and defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes.
+**SDK shortcut:** `catalog.createVoice(mp3Blob, { name, description, language?, consentRef? }, adminKs)`. It enforces the non-empty `description` client-side and tags the item `adminTags:['custom']`. `language` labels the voice. It is a language code, for example `"en"` or `"he"`, and defaults to `'en'`. A code outside the accepted list returns `bad_request` (400), and the error lists the accepted codes. The service picks the voice's TTS provider: read `attributes.voice.ttsProvider` on the item (compare in lower case) instead of assuming it, or pick one with `importVoiceFromElevenLabs` or `importVoiceFromCartesia`. The label does not set the reply language: set that on the agent.
 
 ## Import a Provider Voice by id (no audio upload)
 

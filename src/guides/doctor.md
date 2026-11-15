@@ -194,12 +194,27 @@ console.log(probe.timings, probe.reply, probe.config);
 | Field | Meaning |
 |---|---|
 | `timings` | `firstSegmentMs`, `firstTextMs` and `totalMs` |
-| `reply` | `toolCalls` (raw tool segments), `spiralStopped`, `replyChars`, `errorSegments`. `null` if the request failed |
+| `reply` | `toolCalls` (raw tool segments), `spiralStopped`, `replyChars`, `errorSegments`, `toolAcks`, `unansweredTools`. `null` if the request failed |
 | `config` | Model settings in effect: `type`, `thinkingLevel`, `includeThoughts`, `maxOutputTokens` |
 | `rules` | Active thread rules that run for this agent |
-| `error` | `{ code, message }` when the request failed or timed out (`probe_timeout`) |
+| `error` | `{ code, message, unansweredTools }` when the request failed or timed out (`probe_timeout`) |
 
-Pass `spoken: { rawTerms: ['EBITDA', 'CAGR'] }` to also check the reply text. `reply.spoken` then holds `rawTerms` (the ones that appear), `digits` (digit runs) and `symbols` (distinct ones from `% $ & € £ #`). Matching is case-sensitive and whole-word, so `ebitda` does not match `EBITDA`. A reply that leaks a raw term, a digit or a symbol is one a voice may read badly.
+Pass `spoken: { rawTerms: ['EBITDA', 'CAGR'] }` to also check the reply text. `reply.spoken` then holds `rawTerms` (the ones that appear), `digits` (the count) with `digitRuns` (the runs themselves) and `symbols` (distinct ones from `% $ & € £ #`). Matching is case-sensitive and whole-word, so `ebitda` does not match `EBITDA`. A reply that leaks a raw term, a digit or a symbol is one a voice may read badly. Add `allowSymbols: ['%']` for symbols your voice reads well. Check `digitRuns` to allow `2026` and still flag `183`.
+
+Pass `includeText: true` to get the reply as `reply.text`, so you can read each leak in context. Models vary between runs: ask each question three times or more.
+
+### Client tools that wait
+
+A client tool that waits for the host (`client_tool_wait_blocks`) holds the turn up to its timeout, 30 s by default. The probe has no host, so it would wait for each one. Answer them with `clientTools`:
+
+```js
+await mgmt.doctorProbe(adminKs, { agentId, message, clientTools: {
+  navigate_to_slide: { ok: true, text: 'Showing slide 4' },        // fixed answer
+  lookup: (args) => ({ ok: true, result: fakeDb[args.id] }),        // or a function, sync or async
+} });
+```
+
+The agent writes its reply from the answer, so make the stub look like your host's real one. `reply.toolAcks` lists each answer (`ok`, or `reason` and `status` when it failed). `reply.unansweredTools` names the waiting tools that got no answer, so the turn was held. On `probe_timeout` the `error.message` names them too.
 
 The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
 
@@ -217,6 +232,8 @@ A voice reads what the model writes. The model must know that, and write the spo
 | Respell acronyms that are said as a word, in plain lowercase with no hyphens: "ebitda", "kay ger" | Hyphenated and mixed-case respellings were often spelled out |
 | Keep one spoken-forms table per voice | The same respelling can win on one voice and fail on another |
 | Put the rule early, repeat it near the end of a long prompt, then run `mgmt.doctorProbe` with `spoken` | The probe shows whether the model followed it |
+
+The probe reads text. To hear a voice say a spoken form, see [Hear how a voice says your text](/guides/ear-test-recipe/).
 
 ## Thresholds
 
