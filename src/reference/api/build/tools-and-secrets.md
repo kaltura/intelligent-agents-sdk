@@ -75,6 +75,14 @@ An `api` tool needs exactly one of `response_mapping`, `response_template` and `
 
 The builder check skips `{{ ... }}` and `{% ... %}` spans in the url and in a string body. The server renders a `{{ name }}` span in a body value, and an unknown name renders empty.
 
+**An `{arg}` goes into the url exactly as the model sent it, with no percent-encoding.** The model follows the end user's text, so a value with `/`, `?`, `#` or `&` can add, drop or move parts of the request. A value such as `New York` or `100%` breaks it. Do not rely on the prompt to make the model encode.
+
+- Use an `{arg}` only as the last query value, as in the example below. Never put one in the host or path.
+- Put fixed or security-relevant parameters (scope, tenant, filter) before it, or in `headers`.
+- To put visitor text in a path, call your own endpoint. It validates and encodes the value, then calls the target.
+
+`mgmt.doctor` reports a tool that breaks these rules as [`api_tool_url_arg_unsafe`](/guides/doctor/#finding-codes).
+
 ```js
 tools.api({
   name: 'city_weather',
