@@ -37,43 +37,51 @@ Before each clip, write the script:
 await mgmt.intellectConfig.setOpeningPhrase(configId, script, ks);
 ```
 
-`opening_phrase` is a template, so a script must not contain `{{` or `{%`.
+`opening_phrase` is a template, so a script must not contain `{{`, `{%` or `{#`.
 
 In a browser page (the session setup is the one in [examples/browser-experience.html](https://github.com/kaltura/intelligent-agents-sdk/blob/main/examples/browser-experience.html)), record the audio track when it arrives:
 
 ```js
-const chunks = [];
-const said = [];
-let recorder;
-session.on('track', ({ track }) => {
-  if (track.kind !== 'audio') return;
-  recorder = new MediaRecorder(new MediaStream([track]), { mimeType: 'audio/webm;codecs=opus' });
-  recorder.ondataavailable = (e) => chunks.push(e.data);
-  recorder.start();
-});
-session.on('transcript', ({ type, text }) => { if (type === 'final') said.push(text); });
-const finished = new Promise((resolve) => session.on('avatarStopTalking', () => setTimeout(resolve, 800)));
-await session.connect();                 // the avatar speaks the opening phrase now
-await finished;
-const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
-recorder.stop();
-await stopped;
-await session.disconnect();
-const clip = new Blob(chunks, { type: 'audio/webm' });
+async function hearClip(session) {
+  const chunks = [];
+  const said = [];
+  let recorder;
+  session.on('track', ({ track }) => {
+    if (track.kind !== 'audio') return;
+    recorder = new MediaRecorder(new MediaStream([track]), { mimeType: 'audio/webm;codecs=opus' });
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.start();
+  });
+  session.on('transcript', ({ type, text }) => { if (type === 'final') said.push(text); });
+  const finished = new Promise((resolve) => session.on('avatarStopTalking', () => setTimeout(resolve, 800)));
+  await session.connect();                 // the avatar speaks the opening phrase now
+  await finished;
+  const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
+  recorder.stop();
+  await stopped;
+  await session.disconnect();
+  return { clip: new Blob(chunks, { type: 'audio/webm' }), said: said.join(' ') };
+}
 ```
 
-Pass `audioEl` to the session so the browser plays the voice. Run each script in a fresh page or session, and in an automated browser start it with `--use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required`.
+Save `clip` with `URL.createObjectURL(clip)`, or post it to your server. Pass `audioEl` to the session so the browser plays the voice. Run each script in a fresh page or session, and in an automated browser start it with `--use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required`.
 
 ## 3. Check and clean up
 
 | Check | Why |
 |---|---|
-| `said.join(' ')` equals the script | A clip where the avatar said something else is not a test of your script. Run it again |
+| `said` equals the script | A clip where the avatar said something else is not a test of your script. Run it again |
 | Judge by ear, blind to the variant | Rate each clip, with the raw form and the spoken form shuffled |
 
+Run the clips inside `try` and the deletes in `finally`, so a failed clip does not leave a test agent behind:
+
 ```js
-await mgmt.agents.delete(agentId, ks, { confirmPermanent: true });
-await mgmt.intellects.delete(configId, ks, { confirmPermanent: true });
+try {
+  // set the script, record the clip
+} finally {
+  await mgmt.agents.delete(agentId, ks, { confirmPermanent: true });
+  await mgmt.intellects.delete(configId, ks, { confirmPermanent: true });
+}
 ```
 
 A clip takes about 6 to 8 seconds. This is a listening test of a voice, not a way to deliver scripted speech to users.
