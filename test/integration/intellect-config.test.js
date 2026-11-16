@@ -648,7 +648,7 @@ test('intellectConfig.setOpeningPhrase accepts SILENT_OPENING and writes it verb
   const r = await cfg.setOpeningPhrase(1481, SILENT_OPENING, ADMIN);
   assert.equal(r.applied, true);
   const sent = f.calls.find((c) => c.url.includes('/v1/intellect/update')).body;
-  assert.equal(sent.opening_phrase, '<blank>');
+  assert.equal(sent.opening_phrase, '-');
 });
 
 // Developer example: a personalized opening. The phrase is a Jinja2 template the

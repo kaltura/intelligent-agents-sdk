@@ -45,6 +45,7 @@ import {
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
 import { TranscriptLog } from '../src/experience/index.js';
+import { isSilentOpening } from '../src/core/opening.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'kickoff');
 const KICKOFF = typeof args.kickoff === 'string' ? args.kickoff : 'Greet the user in one short sentence and ask how you can help.';
@@ -82,7 +83,7 @@ const kickoffFrames = (/** @type {Ev[]} */ evs) => all(evs, 'socket:out', (d) =>
 /** User-echo transcripts carrying the kickoff text. */
 const kickoffEchoes = (/** @type {Ev[]} */ evs) => all(evs, 'transcript', (d) => d?.type === 'user' && typeof d?.text === 'string' && d.text.includes(KICKOFF));
 /** transcript/speechChunk payloads containing the silent opening text. */
-const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && isSilentOpening(e.detail.text));
 /** Texts the app saw for the silent opening turn: its transcript/speechChunk payloads and the first avatarStopTalking. All must be SILENT_OPENING_LABEL. */
 const openingTexts = (/** @type {Ev[]} */ evs) => {
   const captions = [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => isOpeningSpeechId(e.detail?.speechId)).map((e) => e.detail.text);

@@ -591,7 +591,7 @@ section('Part 6 — Media path');
 
 // M-2: the raw silent opening phrase (SILENT_OPENING) never reaches a listener;
 // the opening turn surfaces as SILENT_OPENING_LABEL instead. The relabel is
-// keyed on the opening speech id; a spoken opening and a `<blank>` in a normal
+// keyed on the opening speech id; a spoken opening and a `-` in a normal
 // reply are left alone.
 {
   const sessionSrc = read(join(SDK_SRC, 'experience', 'session.js'));

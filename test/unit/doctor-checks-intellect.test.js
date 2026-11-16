@@ -176,6 +176,7 @@ test('opening_phrase_may_render_empty: silent with an else, an elif, text outsid
     'Welcome! {% if a %}Hi {{ a }}{% endif %}',
     '{% if a %}Hi{% endif %}{% if b %}There{% endif %}',
     'Hello there',
+    '-',
     '<blank>',
     undefined,
   ]) assert.deepEqual(run(openingPhraseMayRenderEmpty, view({ opening_phrase })), [], String(opening_phrase));

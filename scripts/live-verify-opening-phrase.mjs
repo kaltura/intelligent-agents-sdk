@@ -14,7 +14,7 @@
  * | P1 | requestVars: { user_name: 'Dana' }         | the `{% if %}` branch is spoken, with the name rendered |
  * | P2 | no requestVars                             | the `{% else %}` branch is spoken, no name |
  * | P3 | SILENT_OPENING on the intellect only       | the opening turn runs and ends, surfaced only as the `[silence]` label |
- * | P4 | preset question: `{% if pending_question %}<blank>`, kickoff `{ text, echo: true }` | silent opening, the reply answers the question, the question shows once as a user transcript |
+ * | P4 | preset question: `{% if pending_question %}-`, kickoff `{ text, echo: true }` | silent opening, the reply answers the question, the question shows once as a user transcript |
  * | P5 | `KalturaAgentSession` re-joins via `switchMode` | new thread → new-thread branch; re-join → `promo` branch; `promo: ''` → the plain return branch |
  *
  * Usage
@@ -38,7 +38,7 @@ import {
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING, textsSent,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
-import { SILENT_OPENING_LABEL } from '../src/core/opening.js';
+import { SILENT_OPENING_LABEL, isSilentOpening } from '../src/core/opening.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'opening-phrase');
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s) => s.trim().toUpperCase())) : null;
@@ -104,7 +104,7 @@ const openingText = (/** @type {Ev[]} */ evs) => all(evs, 'speechChunk', (d) => 
 /** The server's end-of-opening marker. */
 const openingEnd = (/** @type {Ev[]} */ evs, from = 0) => find(evs, 'socket:in', { from, where: (d) => d.ev === 'stvFinishedTalking' });
 /** Any surfaced text carrying the silent marker. */
-const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && isSilentOpening(e.detail.text));
 
 /** Every speechChunk text from event index `from` up to `to`, concatenated. */
 const chunkText = (/** @type {Ev[]} */ evs, from = 0, to = evs.length) => all(evs.slice(from, to), 'speechChunk', (d) => typeof d?.text === 'string')
@@ -208,7 +208,7 @@ const SCENARIOS = {
   },
 
   P4: {
-    name: 'preset question: requestVars { pending_question } renders <blank>, the kickoff asks the question once',
+    name: 'preset question: requestVars { pending_question } renders the silent phrase, the kickoff asks the question once',
     async run({ context, sink, id }) {
       await kaltura.intellectConfig.setOpeningPhrase(agent.configId, PILL_TEMPLATE, admin.ks);
       try {
@@ -217,7 +217,7 @@ const SCENARIOS = {
         }, sink);
         const evs0 = await connectAndOpening(page, id);
         const opening = openingText(evs0);
-        report.check(`${id}: opening is silent (the <blank> branch)`, opening === '' || opening === SILENT_OPENING_LABEL, { text: opening });
+        report.check(`${id}: opening is silent (the silent branch)`, opening === '' || opening === SILENT_OPENING_LABEL, { text: opening });
         const replyChunk = (/** @type {Ev[]} */ e) => find(e, 'speechChunk', { where: (d) => !isOpeningSpeechId(d?.speechId) && typeof d?.text === 'string' });
         await waitFor(page, (e) => {
           const c = replyChunk(e);
