@@ -8,6 +8,7 @@ Features the SDK supports before every environment has them. **Employee or certi
 |---|---|---|
 | Avatar emotions in the reply stream | Capability `avatar_emotions` | Off |
 | Avatar emotions setting | `emotions` on `avatars.create` and `avatars.update` | Not sent |
+| Per-session TURN credentials | `turn` in the connect handshake, read by `normalizeServerTurn` and `iceServersFor` | Used when the server sends them |
 
 The capability name `avatar_emotions` appears in no user doc, no docs site page and no assistant knowledge base. `node tools/check-docs.mjs` enforces that. Keep the `emotions` avatar setting out of those places by review. The list lives in `LIMITED_AVAILABILITY_CAPABILITIES` in `src/management/capabilities.js`.
 
@@ -96,3 +97,7 @@ TARGET=<name> node scripts/live-verify-emotions.mjs
 CI has no credentials for this environment, so the script is not part of any workflow.
 
 For a statistical check of the output, run the [emotions eval](emotions-eval.md).
+
+## Per-session TURN credentials
+
+The server can send short-lived TURN credentials for one session. The SDK lists them before the configured entry and renews them before they expire. A server that sends none behaves as before: nothing to opt into, and the live runs show the difference. To check an environment, run `node scripts/live-verify-turn.mjs --env <name> --env-file ../.env --expect-server-turn yes`. Use `no` for one that does not send them.
