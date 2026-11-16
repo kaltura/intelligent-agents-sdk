@@ -142,7 +142,7 @@ test('opening_phrase_language_mismatch: silent for a matching script, Latin name
   assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('שלום, אני העוזר של Kaltura ושל Acme'), avatars: hebrewVoice })), []);
   assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('Hola, bienvenido a nuestra tienda'), avatars: [avatar('av1', voice('en'))] })), [], 'script is not language');
   assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('{% if user_name %}שלום {{ user_name }}, ברוך הבא{% else %}שלום וברוך הבא{% endif %}'), avatars: hebrewVoice })), [], 'template code is not prose');
-  assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('<blank>'), avatars: hebrewVoice })), []);
+  assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('-'), avatars: hebrewVoice })), []);
   assert.deepEqual(run(openingPhraseLanguage, view({ intellect: brain('Hi!'), avatars: hebrewVoice })), []);
   assert.deepEqual(run(openingPhraseLanguage, view({ intellect: { id: 10, type: 'external' }, avatars: [avatar('av1', voice('he'), { openingPhrase: 'Hello and welcome here' })] })), []);
 });

@@ -117,7 +117,7 @@ test('provision uses the generated profile opening phrase when openingPhrase is 
 test('provision({ openingPhrase }) wins over the generated profile phrase and reaches the intellect only', async () => {
   const { f, m } = baseProvision();
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: SILENT_OPENING });
-  assert.equal(intellectUpdateBody(f).opening_phrase, '<blank>');
+  assert.equal(intellectUpdateBody(f).opening_phrase, '-');
   assert.ok(!('openingPhrase' in avatarBody(f)));
   f.calls.length = 0;
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome to the studio!' });

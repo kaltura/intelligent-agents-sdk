@@ -14,7 +14,7 @@
  * | P1 | requestVars: { user_name: 'Dana' }         | the `{% if %}` branch is spoken, with the name rendered |
  * | P2 | no requestVars                             | the `{% else %}` branch is spoken, no name |
  * | P3 | SILENT_OPENING on the intellect only       | the opening turn runs and ends, surfaced only as the `[silence]` label |
- * | P4 | preset question: `{% if pending_question %}<blank>`, kickoff `{ text, echo: true }` | silent opening, the reply answers the question, the question shows once as a user transcript |
+ * | P4 | preset question: `{% if pending_question %}-`, kickoff `{ text, echo: true }` | silent opening, the reply answers the question, the question shows once as a user transcript |
  * | P5 | `KalturaAgentSession` re-joins via `switchMode` | new thread → new-thread branch; re-join → `promo` branch; `promo: ''` → the plain return branch |
  *
  * Usage
@@ -208,7 +208,7 @@ const SCENARIOS = {
   },
 
   P4: {
-    name: 'preset question: requestVars { pending_question } renders <blank>, the kickoff asks the question once',
+    name: 'preset question: requestVars { pending_question } renders the silent phrase, the kickoff asks the question once',
     async run({ context, sink, id }) {
       await kaltura.intellectConfig.setOpeningPhrase(agent.configId, PILL_TEMPLATE, admin.ks);
       try {
@@ -217,7 +217,7 @@ const SCENARIOS = {
         }, sink);
         const evs0 = await connectAndOpening(page, id);
         const opening = openingText(evs0);
-        report.check(`${id}: opening is silent (the <blank> branch)`, opening === '' || opening === SILENT_OPENING_LABEL, { text: opening });
+        report.check(`${id}: opening is silent (the silent branch)`, opening === '' || opening === SILENT_OPENING_LABEL, { text: opening });
         const replyChunk = (/** @type {Ev[]} */ e) => find(e, 'speechChunk', { where: (d) => !isOpeningSpeechId(d?.speechId) && typeof d?.text === 'string' });
         await waitFor(page, (e) => {
           const c = replyChunk(e);

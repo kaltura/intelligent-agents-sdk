@@ -10,6 +10,7 @@
  *   1  clean          no ASR language finding on the fresh agent
  *   2  planted        replies forced to Hebrew while ASR stays English: asr_language_mismatch (error) with autofix
  *                     max_output_tokens 4096: latency_output_tokens
+ *   2b silent opening  the older `<blank>` phrase: silent_opening_legacy_phrase (warn). A Cartesia voice with SILENT_OPENING: silent_opening_unsupported_voice (error)
  *   3  doctorFix      dry run writes nothing, apply sets ASR to Hebrew, a second run is already_applied, undo restores
  *   4  probe          one timed turn, numbers present, config in effect reported
  *   5  CLI            exit codes, --json shape, --fix dry run, --probe
@@ -23,6 +24,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveTarget, managementFor } from './lib/target.mjs';
+import { SILENT_OPENING } from '../src/management/index.js';
 import { ensureAgent, deleteAgent, verifyDeleted, Report, mdTable, repoRoot } from './live-verify-kickoff-shared.mjs';
 
 const target = resolveTarget(process.env.TARGET ?? 'prod');
@@ -33,7 +35,10 @@ mkdirSync(outDir, { recursive: true });
 const report = new Report({ runId, target: target.name });
 
 let stack;
+let cartesiaStack;
 let admin;
+/** A preset Cartesia voice, to check the provider rule. */
+const CARTESIA_VOICE = 'ec1e269e-9ca0-402f-8a18-58e0e022355a';
 const codes = (r, agentId) => r.findings.filter((f) => f.agentId === agentId || f.agentIds?.includes(agentId)).map((f) => `${f.severity}:${f.code}`);
 
 try {
@@ -47,6 +52,7 @@ try {
   // 1: clean
   const clean = await kaltura.doctor(admin.ks, { agentIds: [agentId] });
   report.check('1-clean-has-no-asr-language-finding', !clean.findings.some((f) => f.code === 'asr_language_mismatch'), codes(clean, agentId));
+  report.check('1-clean-has-no-silent-opening-finding', !clean.findings.some((f) => f.agentId === agentId && f.code.startsWith('silent_opening_')), codes(clean, agentId));
   report.check('1-clean-reads-the-agent-and-its-intellect', clean.checked.agents >= 1 && clean.checked.agentIntellects === 1, clean.checked);
 
   // 2: planted
@@ -64,6 +70,18 @@ try {
   report.check('2-asr-mismatch-carries-an-autofix', mismatch?.autofix?.action === 'set_asr_language' && mismatch.autofix.to === 'he', mismatch?.autofix);
   if (outputTokensPlanted) report.check('2-latency-output-tokens', planted.findings.some((f) => f.code === 'latency_output_tokens' && f.agentIds?.includes(agentId)), codes(planted, agentId));
   report.check('2-every-finding-has-severity-code-message-fix', planted.findings.every((f) => ['error', 'warn', 'info'].includes(f.severity) && f.code && f.message && f.fix));
+
+  // 2b: silent opening against the voice provider
+  await kaltura.intellectConfig.setOpeningPhrase(configId, '<blank>', admin.ks);
+  const legacy = await kaltura.doctor(admin.ks, { agentIds: [agentId] });
+  report.check('2b-legacy-blank-is-a-warning', legacy.findings.some((f) => f.agentId === agentId && f.code === 'silent_opening_legacy_phrase' && f.severity === 'warn'), codes(legacy, agentId));
+  await kaltura.intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, admin.ks);
+  const dash = await kaltura.doctor(admin.ks, { agentIds: [agentId] });
+  report.check('2b-silent-opening-on-the-default-voice-is-quiet', !dash.findings.some((f) => f.agentId === agentId && f.code.startsWith('silent_opening_')), codes(dash, agentId));
+  const created = await kaltura.provision({ brief: 'A scratch agent for a doctor check.', ks: admin.ks, openingPhrase: SILENT_OPENING, voiceId: CARTESIA_VOICE });
+  cartesiaStack = { configId: created.configId, agentId: created.agentId, widgetId: created.widgetId, avatarId: created.avatarId ?? created.avatarIds?.[0] };
+  const cartesia = await kaltura.doctor(admin.ks, { agentIds: [cartesiaStack.agentId] });
+  report.check('2b-silent-opening-on-a-cartesia-voice-is-an-error', cartesia.findings.some((f) => f.agentId === cartesiaStack.agentId && f.code === 'silent_opening_unsupported_voice' && f.severity === 'error'), codes(cartesia, cartesiaStack.agentId));
 
   // 3: doctorFix
   const before = (await kaltura.agents.get(agentId, admin.ks)).asr;
@@ -110,9 +128,10 @@ try {
 } finally {
   const leftovers = [];
   if (!admin) leftovers.push('no admin token, so nothing could be cleaned up');
-  if (stack && admin) {
-    await deleteAgent(kaltura, admin.ks, stack);
-    const gone = await verifyDeleted(kaltura, admin.ks, stack);
+  for (const s of [stack, cartesiaStack]) {
+    if (!s || !admin) continue;
+    await deleteAgent(kaltura, admin.ks, s);
+    const gone = await verifyDeleted(kaltura, admin.ks, s);
     for (const [what, state] of Object.entries(gone)) if (state !== 'deleted') leftovers.push(`${what}: ${state}`);
   }
   report.check('6-cleanup-left-nothing-behind', leftovers.length === 0, leftovers);

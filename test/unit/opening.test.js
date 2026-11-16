@@ -5,13 +5,17 @@ import * as management from '../../src/management/index.js';
 import * as experience from '../../src/experience/index.js';
 
 test('SILENT_OPENING is the silent phrase; SILENT_OPENING_LABEL is what a UI shows for it', () => {
-  assert.equal(SILENT_OPENING, '<blank>');
+  assert.equal(SILENT_OPENING, '-');
   assert.equal(SILENT_OPENING_LABEL, '[silence]');
 });
 
 test('isSilentOpening matches the phrase, tolerating surrounding whitespace only', () => {
-  assert.equal(isSilentOpening('<blank>'), true);
+  assert.equal(isSilentOpening('-'), true);
+  assert.equal(isSilentOpening('  -\n'), true);
+  assert.equal(isSilentOpening('<blank>'), true, 'the older phrase is still recognised');
   assert.equal(isSilentOpening('  <blank>\n'), true);
+  assert.equal(isSilentOpening('- hi'), false);
+  assert.equal(isSilentOpening('--'), false);
   assert.equal(isSilentOpening(SILENT_OPENING), true);
   assert.equal(isSilentOpening('Hello!'), false);
   assert.equal(isSilentOpening('<blank> hi'), false);

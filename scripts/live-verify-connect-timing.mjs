@@ -68,7 +68,7 @@
  * |---|---|---|---|
  * | `silent+kickoff` | SILENT_OPENING | kickoff | the reply to the kickoff |
  * | `jinja` | `{% if sys__is_new_thread %}` greeting with `{{ user_name }}` | requestVars `{ user_name }`, no kickoff | the scripted opening |
- * | `jinja-pill` | `{% if pending_question %}<blank>{% else %}` greeting | requestVars `{ pending_question: '1' }`, kickoff `{ text, echo: true }` | the reply to the preset question |
+ * | `jinja-pill` | `{% if pending_question %}-{% else %}` greeting | requestVars `{ pending_question: '1' }`, kickoff `{ text, echo: true }` | the reply to the preset question |
  *
  * Extra per-arm checks: `jinja` speaks the name and sends no text; `jinja-pill` has a silent
  * opening, answers the question, and echoes it once as a user transcript. Each arm is judged

@@ -46,6 +46,7 @@ Trade-offs:
 
 - A scripted opening makes sound about 0.9 s sooner. But the user cannot interrupt it, and a `kickoff` or a typed `speak()` waits until the whole line has been spoken. Keep it to one or two short sentences.
 - `SILENT_OPENING` + `kickoff` starts later, but the first reply is an ordinary model turn: it follows your whole prompt, can use tools, and stops the moment the user talks.
+- `SILENT_OPENING` works on ElevenLabs voices. On a Cartesia voice the opening turn can run for ever: every `speak()` and the kickoff wait for it, and the agent never answers. Use a short spoken opening on those voices. `mgmt.doctor` flags it as `silent_opening_unsupported_voice`.
 - Do not combine a spoken scripted line with a `kickoff`. The user hears the line, then waits for the kickoff reply. For a preset question, use [§ Open with a preset question](#open-with-a-preset-question).
 
 ## Where the opening phrase lives
@@ -57,7 +58,7 @@ The intellect's `opening_phrase` is the one place to set the opening line. The b
 | `provision({ brief, ks, openingPhrase })` | Creates the avatar with no `openingPhrase`, then writes `openingPhrase` to the new intellect's `opening_phrase`. Wins over the phrase in the generated profile. Default is the profile's phrase, then `'Hello!'`. |
 | `intellectConfig.setOpeningPhrase(configId, phrase, ks)` | Sets or changes the phrase on an existing intellect. `null` clears it. |
 
-The phrase must be a non-empty string. An empty string is rejected. For a silent opening use `SILENT_OPENING` (`'<blank>'`), never `''`.
+The phrase must be a non-empty string. An empty string is rejected. For a silent opening use `SILENT_OPENING` (`'-'`), never `''`.
 
 `provision()` creates the avatar before it writes the intellect, so the intellect write is always the last opening-phrase write of the run. An avatar can also carry an `openingPhrase` of its own (`avatars.create` / `avatars.update`); it is spoken only for a session whose intellect has no `opening_phrase`. Leave it unset. If an avatar you did not provision with the SDK has one, clear it:
 
@@ -90,13 +91,13 @@ The template can read two kinds of variables:
 
 Rules:
 
-1. **Every branch must render non-empty text.** An empty render makes the agent speak its default greeting instead. For a silent branch, render `<blank>` (the value of `SILENT_OPENING`). A variable that was not sent renders as empty text, so `Hello {{ user_name }}!` becomes `Hello !`, and inside `{% if %}` it counts as false.
+1. **Every branch must render non-empty text.** An empty render makes the agent speak its default greeting instead. For a silent branch, render `-` (the value of `SILENT_OPENING`). A variable that was not sent renders as empty text, so `Hello {{ user_name }}!` becomes `Hello !`, and inside `{% if %}` it counts as false.
 2. **A broken template stops the session.** A template that fails to render, or `requestVars` sent to an intellect that does not allow client variables, means the session never starts. Guard every optional variable with `{% if var %}`, and test a new template on a scratch intellect first.
 3. **The opening plays on every avatar join**, not only the first: the first `connect()`, a cold reconnect, `switchMode('avatar')` on an existing thread, and a session that joins an existing `threadId`. Guard the first-visit greeting with `sys__is_new_thread`.
 4. **A request variable stays set on the thread**, also on later joins. To turn a flag off, see [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables).
 5. **Text chat has no opening turn.** In chat, send the greeting or preset question as the `kickoff` or as the first message.
 
-The rendered text reaches the browser as the opening `speechChunk` / `transcript` events. A `<blank>` branch never surfaces as `<blank>`. An opening event that carries text shows `SILENT_OPENING_LABEL` (`[silence]`) instead.
+The rendered text reaches the browser as the opening `speechChunk` / `transcript` events. A silent branch never surfaces as `-`. An opening event that carries text shows `SILENT_OPENING_LABEL` (`[silence]`) instead.
 
 ### Open with a preset question
 
@@ -226,6 +227,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook added to the text, so the added part surfaces on its own | Use `echo: false` (the default) and put the wording in the kickoff text itself instead of adding it in `onBeforeSend`. |
 | `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
 | The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` is not `SILENT_OPENING`, or the intellect has none and the avatar still carries its own `openingPhrase` | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`; clear the avatar's copy with `avatars.update({ id, openingPhrase: null }, ks)`. |
+| The session connects, but the agent never answers, and no kickoff reply comes | The opening is silent and the voice is not an ElevenLabs voice, or the opening is the older `<blank>` phrase | Run `mgmt.doctor`. Write a short spoken opening, or set `SILENT_OPENING` on an ElevenLabs voice: `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`. |
 | The agent speaks a default greeting instead of your line | One template branch rendered empty text | Make every branch render text; use `SILENT_OPENING` for a silent branch. |
 | A returning user hears the first-visit greeting after a reconnect or `switchMode('avatar')` | The opening plays on every join | Guard the first-visit branch with `{% if sys__is_new_thread %}`. |
 | A flag branch still plays after you stopped sending the flag | Request variables stay set on the thread | Turn the flag off: [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables). |

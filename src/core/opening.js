@@ -4,9 +4,11 @@
  * The intellect's `opening_phrase` owns the scripted first turn of an avatar
  * session (`provision()` writes it there and leaves the avatar's `openingPhrase`
  * unset). That server-scripted opening turn cannot be interrupted. `SILENT_OPENING`
- * is a non-empty phrase the voice engine renders as silence: the opening turn still
- * runs and the session stays on the normal path, but nothing is spoken, so the turn
- * ends in well under a second and the agent is ready for input almost immediately.
+ * is a one-character phrase that ElevenLabs voices render as silence: the opening turn
+ * still runs and the session stays on the normal path, but nothing is spoken, so the
+ * turn ends in well under a second and the agent is ready for input almost immediately.
+ * On other voice providers the opening turn may never end. The doctor flags that
+ * (`silent_opening_unsupported_voice`).
  *
  * The raw phrase is a control token, not something to show a person. The session
  * classes surface the opening turn as `SILENT_OPENING_LABEL` (`[silence]`) on
@@ -19,18 +21,24 @@
  */
 import { KalturaError } from './errors.js';
 
-export const SILENT_OPENING = '<blank>';
+/** The phrase that makes the opening turn silent. Write it to the intellect's `opening_phrase`. */
+export const SILENT_OPENING = '-';
+
+/** The phrase older SDK versions wrote. Still labeled `[silence]`, but the opening turn may never end. */
+export const LEGACY_SILENT_OPENING = '<blank>';
 
 /** What a UI shows for the silent opening turn. */
 export const SILENT_OPENING_LABEL = '[silence]';
 
 /**
- * True when `text` is the silent opening phrase (ignoring surrounding whitespace).
+ * True when `text` is the silent opening phrase, or the legacy one (ignoring surrounding whitespace).
  * @param {unknown} text
  * @returns {boolean}
  */
 export function isSilentOpening(text) {
-  return typeof text === 'string' && text.trim() === SILENT_OPENING;
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  return t === SILENT_OPENING || t === LEGACY_SILENT_OPENING;
 }
 
 /**

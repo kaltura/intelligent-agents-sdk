@@ -66,7 +66,7 @@ name: Live verification
 # totalAudioEnergy check is added only where the engine exposes it.
 # The timing script is also the startup-KPI gate. CI runs it with
 # `--compare jinja --runs 9`: three agents (silent+kickoff, a Jinja2 opening,
-# a Jinja2 `<blank>` opening + kickoff echo), 3 runs each. Each arm's median
+# a Jinja2 silent opening + kickoff echo), 3 runs each. Each arm's median
 # connect(), first video frame, first audio, first agent words and sound heard
 # is checked against that arm's budgets in the script header, and a miss fails
 # the timing step. The job summary leads with one KPI row per arm; the full reports
@@ -76,7 +76,7 @@ name: Live verification
 # provision() writes it to the intellect only and leaves the avatar's unset, a
 # Jinja2 `{% if %}` template renders per session from client variables
 # (`requestVars`), SILENT_OPENING on the intellect alone gives a silent
-# opening turn, a `<blank>` branch + kickoff asks a preset question, and each
+# opening turn, a silent branch + kickoff asks a preset question, and each
 # re-join replays the opening (sys__is_new_thread, a var cleared with '').
 # See scripts/live-verify-opening-phrase.mjs.
 # live-verify-avatar-flag checks that sys__avatar_enabled is true in a browser
@@ -1429,7 +1429,7 @@ jobs:
           if [ "$RUN_ALL" = true ]; then SHARE="--share"; fi
           node scripts/live-step.mjs --log live-verify-avatar-flag-output.log -- node scripts/live-verify-avatar-flag.mjs --env prod $SHARE
 
-      # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 <blank> + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
+      # Provision 3 agents (silent+kickoff, Jinja2, Jinja2 silent branch + kickoff) → measure connect timing (3 runs each) → check startup KPIs per arm → cleanup
       - name: Session · Startup KPIs (connect timing)
         id: live_verify_connect_timing
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['kickoff'] == 'true') && matrix.engine == 'chromium' }}
