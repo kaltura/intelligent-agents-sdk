@@ -866,8 +866,8 @@ test('the server moves to a new relay host: the next session uses it and the old
   assert.equal(sockets.length, 2);
   assert.deepEqual(peerUrls(stvPeer())[0], turnServers('relay-v2.example.net').urls);
   assert.equal(stvPeer().config.iceServers[0].credential, 'cred-1');
-  const hosts = peerUrls(stvPeer()).flat().map((u) => u.replace(/^turns?:/, '').split(/[:?]/)[0]);
-  assert.ok(!hosts.includes('relay.example.net'), 'the old host is gone');
+  const hosts = new Set(peerUrls(stvPeer()).flat().map((u) => new URL(u.replace(/^turns?:/, 'http://')).hostname));
+  assert.deepEqual([...hosts].sort(), ['relay-v2.example.net', HOST].sort(), 'the old host is gone');
   session.disconnect();
 });
 
