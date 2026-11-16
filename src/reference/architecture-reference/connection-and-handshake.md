@@ -58,7 +58,7 @@ Step 11 runs once both lanes are done. The first lane to fail rejects `connect()
 | 9 | Connect ASR (mic uplink), lane A, after 6→7 | `asr-webrtc-*` handshake ([§5](/reference/wire-protocol/audio-channels/#5-asr-uplink-pc1-microphone--server)) | - | 30s per wait (`timeout`, `phase: 'asr'`) |
 | 10 | Subscribe STV video (WHEP) **and wait until it is *playable*, or give up waiting**, lane B, starts right after step 5 | → WHEP `POST` (5 s per try, 3 tries; [details](/reference/wire-protocol/audio-channels/#6-stv-downlink-pc2-avatar-videoaudio--you)) → wait for the [playable-video gate](#step-10-the-playable-video-gate) | first painted frame | `timeouts.firstFrame` (6s), counted from the moment the answer is applied. See the [gate](#step-10-the-playable-video-gate) for what happens at the cap |
 | 11 | Emit `disclosure`, then approve (this starts the spoken greeting), once lanes A and B are both done | → `approvedPermissions` `{room}` | - | - |
-| 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in about 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
+| 12 | Opening turn runs. With a silent opening phrase (`SILENT_OPENING`) it produces no speech and ends in under 0.5 s. A configured `kickoff` is sent on its `stvFinishedTalking` ([guide](/guides/start-the-conversation/)) | ← `stvStartedTalking` … ← `stvFinishedTalking`, then → `onTextEntered {text}` | `stvFinishedTalking` | - |
 | → | **CONNECTED** | listen for `agent_raw_text`, `generatingSpeech`, `stvStartedTalking` | - | - |
 
 </div>

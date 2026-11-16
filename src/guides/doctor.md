@@ -30,6 +30,7 @@ Run the doctor, then look for these codes. Session warnings (`slow_turn` and oth
 | Callers in another language are misheard | `asr_language_mismatch`, `config_language_differs` |
 | The avatar speaks, but the words are garbled | `voice_reply_language_mismatch`, `reply_language_differs_from_config` |
 | Numbers, symbols or acronyms are read wrong | `spoken_text_digits_cross_language`, `respelling_hyphen_or_mixed_case`, `respelling_table_shared_across_providers`, `spoken_output_undeclared` |
+| The agent connects, but the first reply or a `speak()` reply never comes | `silent_opening_unsupported_voice`, `silent_opening_legacy_phrase` |
 | A reply shows as text but no audio starts | `speech_not_started` |
 | A long silence before the avatar speaks | `latency_thinking`, `latency_prompt_size`, `latency_preloaded_skills`, `thread_start_tool_blocks`, `slow_turn` |
 | Replies run long | `latency_output_tokens` |
@@ -110,6 +111,8 @@ How the text a voice speaks is written. Config only: the doctor cannot hear a vo
 | `spoken_text_digits_cross_language` | warn | An avatar voice is made for one language, replies are in another, and the opening line or a spoken-forms row holds digits or symbols (`% $ & € £ #`). The voice reads them in its own language or garbles them |
 | `respelling_hyphen_or_mixed_case` | info | A spoken-forms row (`Term -> "spoken"`) is written with hyphens or mixed case, such as `KAY-ger`. In listening tests, voices often spelled these out or stuttered. Hyphenated number words like `twenty-five` are fine |
 | `respelling_table_shared_across_providers` | info | One spoken-forms table is used by agents whose voices come from different providers (read from the voice's `ttsProvider`). The same respelling can win on one provider and fail on another |
+| `silent_opening_unsupported_voice` | error | The opening line is silent (`SILENT_OPENING`, or a silent template branch) and the avatar's voice is a Cartesia voice. See [Choose an opening](/guides/start-the-conversation/#choose-an-opening) |
+| `silent_opening_legacy_phrase` | warn | The opening line is `<blank>`, which does not end the opening turn on ElevenLabs voices. Set `SILENT_OPENING` instead |
 | `spoken_output_undeclared` | info | The agent has an avatar, but no prompt says the reply is spoken aloud. Skipped when replies are forced to a language other than English |
 
 `spoken_text_digits_cross_language` compares the voice language with the forced reply language, or with `asr.language` when none is forced. It reads only the opening line and rows written as `Term -> "spoken form"` (also `→` or `=>`, and quotes are optional when the prompt has three or more such rows) in the base directive and prompt blocks. It does not read model replies: to check those, pass `spoken` to [`mgmt.doctorProbe`](#time-a-real-turn).
@@ -214,7 +217,7 @@ await mgmt.doctorProbe(adminKs, { agentId, message, clientTools: {
 } });
 ```
 
-The agent writes its reply from the answer, so make the stub look like your host's real one. `reply.toolAcks` lists each answer (`ok`, or `reason` and `status` when it failed). `reply.unansweredTools` names the waiting tools that got no answer, so the turn was held. On `probe_timeout` the `error.message` names them too.
+The key is the tool's exact name, which can carry a prefix: the timeout message shows it. The agent writes its reply from the answer, so make the stub look like your host's real one. An answer must be plain JSON and a function must finish within `timeoutMs`. `reply.toolAcks` lists each answer (`ok`, or `reason` and `status` when it failed, with `handler_timeout` for a function that did not finish). `reply.unansweredTools` names the waiting tools with no delivered answer, so the turn was held. On `probe_timeout` the `error.message` names them and says why.
 
 The probe sends a real message with `add_message_in_db: false`, so it is not stored. Lifecycle rules can still react to the session. When any active rule matches the agent, the probe sends nothing (`ran: false`) and lists the rules. Pass `allowSideEffects: true` to run anyway.
 
