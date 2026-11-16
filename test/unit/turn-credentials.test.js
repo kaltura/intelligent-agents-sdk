@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import { normalizeServerTurn, iceServersFor, iceConfig, turnServers, withoutTurnQuery, turnUrlKeys } from '../../src/experience/wire.js';
 
 /** Server-sent TURN credentials: read whatever shape arrives, and pick the ICE servers for a peer. */
