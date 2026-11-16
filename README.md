@@ -107,11 +107,11 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 </script>
 ```
 
-`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.40.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
+`@latest` resolves to the newest tag, so this URL always matches the current README without an editing pass on every release. It is **not cached the same way** as a tagged path. jsDelivr re-checks it periodically, so what it serves can change without warning. For anything you ship, pin to a real tag (for example `@v1.41.0`). jsDelivr caches a tagged path forever, so a pin is both stable and fast:
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.40.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.41.0/src/experience/index.js';
 </script>
 ```
 
@@ -1110,7 +1110,7 @@ await session.sendText('Look up open tickets for this account.');
 
 `setModelConfiguration` picks the chat model and its limits. Keys and allowed values: [Configure an Intellect](docs/api/build/intellect.md). Pass `null` to return to the defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching.
 
-`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a template (`{{ var }}` and `{% if var %}` syntax). Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. How to choose, personalize the phrase and use `kickoff`: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
+`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a template (`{{ var }}` and `{% if var %}` syntax). Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff` (ElevenLabs voices only, not Cartesia). How to choose, personalize the phrase and use `kickoff`: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
 
 `setThreadStartTools` lists tool ids that run once at the start of every thread, before the first turn. Only `api` and `code` tools are supported. Pass `[]` to clear.
 

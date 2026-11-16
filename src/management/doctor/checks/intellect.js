@@ -217,7 +217,7 @@ export const openingPhraseMayRenderEmpty = {
     return [about(iv, {
       severity: 'info', code: 'opening_phrase_may_render_empty', field: 'opening_phrase',
       message: 'The whole opening sits in one {% if %} with no {% else %}. When the condition is false the line renders empty, and the agent speaks its default greeting.',
-      fix: 'Add an {% else %} branch with text, or with <blank> for a silent opening.',
+      fix: 'Add an {% else %} branch with text, or with SILENT_OPENING for a silent opening.',
     })];
   },
 };

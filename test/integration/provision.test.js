@@ -117,12 +117,31 @@ test('provision uses the generated profile opening phrase when openingPhrase is 
 test('provision({ openingPhrase }) wins over the generated profile phrase and reaches the intellect only', async () => {
   const { f, m } = baseProvision();
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: SILENT_OPENING });
-  assert.equal(intellectUpdateBody(f).opening_phrase, '<blank>');
+  assert.equal(intellectUpdateBody(f).opening_phrase, '-');
   assert.ok(!('openingPhrase' in avatarBody(f)));
   f.calls.length = 0;
   await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase: 'Welcome to the studio!' });
   assert.equal(intellectUpdateBody(f).opening_phrase, 'Welcome to the studio!');
   assert.ok(!('openingPhrase' in avatarBody(f)));
+});
+
+test('provision with a silent opening skips a Cartesia preset voice; a spoken opening keeps the first voice', async () => {
+  const voices = [{ itemId: 'v-cartesia', attributes: { voice: { ttsProvider: 'Cartesia' } } }, { itemId: 'v-eleven', attributes: { voice: { ttsProvider: 'elevenLabs' } } }];
+  const withVoices = () => fakeFetch([
+    { match: '/application/generateAgentProfile', respond: () => ({ body: { name: 'YogaBot', openingPhrase: 'Namaste!' } }) },
+    { match: '/v1/intellect/add', respond: () => ({ body: { id: 1389, status: 2, prompts: [] } }) },
+    { match: '/v1/intellect/update', respond: () => ({ body: { id: 1389, status: 2 } }) },
+    { match: '/agent/create', respond: () => ({ body: { agentId: 'agent-xyz' } }) },
+    { match: '/catalog-item/list', respond: (req) => ({ body: { objects: req.body?.filter?.typeEqual === 'Voice' ? voices : [{ itemId: 'visual-1' }], totalCount: 2 } }) },
+    { match: '/avatar/create', respond: () => ({ body: { id: '6a07d63d8ccd85cbfafc5416' } }) },
+    { match: '/application/resolveWidgetId', respond: () => ({ body: { widgetId: '1_v1mj1kxb' } }) },
+  ]);
+  for (const [openingPhrase, expected] of [[SILENT_OPENING, 'v-eleven'], ['Welcome!', 'v-cartesia']]) {
+    const f = withVoices();
+    const m = new Management({ partnerId: 7654321, adminSecret: 'a'.repeat(32), fetch: f });
+    await m.provision({ brief: 'x', ks: ADMIN_KS, openingPhrase });
+    assert.equal(avatarBody(f).voice.id, expected, openingPhrase);
+  }
 });
 
 // Developer example: the intellect phrase is a Jinja2 template, so one phrase

@@ -68,7 +68,7 @@
  * |---|---|---|---|
  * | `silent+kickoff` | SILENT_OPENING | kickoff | the reply to the kickoff |
  * | `jinja` | `{% if sys__is_new_thread %}` greeting with `{{ user_name }}` | requestVars `{ user_name }`, no kickoff | the scripted opening |
- * | `jinja-pill` | `{% if pending_question %}<blank>{% else %}` greeting | requestVars `{ pending_question: '1' }`, kickoff `{ text, echo: true }` | the reply to the preset question |
+ * | `jinja-pill` | `{% if pending_question %}-{% else %}` greeting | requestVars `{ pending_question: '1' }`, kickoff `{ text, echo: true }` | the reply to the preset question |
  *
  * Extra per-arm checks: `jinja` speaks the name and sends no text; `jinja-pill` has a silent
  * opening, answers the question, and echoes it once as a user transcript. Each arm is judged
@@ -121,6 +121,7 @@ import {
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, waitFor, find, all, agentReply, dumpEvents, sleep, isOpeningSpeechId, textsSent, SILENT_OPENING, redact,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
+import { isSilentOpening } from '../src/core/opening.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'connect-timing');
 // A sound that starts this close to the end of the silent opening is the reply that follows it, not the opening.
@@ -484,7 +485,7 @@ try {
         const echoes = all(evs, 'transcript', (d) => d?.type === 'user' && typeof d?.text === 'string' && d.text.includes(/** @type {string} */ (v.kickoff)));
         report.check(`${tag}: the preset question shows once as a user transcript (echo)`, echoes.length === 1, { echoes: echoes.length });
       }
-      const leaked = [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+      const leaked = [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && isSilentOpening(e.detail.text));
       report.check(`${tag}: silent opening never surfaces as text`, leaked.length === 0, { leaked: leaked.length });
       const whepBad = run.whep.filter((/** @type {string} */ l) => /^POST .*(FAILED|→ [45]\d\d)/.test(l));
       if (mediaMode !== 'audio') report.check(`${tag}: every WHEP POST succeeded`, whepBad.length === 0, { whep: run.whep });

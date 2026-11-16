@@ -253,9 +253,10 @@ test('session: interrupt, pause and disconnect stay quiet', async () => {
 
 test('session: a silent opening and a server check-in stay quiet', async () => {
   const a = await connected({ speechStartGraceMs: 30 });
-  a.socket.server('agent_start_speech', { turnId: 'T0', speechId: 'sp0', isNewTurn: true });
-  a.socket.server('stvSpeechChunk', { speechId: 'sp0', text: '<blank>', durationMs: 0 });
-  a.socket.server('stvFinishedGenerating', { speechId: 'sp0' });
+  const opening = 'abcd-approved-permissions';
+  a.socket.server('agent_start_speech', { turnId: 'T0', speechId: opening, isNewTurn: true });
+  a.socket.server('stvSpeechChunk', { speechId: opening, text: '-', durationMs: 0 });
+  a.socket.server('stvFinishedGenerating', { speechId: opening });
   await sleep(80);
   assert.deepEqual(codes(a.warnings), []);
 });
