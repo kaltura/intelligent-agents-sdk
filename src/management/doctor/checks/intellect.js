@@ -6,7 +6,7 @@
  */
 import { isSilentOpening } from '../../../core/opening.js';
 import { CAPABILITY_DEFAULTS } from '../../capabilities.js';
-import { toolRefId } from '../../tools.js';
+import { toolRefId, unsafeUrlArgs } from '../../tools.js';
 
 /** @typedef {import('../model.js').IntellectView} IntellectView */
 /** @typedef {import('../model.js').DoctorCheck} DoctorCheck */
@@ -100,6 +100,29 @@ export const latencyPromptSize = {
       message: `The prompt blocks hold ${chars} characters, above ${t.promptChars}. ${MEASURE}`,
       fix: 'Move rarely needed rules into a skill with mode "adhoc", or into the knowledge base.',
     })];
+  },
+};
+
+/** An api tool whose URL takes model text where it can change the request. @type {DoctorCheck} */
+export const apiToolUrlArgUnsafe = {
+  id: 'api-tool-url-arg-unsafe', category: 'tools', scope: 'intellect', needs: ['intellect', 'refs'], codes: ['api_tool_url_arg_unsafe'],
+  run(/** @type {IntellectView} */ iv) {
+    const c = brain(iv);
+    if (!c || iv.refs !== 'ok') return [];
+    const refs = [...new Set([...(c.tool_ids ?? []), ...(c.thread_start_tools ?? [])].map(toolRefId))];
+    return refs.flatMap((id) => {
+      const tool = (iv.tools ?? []).find((t) => String(t.id) === id);
+      const cfg = cfgOf(tool);
+      const hits = cfg.type === 'api' ? unsafeUrlArgs(cfg.request?.url) : [];
+      if (hits.length === 0) return [];
+      const where = (/** @type {string} */ w) => hits.filter((h) => h.where === w).map((h) => `{${h.name}}`).join(', ');
+      const parts = [where('host-or-path') && `${where('host-or-path')} in the host or path`, where('before-more-url') && `${where('before-more-url')} before more of the URL`].filter(Boolean);
+      return [about(iv, {
+        severity: 'warn', code: 'api_tool_url_arg_unsafe', field: `tool_ids ${id}`,
+        message: `Tool "${tool.name ?? id}" puts ${parts.join(' and ')}. The value is inserted as the model sent it, not percent-encoded, so text from the end user can add, drop or move parts of the request. Ordinary values such as "New York" or "100%" also break it.`,
+        fix: 'Use an {arg} only as the last query value, and put fixed parameters before it. Point the tool at your own endpoint that validates the value and authorizes every call. If the target already does that, add { code: \'api_tool_url_arg_unsafe\', configId } to the ignore list.',
+      })];
+    });
   },
 };
 

@@ -18,7 +18,8 @@
  * @internal
  */
 
-const KEY_RE = /^([A-Za-z_][\w-]*)[ \t]*:(?:[ \t]+(.*)|)$/;
+// `(?![ \t])` makes the blank run before the value maximal, so a line cannot be split in many ways (no backtracking blow-up).
+const KEY_RE = /^([A-Za-z_][\w-]*)[ \t]*:(?:[ \t]+(?![ \t])(.*)|)$/;
 const DASH_RE = /^-(?:[ \t]|$)/;
 const BLOCK_RE = /^([|>])([+-]?)([1-9]?)([+-]?)$/;
 const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);

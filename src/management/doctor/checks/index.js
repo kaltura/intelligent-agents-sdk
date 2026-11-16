@@ -7,7 +7,7 @@ import {
   openingPhraseDuplicate, openingPhraseLanguage, voiceLanguageDefault, voiceReplyLanguage,
 } from './agent.js';
 import {
-  clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
+  apiToolUrlArgUnsafe, clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
   latencyPromptSize, latencyThinking, openingPhraseMayRenderEmpty, threadStartToolBlocks, toolSurfaceLarge,
 } from './intellect.js';
 import { respellingStyle, respellingTableSharedProviders, silentOpeningVoice, spokenDigitsCrossLanguage, spokenOutputUndeclared } from './speech.js';
@@ -29,6 +29,7 @@ export const CHECKS = Object.freeze([
   latencyThinking, latencyOutputTokens, latencyPreloadedSkills, latencyPromptSize, threadStartToolBlocks, toolSurfaceLarge,
   clientToolWaitBlocks, clientToolFireAndForget, conditionUnquotedName, openingPhraseMayRenderEmpty,
   spokenOutputUndeclared, respellingStyle, spokenDigitsCrossLanguage, respellingTableSharedProviders, silentOpeningVoice,
+  apiToolUrlArgUnsafe,
 ]);
 
 /**
