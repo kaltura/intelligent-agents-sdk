@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { respellingStyle, respellingTableSharedProviders, spokenDigitsCrossLanguage, spokenFormRows, spokenOutputUndeclared } from '../../src/management/doctor/checks/speech.js';
+import { respellingStyle, respellingTableSharedProviders, silentOpeningVoice, spokenDigitsCrossLanguage, spokenFormRows, spokenOutputUndeclared } from '../../src/management/doctor/checks/speech.js';
 import { providerOf, voicesOf } from '../../src/management/doctor/checks/agent.js';
 import { CHECKS, DOCTOR_CODES, runChecks } from '../../src/management/doctor/checks/index.js';
 import { DEFAULT_THRESHOLDS } from '../../src/management/doctor/model.js';
@@ -56,7 +56,7 @@ test('spoken_text_digits_cross_language: forced language wins over ASR language'
 test('spoken_text_digits_cross_language: quiet for a matching voice, a silent opening, words only, or an unknown language', () => {
   const cfg = { ...table(['A -> "12"']), opening_phrase: 'Revenue grew 12%.' };
   assert.deepEqual(run(spokenDigitsCrossLanguage, agentView(cfg, { avatars: [avatar('av1', voice('en'))] })), []);
-  assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ ...table(['A -> "twelve"']), opening_phrase: '<blank>' })), []);
+  assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ ...table(['A -> "twelve"']), opening_phrase: '-' })), []);
   assert.deepEqual(run(spokenDigitsCrossLanguage, agentView(cfg, { asr: 'zz-unknown' })), []);
   assert.deepEqual(run(spokenDigitsCrossLanguage, agentView(cfg, { avatars: [avatar('av1', voice('zz-unknown'))] })), []);
 });
@@ -185,7 +185,7 @@ test('spoken_text_digits_cross_language: with no intellect opening line, each av
 test('spoken_text_digits_cross_language: the intellect line wins over an avatar line, and a silent intellect line speaks nothing', () => {
   const a1 = { ...avatar('av1', voice('he')), avatar: { id: 'av1', openingPhrase: 'Up 12%.' } };
   assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ id: 10, type: 'brain', opening_phrase: 'Welcome.' }, { avatars: [a1] })), []);
-  assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ id: 10, type: 'brain', opening_phrase: '<blank>' }, { avatars: [a1] })), []);
+  assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ id: 10, type: 'brain', opening_phrase: '-' }, { avatars: [a1] })), []);
   assert.deepEqual(run(spokenDigitsCrossLanguage, agentView({ id: 10, type: 'brain', opening_phrase: '   ' }, { avatars: [{ ...a1, avatar: { id: 'av1', openingPhrase: '  ' } }] })), []);
 });
 
@@ -335,11 +335,102 @@ test('spoken_output_undeclared: skips an external intellect and handles odd prom
   assert.deepEqual(run(spokenOutputUndeclared, intellectView({ id: 10, type: 'brain' })), []);
 });
 
+// ---- silent_opening_*: the opening phrase against the voice provider ----
+
+const silentRun = (opening, v = providerVoice('en', 'elevenLabs'), extra = {}) => run(silentOpeningVoice, agentView({ id: 10, type: 'brain', opening_phrase: opening }, { avatars: [avatar('av1', v)], ...extra }));
+
+test('silent_opening_unsupported_voice: a silent opening on a Cartesia voice is an error naming the voice and provider', () => {
+  for (const phrase of ['-', ' - ', '<blank>']) {
+    const f = silentRun(phrase, providerVoice('en', 'cartesia'));
+    assert.equal(f.length, 1, phrase);
+    assert.equal(f[0].severity, 'error');
+    assert.equal(f[0].code, 'silent_opening_unsupported_voice');
+    assert.equal(f[0].field, 'opening_phrase');
+    assert.equal(f[0].agentId, 'a1');
+    assert.equal(f[0].configId, 10);
+        assert.match(f[0].message, /Cartesia voice/);
+    assert.match(f[0].fix, /setOpeningPhrase\(10, 'Hi\.', adminKs\)/);
+  }
+});
+
+test('silent_opening_unsupported_voice: finds a silent branch in a template, not a dash inside a sentence', () => {
+  const cartesia = providerVoice('en', 'cartesia');
+  assert.equal(silentRun('{% if returning %}-{% else %}Welcome back.{% endif %}', cartesia)[0]?.code, 'silent_opening_unsupported_voice');
+  assert.equal(silentRun('{% if returning %}Welcome back.{% else %} - {% endif %}', cartesia)[0]?.code, 'silent_opening_unsupported_voice');
+  assert.deepEqual(silentRun('Hello{% if vip %} - {% endif %}there.', cartesia), []);
+  assert.deepEqual(silentRun('Hello - welcome.', cartesia), []);
+  assert.equal(silentRun('{% if n % 2 == 0 %}-{% else %}Welcome back.{% endif %}', cartesia)[0]?.code, 'silent_opening_unsupported_voice', 'a condition may contain a percent sign');
+  assert.equal(silentRun('{%- if a -%}-{%- else -%}Hi.{%- endif -%}', cartesia)[0]?.code, 'silent_opening_unsupported_voice', 'whitespace-trim tags');
+  assert.deepEqual(silentRun('Hi {% if a %}{% if b %}-{% else %}x{% endif %}{% endif %}', cartesia), [], 'text before the if');
+  assert.deepEqual(silentRun('{% if a %}{% if b %}-{% else %}x{% endif %}{% else %}Hi.{% endif %}', cartesia), [], 'nested ifs are not read');
+});
+
+const avatarLine = (id, phrase, v) => ({ id, state: 'found', avatar: { id, openingPhrase: phrase }, voice: v });
+
+test('silent_opening_unsupported_voice: uses the avatar line when the intellect has none, and says which', () => {
+  const v = agentView({ id: 10, type: 'brain' }, { avatars: [avatarLine('av1', '-', providerVoice('en', 'cartesia'))] });
+  const f = run(silentOpeningVoice, v);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].field, 'avatar av1 openingPhrase');
+  assert.match(f[0].fix, /avatars\.update\(\{ id: 'av1', openingPhrase: 'Hi\.' \}, adminKs\)/);
+  const spoken = agentView({ id: 10, type: 'brain', opening_phrase: 'Hi.' }, { avatars: [avatarLine('av1', '-', providerVoice('en', 'cartesia'))] });
+  assert.deepEqual(run(silentOpeningVoice, spoken), [], 'the intellect line wins over the avatar line');
+  const noConfig = { ...v, configId: undefined };
+  assert.equal('configId' in run(silentOpeningVoice, noConfig)[0], false, 'no configId key without a config id');
+});
+
+test('silent opening checks: an avatar line is checked against its own avatar voice only', () => {
+  const eleven = providerVoice('en', 'elevenLabs');
+  const cartesia = providerVoice('en', 'cartesia');
+  const mixed = (a, b) => agentView({ id: 10, type: 'brain' }, { avatars: [avatarLine('x', a, eleven), avatarLine('y', b, cartesia)] });
+  assert.deepEqual(run(silentOpeningVoice, mixed('-', 'Hi')), [], 'silent on ElevenLabs, spoken on Cartesia');
+  const f = run(silentOpeningVoice, mixed('Hi', '-'));
+  assert.equal(f[0].code, 'silent_opening_unsupported_voice');
+  assert.equal(f[0].field, 'avatar y openingPhrase');
+  const both = run(silentOpeningVoice, mixed('-', '-'));
+  assert.equal(both[0].field, 'avatar y openingPhrase', 'the error names the line that is on Cartesia');
+  const legacy = run(silentOpeningVoice, mixed('<blank>', 'Hi'));
+  assert.equal(legacy[0].code, 'silent_opening_legacy_phrase', 'legacy on ElevenLabs is not an error because another avatar uses Cartesia');
+  assert.equal(legacy[0].field, 'avatar x openingPhrase');
+  assert.match(legacy[0].fix, /avatars\.update\(\{ id: 'x', openingPhrase: SILENT_OPENING \}, adminKs\)/);
+});
+
+test('silent opening checks: a silent avatar line next to a spoken intellect line is ignored', () => {
+  const v = agentView({ id: 10, type: 'brain', opening_phrase: 'Hello!' }, { avatars: [avatarLine('av1', '-', providerVoice('en', 'cartesia')), avatarLine('av2', '<blank>', providerVoice('en', 'elevenLabs'))] });
+  assert.deepEqual(run(silentOpeningVoice, v), []);
+});
+
+test('silent_opening_legacy_phrase: <blank> on any other voice is a warning with the replacement call', () => {
+  for (const v of [providerVoice('en', 'elevenLabs'), providerVoice('en'), voice('en')]) {
+    const f = silentRun('<blank>', v);
+    assert.equal(f.length, 1);
+    assert.equal(f[0].severity, 'warn');
+    assert.equal(f[0].code, 'silent_opening_legacy_phrase');
+    assert.match(f[0].fix, /setOpeningPhrase\(10, SILENT_OPENING, adminKs\)/);
+  }
+  assert.equal(silentRun('{% if a %}<blank>{% else %}Hi there.{% endif %}')[0]?.code, 'silent_opening_legacy_phrase');
+  assert.equal(silentRun('<blank>', providerVoice('en', 'cartesia')).length, 1, 'one finding, the voice one');
+  assert.equal(silentRun(' <blank>\n')[0]?.code, 'silent_opening_legacy_phrase', 'padded');
+  const onAvatar = run(silentOpeningVoice, agentView({ id: 10, type: 'brain' }, { avatars: [avatarLine('av1', '<blank>', providerVoice('en', 'elevenLabs'))] }));
+  assert.equal(onAvatar[0].code, 'silent_opening_legacy_phrase');
+  assert.equal(onAvatar[0].field, 'avatar av1 openingPhrase');
+});
+
+test('silent opening checks: quiet for the dash on ElevenLabs or an unknown provider, spoken lines, text around <blank>, no opening, external intellect, unfound voices', () => {
+  assert.deepEqual(silentRun('-'), []);
+  assert.deepEqual(silentRun('-', providerVoice('en')), []);
+  assert.deepEqual(silentRun('Welcome.', providerVoice('en', 'cartesia')), []);
+  assert.deepEqual(silentRun('<blank> hi'), []);
+  assert.deepEqual(run(silentOpeningVoice, agentView({ id: 10, type: 'brain' })), []);
+  assert.deepEqual(run(silentOpeningVoice, agentView({ id: 10, type: 'external', opening_phrase: '-' })), []);
+  assert.deepEqual(silentRun('-', undefined, { avatars: [{ id: 'x', state: 'missing' }] }), [], 'no voice found, nothing to say about a provider');
+});
+
 // ---- registry ----
 
 test('every speech check has unique codes, the speech category, and is listed once', () => {
   const speech = CHECKS.filter((c) => c.category === 'speech');
-  assert.deepEqual(speech.map((c) => c.id).sort(), ['respelling-style', 'respelling-table-shared-providers', 'spoken-digits-cross-language', 'spoken-output-undeclared']);
+  assert.deepEqual(speech.map((c) => c.id).sort(), ['respelling-style', 'respelling-table-shared-providers', 'silent-opening-voice', 'spoken-digits-cross-language', 'spoken-output-undeclared']);
   const all = speech.flatMap((c) => c.codes);
   assert.equal(new Set(all).size, all.length);
   assert.equal(new Set(CHECKS.map((c) => c.id)).size, CHECKS.length);

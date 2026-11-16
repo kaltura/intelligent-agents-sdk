@@ -1110,7 +1110,7 @@ await session.sendText('Look up open tickets for this account.');
 
 `setModelConfiguration` picks the chat model and its limits. Keys and allowed values: [Configure an Intellect](docs/api/build/intellect.md). Pass `null` to return to the defaults. Which models answer depends on your partner's region, so run `converseOnce` once after switching.
 
-`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a template (`{{ var }}` and `{% if var %}` syntax). Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff`. How to choose, personalize the phrase and use `kickoff`: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
+`setOpeningPhrase` sets the intellect's `opening_phrase`, the line spoken as the first turn of every avatar join. It is a template (`{{ var }}` and `{% if var %}` syntax). Pass `null` to clear it, or `SILENT_OPENING` for a silent opening so the browser can send the first turn with `kickoff` (ElevenLabs voices only, not Cartesia). How to choose, personalize the phrase and use `kickoff`: [docs/START-THE-CONVERSATION.md § Personalize the opening](docs/START-THE-CONVERSATION.md#personalize-the-opening).
 
 `setThreadStartTools` lists tool ids that run once at the start of every thread, before the first turn. Only `api` and `code` tools are supported. Pass `[]` to clear.
 

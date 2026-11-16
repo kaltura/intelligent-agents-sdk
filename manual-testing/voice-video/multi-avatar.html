@@ -230,7 +230,7 @@
     const wireTable = (id, session, log) => {
       // The service's idle check-in ("still there?") arrives as a turn whose speechId ends in "-wake-up", with no user
       // input before it. Any other turn nobody invited (not cued by us, no mic or typed input) is treated the same:
-      // cut it before it is heard and never route it. The silent "<blank>" opening turn before the show is fine.
+      // cut it before it is heard and never route it. The silent opening turn before the show is fine.
       const cutUninvited = (p) => {
         if (turns[id]) return false;
         const wakeUp = String(p?.speechId || '').endsWith('-wake-up');
@@ -289,7 +289,7 @@
       if (window.sessions[hostId]?.state !== 'connected' || actors.length < 2) return;
       if (ready.size < connectedIds().length && !table.readyFallback) return;
       table.opening = true;
-      await waitSilence(OPEN_QUIET_MS); // each avatar plays its silent "<blank>" opening turn right after connect; a cue sent during it is dropped
+      await waitSilence(OPEN_QUIET_MS); // each avatar plays its silent opening turn right after connect; a cue sent during it is dropped
       table.opening = false;
       if (table.opened || table.blocked || window.sessions[hostId]?.state !== 'connected') return;
       table.opened = true; table.running = true; table.scene = 0; table.premise = ''; table.hostRescues = 0;

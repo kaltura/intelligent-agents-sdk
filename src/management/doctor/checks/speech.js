@@ -4,7 +4,7 @@
  * `gather.js` built. They say what the config makes likely, never what a
  * voice did, so each message says what to listen for.
  */
-import { isSilentOpening } from '../../../core/opening.js';
+import { isSilentOpening, LEGACY_SILENT_OPENING, SILENT_OPENING } from '../../../core/opening.js';
 import { normalizeLanguage, stripTemplateSyntax } from '../language.js';
 import { forcedLanguage, voicesOf } from './agent.js';
 
@@ -139,6 +139,63 @@ export const respellingTableSharedProviders = {
       severity: 'info', code: 'respelling_table_shared_across_providers', field: 'prompts', configId: iv.configId, agentIds: iv.agentIds,
       message: `One spoken-forms table is used by agents whose voices come from different providers: ${providers.join(', ')}. In listening tests the same respelling won on one provider and failed on another.`,
       fix: 'Give each provider its own intellect and table, and listen to every row on the voice that will speak it. If the voices are known to read the table the same way, ignore this.',
+    }];
+  },
+};
+
+/** A silent phrase alone as a `{% if %}`, `{% elif %}` or `{% else %}` branch of a template. A condition may contain `%`. */
+const SILENT_BRANCH = /\{%-?\s*(?:if|elif|else)\b(?:[^%]|%(?!\}))*?-?%\}\s*(-|<blank>)\s*(?=\{%)/g;
+const IF_TAG = /\{%-?\s*if\b/g;
+
+/**
+ * The silent phrases an opening line can render: the whole line, or one branch of a template
+ * that is a single `{% if %}` from start to end. A dash inside a sentence is not one.
+ * @param {unknown} line @returns {string[]}
+ */
+function silentPhrasesIn(line) {
+  if (typeof line !== 'string') return [];
+  const text = line.trim();
+  const wrapped = /^\{%-?\s*if\b/.test(text) && /\{%-?\s*endif\s*-?%\}$/.test(text) && (text.match(IF_TAG) || []).length === 1;
+  const phrases = isSilentOpening(text) ? [text] : wrapped ? [...text.matchAll(SILENT_BRANCH)].map((m) => m[1]) : [];
+  return [...new Set(phrases)];
+}
+
+/**
+ * Silent openings, against the voice provider. The line that is spoken is the intellect's `opening_phrase`,
+ * or each avatar's `openingPhrase` when the intellect has none. An avatar line is checked against that avatar's voice.
+ * @type {DoctorCheck}
+ */
+export const silentOpeningVoice = {
+  id: 'silent-opening-voice', category: 'speech', scope: 'agent', needs: ['intellect', 'avatars', 'catalog'], codes: ['silent_opening_unsupported_voice', 'silent_opening_legacy_phrase'],
+  run(/** @type {AgentView} */ view) {
+    const c = brainOf(view.intellect);
+    /** @type {{where:string, line:unknown, avatarId?:string}[]} */
+    const lines = typeof c?.opening_phrase === 'string' && c.opening_phrase.trim() !== ''
+      ? [{ where: 'opening_phrase', line: c.opening_phrase }]
+      : view.avatars.map((a) => ({ where: `avatar ${a.id} openingPhrase`, line: a.avatar?.openingPhrase, avatarId: a.id }));
+    const silent = lines.map((l) => ({ ...l, phrases: silentPhrasesIn(l.line) })).filter((l) => l.phrases.length > 0);
+    if (silent.length === 0) return [];
+    const voices = voicesOf(view);
+    const base = { agentId: view.agentId, ...(view.configId !== undefined ? { configId: view.configId } : {}) };
+    /** The call that rewrites one line. @param {{avatarId?:string}} l @param {string} expr A JS expression for the new text. */
+    const write = (l, expr) => l.avatarId !== undefined
+      ? `await mgmt.avatars.update({ id: '${l.avatarId}', openingPhrase: ${expr} }, adminKs)`
+      : `await mgmt.intellectConfig.setOpeningPhrase(${view.configId ?? 'configId'}, ${expr}, adminKs)`;
+    for (const l of silent) {
+      const voice = voices.find((v) => v.provider === 'cartesia' && (l.avatarId === undefined || v.avatarId === l.avatarId));
+      if (!voice) continue;
+      return [{
+        ...base, field: l.where, severity: 'error', code: 'silent_opening_unsupported_voice',
+        message: `The opening line is silent and voice "${voice.name}" is a Cartesia voice. In our measurements the opening turn of a Cartesia voice did not end, so every speak() and the kickoff stay held and get no reply.`,
+        fix: `Write a spoken opening line: ${write(l, "'Hi.'")}. Or give the avatar an ElevenLabs voice with mgmt.avatars.update. Then connect once and check that the agent answers.`,
+      }];
+    }
+    const legacy = silent.find((l) => l.phrases.includes(LEGACY_SILENT_OPENING));
+    if (!legacy) return [];
+    return [{
+      ...base, field: legacy.where, severity: 'warn', code: 'silent_opening_legacy_phrase',
+      message: `The opening line uses ${LEGACY_SILENT_OPENING}. On ElevenLabs voices the opening turn with it does not end, so every speak() and the kickoff stay held and get no reply.`,
+      fix: `Replace ${LEGACY_SILENT_OPENING} with ${SILENT_OPENING} (SILENT_OPENING): ${write(legacy, 'SILENT_OPENING')}. In a template, change the branch text instead.`,
     }];
   },
 };

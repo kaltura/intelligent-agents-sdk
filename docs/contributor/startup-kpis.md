@@ -12,7 +12,7 @@ Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, from li
 |---|---|---|
 | 1 | `connect()` starts | 0 |
 | 2 | `connect()` resolves | 1.5 to 2.2 s |
-| 3 | Silent opening turn ends (`avatarStopTalking`) | about 0.3 s after step 2 |
+| 3 | Silent opening turn ends (`avatarStopTalking`) | under 0.5 s after step 2 |
 | 4 | The SDK sends the kickoff | same tick as step 3 |
 | 5 | `responsePending` fires | tens of ms after step 4 |
 | 6 | First real words (`speechChunk`) | about 1 s after step 2 |
