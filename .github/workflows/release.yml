@@ -151,11 +151,17 @@ jobs:
           V="${TAG#v}"
           MAJOR="${V%%.*}"
           MINOR="${V%.*}"
+          # The purge API takes at most 100 paths per request, so send batches of 50.
           for ref in latest "$MAJOR" "$MINOR"; do
             { git ls-files src; echo package.json; } \
-              | jq -R -s --arg ref "$ref" '{path: (split("\n") | map(select(length > 0)) | map("/gh/kaltura/intelligent-agents-sdk@" + $ref + "/" + .))}' \
-              | curl -sS --fail-with-body -X POST https://purge.jsdelivr.net/ -H 'Content-Type: application/json' --data-binary @- \
-              | jq -r '"@'"$ref"' purge: " + (.status // "unknown")' || echo "@$ref purge request failed, continuing"
+              | jq -R --arg ref "$ref" '"/gh/kaltura/intelligent-agents-sdk@" + $ref + "/" + .' \
+              | jq -s -c '[_nwise(50)][] | {path: .}' \
+              | while IFS= read -r body; do
+                  printf '%s' "$body" \
+                    | curl -sS -X POST https://purge.jsdelivr.net/ -H 'Content-Type: application/json' --data-binary @- \
+                    | jq -r '"@'"$ref"' purge: " + (.status // ("FAILED " + (.error.message // "no status")))' \
+                    || echo "@$ref purge request failed, continuing"
+                done
           done
 
       - name: 🌐 Every src/ file byte-identical on @tag, @latest, @major, @major.minor; exports import in headless Chromium; previous tag still served
