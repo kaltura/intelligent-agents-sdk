@@ -2,12 +2,13 @@
 
 # Limited Availability
 
-Features the SDK supports before every environment has them. **Employee or certified partner only.** Each feature is opt-in. An app that does not use it is unaffected.
+Features the SDK supports before every environment has them. **Employee or certified partner only.** A feature is either opt-in or automatic: automatic ones act only when the server sends the new data, and an environment that does not is unaffected.
 
 | Feature | Where | Default |
 |---|---|---|
 | Avatar emotions in the reply stream | Capability `avatar_emotions` | Off |
 | Avatar emotions setting | `emotions` on `avatars.create` and `avatars.update` | Not sent |
+| Per-session TURN credentials | `turn` in the connect handshake, read by `normalizeServerTurn` and `iceServersFor` | Automatic when the server sends them |
 
 The capability name `avatar_emotions` appears in no user doc, no docs site page and no assistant knowledge base. `node tools/check-docs.mjs` enforces that. Keep the `emotions` avatar setting out of those places by review. The list lives in `LIMITED_AVAILABILITY_CAPABILITIES` in `src/management/capabilities.js`.
 
@@ -96,3 +97,22 @@ TARGET=<name> node scripts/live-verify-emotions.mjs
 CI has no credentials for this environment, so the script is not part of any workflow.
 
 For a statistical check of the output, run the [emotions eval](emotions-eval.md).
+
+## Per-session TURN credentials
+
+Automatic. No option. A server that sends no `turn` behaves as before. To check an environment, run `node scripts/live-verify-turn.mjs --env <name> --env-file ../.env --expect-server-turn yes`. Use `no` for one that does not send them. The script asserts that the peers hold the server entry (or do not) and that no secret reaches logs, events or errors.
+
+**Where the SDK reads `turn`.** `onServerConnected`, `clientConfiguration`, `joinComplete` and `stvNewSession`. It also reads any event named for TURN or ICE servers (for example `turnCredentials`, `iceServers`), from `payload.turn` or the whole payload. `turn` is `{ url, username, credential, ttl }`, `ttl` in seconds. `KalturaScriptedVideoSession` takes the same forms.
+
+**Entries.** The server entry is listed first, `turnServerUrl` second. Both are gathered in parallel, so a session connects on whichever the relay accepts.
+
+- When both name the same UDP relay address, each address goes to one entry only. The server entry keeps UDP 443, the configured entry keeps UDP 80. Browsers share one socket per UDP relay address, so a refused entry would block the other one's UDP relay. TCP and TLS URLs stay in both. The SDK compares host names, so an IP or alias for the same relay is not split.
+- A `turn` with an empty or missing `url` uses the `turnServerUrl` host, unless the app passes `turnCredentials`. Then the server entry is ignored. A later `turn` with no `url` keeps the earlier host.
+- `turnCredentials` for a host the server entry does not name are used alone. The SDK reads `turnCredentials` once, when the session is created.
+- Credentials that arrive while peers exist are applied in place and take effect at the next ICE restart.
+
+**Refusal.** A browser refusal or a 401 on a URL only one entry uses sets that entry aside for later peers, with one `[turn]` warning. Firefox reports the error URL without its transport, so the SDK acts only on an unambiguous URL. With no `turnServerUrl` and no server entry, the logger gets one `[turn]` warning.
+
+**Renewal.** When a peer is about to need a new relay allocation (`resume()` after a long pause, a media recovery, `connect()` after `prepare()`) and the credentials expire within a minute, the SDK opens a fresh socket first to get new ones. It needs an expiry known at receipt, more than 120 s ahead, a server entry that peers actually use, and runs once per credential set. `resume()` takes the cold path then, so the app sees `reconnecting` and the opening line plays again.
+
+**Secrets.** No secret reaches logs, events, errors or `session.clientConfig`. They are dropped at session end.

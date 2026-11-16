@@ -89,6 +89,7 @@ The two Salesforce scripts need a Salesforce Developer Edition org or sandbox (`
 | `live-verify-unload.mjs` | Closing the page while connected, and while `connect()` runs, leaves no viewer attached to the avatar session on the server. The check is made from Node after the close |
 | `live-verify-prepare.mjs` | `session.prepare()`: joins ahead of `connect()` with state still `idle`, `connect()` reuses the socket (one `join`) and has no join phase left and its best run is faster than the plain best run by at least half of the plain run's socket and join time, and an unused prepared socket expires with `prepare_expired` |
 | `live-verify-opening-phrase.mjs` | `provision()` writes the opening phrase to the intellect only, a Jinja2 `{% if %}` phrase renders per session from `requestVars`, and `SILENT_OPENING` on the intellect alone gives a silent opening turn |
+| `live-verify-turn.mjs` | Per-session TURN credentials in a real browser: the server's entry comes first beside the configured one, caller credentials for another host are used alone, wrong caller credentials for the server's own host still connect through the server entry, and no TURN secret reaches events, `session.clientConfig` or page text. `--expect-server-turn yes\|no` asserts whether the target sends a TURN entry (default: report only) |
 | `live-verify-browser.mjs` | Browser smoke test: real WHEP downlink, real WebRTC, real media element |
 | `live-verify-avatar-media.mjs` | The merged-stream media path against a real downlink |
 | `live-verify-session-complete.mjs` | The `session_completed` signal and its presence mechanism |
@@ -171,9 +172,9 @@ Four helper modules are not scripts and are never run directly: `lib/target.mjs`
 
 ### Flags
 
-Nine scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script reads env vars. A few take their own flags, listed in their row above or in the script header.
+Ten scripts take the CLI flags below: `live-verify-kickoff.mjs`, `live-verify-connect-timing.mjs`, `live-verify-opening-phrase.mjs`, `live-verify-turn.mjs`, `live-verify-session-types.mjs`, `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` (they share `live-verify-kickoff-shared.mjs`). `live-verify-mcp.mjs` takes its own flags, listed in its header. Every other script reads env vars. A few take their own flags, listed in their row above or in the script header.
 
-Shared by all nine (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`; `live-verify-avatar-flag.mjs` never sends a kickoff, so it ignores `--kickoff`):
+Shared by all ten (`live-verify-session-types.mjs` drives no browser, so it ignores `--browser`, `--headed` and `--kickoff`; `live-verify-avatar-flag.mjs` never sends a kickoff, so it ignores `--kickoff`):
 
 | Flag | Effect |
 |---|---|
@@ -189,7 +190,7 @@ Shared by all nine (`live-verify-session-types.mjs` drives no browser, so it ign
 
 `live-verify-startup-faults.mjs`, `live-verify-reconnect.mjs`, `live-verify-unload.mjs`, `live-verify-prepare.mjs` and `live-verify-avatar-flag.mjs` take `--only IDS` too. `live-verify-avatar-flag.mjs` also adds `--share` (run the screen-share checks A5 and A6), and `live-verify-prepare.mjs` adds `--runs N` (alternating plain and prepared pairs, default 3).
 
-`live-verify-kickoff.mjs` and `live-verify-opening-phrase.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs`, which never sends a kickoff.
+`live-verify-kickoff.mjs`, `live-verify-opening-phrase.mjs` and `live-verify-turn.mjs` add `--only IDS` (run these scenario ids only) and `--dump-events` (write the page's full event log for every scenario, not just failures). `--kickoff TEXT` has no effect on `live-verify-opening-phrase.mjs` or `live-verify-turn.mjs`, which never send a kickoff.
 
 `live-verify-connect-timing.mjs` adds `--runs N`, `--mic immediate|deferred|denied`, `--mode avatar|agent-avatar`, `--opening TEXT`, `--no-kickoff`, `--budget-<kpi> MS`, `--no-budgets`, and `--hints off|on|ab`. `--hints ab` alternates runs between the plain page and the same page with `<link rel=preconnect|dns-prefetch|preload|modulepreload>` tags injected, then prints the per-arm medians and the delta. The full flag list with every KPI budget is in that script's header.
 

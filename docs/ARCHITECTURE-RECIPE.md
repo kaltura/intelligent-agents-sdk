@@ -11,7 +11,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 2. Browser: getUserMedia({audio:true})
 
 3. socket = io(conversationManagerUrl, {path:'/socket.io', transports:['websocket'],
-       auth:{token:ks}, query:{partnerId, level:'published', stickyId, billed_client:'', debugMode:true}})
+       auth:{token:ks}, query:{partnerId, level:'published', stickyId, billed_client:'', debugMode:true, sdk:'<version>'}})
 
 4. Run the connect sequence: join → stvNewSession → showAgent → askPermissions
    → asr-webrtc handshake (publish mic pc via socket relay)
@@ -30,6 +30,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
    right after onTextEntered)
 ```
 <!-- /nova-target -->
+
 
 Step 4 follows the [full connect sequence](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order).
 

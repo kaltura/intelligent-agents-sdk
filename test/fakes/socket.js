@@ -3,12 +3,15 @@
  * test script push server events, and supports a `script` that auto-responds to
  * the connect handshake so e2e tests can replay the documented sequence offline.
  */
+const RESERVED = new Set(['connect', 'disconnect', 'connect_error']);
+
 export class FakeSocket {
   constructor() {
     this.id = 'fake-' + Math.random().toString(36).slice(2, 10);
     this.connected = true;
     this.recovered = false;   // socket.io connection-state-recovery flag (set true to model same-instance recovery)
     /** @type {Map<string,Set<Function>>} */ this._h = new Map();
+    /** @type {Function[]} */ this._any = [];
     /** @type {{event:string,payload:any}[]} */ this.emitted = [];
     this._onEmit = null;
   }
@@ -20,7 +23,10 @@ export class FakeSocket {
   on(ev, fn) { (this._h.get(ev) || this._h.set(ev, new Set()).get(ev)).add(fn); return this; }
   once(ev, fn) { const w = (...a) => { this.off(ev, w); fn(...a); }; return this.on(ev, w); }
   off(ev, fn) { this._h.get(ev)?.delete(fn); return this; }
-  /** Drop all listeners (real socket.io clients support this; used before re-wiring). */
+  /** Catch-all for inbound events. Like socket.io: runs before the named listeners, skips `connect`/`disconnect`/`connect_error`, and a throw stops the named listeners. */
+  onAny(fn) { this._any.push(fn); return this; }
+  offAny(fn) { this._any = fn ? this._any.filter((f) => f !== fn) : []; return this; }
+  /** Drop all listeners (real socket.io clients support this; used before re-wiring). Like socket.io, `onAny` listeners stay. */
   removeAllListeners() { this._h.clear(); return this; }
   /** Client → server emit (recorded; may trigger the autoresponder). */
   emit(ev, payload) {
@@ -30,6 +36,7 @@ export class FakeSocket {
   }
   /** Server → client: deliver an inbound event to listeners. */
   server(ev, payload) {
+    if (!RESERVED.has(ev)) for (const fn of [...this._any]) fn(ev, payload);
     for (const fn of [...(this._h.get(ev) || [])]) fn(payload);
   }
   /** Counts calls only: a test decides when the "reconnect" lands (`dropAndRecover`, or setting `connected`). */
@@ -69,9 +76,9 @@ export const markerCount = (socket) => socket.emitsOf('onTextEntered').filter((p
  * (for tests that need the real prefixed STV shape rather than the srsBaseUrl fallback form).
  * `opts.webrtcUrls` gives one URL per `stvNewSession` (a re-create gets the next one), `opts.delayStvReplyMs`
  * delays the reply (slow-server tests), and `opts.resumingOnRecreate:false` drops the `resumingSession`
- * event that precedes a second reply.
+ * event that precedes a second reply. `opts.serverConnected` adds fields to `onServerConnected` (e.g. `turn`).
  * @param {FakeSocket} socket
- * @param {{audioMode?:boolean, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
+ * @param {{audioMode?:boolean, serverConnected?:object, capacityBusyTimes?:number, clientConfig?:object, noCapacity?:boolean, tierExceeded?:boolean,
  *   openingLine?:boolean, webrtcUrl?:string, webrtcUrls?:string[], delayStvReplyMs?:number, resumingOnRecreate?:boolean, asrAnswer?: (offer: {type:string, sdp:string}) => Promise<{type:string, sdp:string}>}} [opts]
  */
 export function scriptHappyPath(socket, opts = {}) {
@@ -86,7 +93,7 @@ export function scriptHappyPath(socket, opts = {}) {
   // Step 1 — initial server handshake, after connect()'s setup has run.
   soon(() => {
     socket.server('connect');
-    socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'host-1' });
+    socket.server('onServerConnected', { finalUrl: 'https://srs.example', agentName: 'Avatar', hostName: 'host-1', ...opts.serverConnected });
   });
 
   socket.onEmit((ev, payload) => {

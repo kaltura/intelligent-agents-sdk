@@ -48,7 +48,7 @@ export { parseToolCall, parseToolResponseName, segmentKind, validateToolArgs } f
 // OAuth consent-redirect parser (the headless/standalone peer of session.onOAuthRequired).
 export { parseOAuthRequired } from '../core/stream.js';
 export {
-  turnServers, iceConfig, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
+  turnServers, iceConfig, normalizeServerTurn, iceServersFor, buildJoin, buildStvNewSession, whepUrl, whepUrlHasPrivateIp,
   buildTextEntered, isAudioMode, CAPACITY_BACKOFF, DEFAULT_CM_URL,
   EXPERIENCES, MODEL_TYPES, modelTypeWire, classifyAgentAction,
 } from './wire.js';

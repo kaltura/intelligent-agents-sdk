@@ -74,6 +74,8 @@ Cases are in `app-builder-skill/evals/`. Add `--runs 1 --ablation none` for a qu
 
 Write them by hand in the version bump PR, as `.github/release-notes/vX.Y.Z.md`. The release workflow publishes that file and fails without it. Do not use auto-generated notes.
 
+The same PR bumps the version in `package.json`, `package-lock.json`, `src/core/version.js` and the README pins. A test fails when `version.js` and `package.json` differ.
+
 | Part | Rule |
 |---|---|
 | Heading | `## vX.Y.Z` on the first line |

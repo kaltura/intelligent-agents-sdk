@@ -110,12 +110,37 @@
       if (mic === 'synthetic' || engine === 'webkit') { rec('gum:synthetic', {}); return syntheticMic(); }
       return realGum(constraints);
     }
+    // TURN secrets seen in any peer config. Never recorded: testTurnLeaks() searches for them.
+    const turnSecrets = new Map(); // secret -> label (never the value)
+    const BUILTIN_TURN = new Set(['kaltura', 'avatar']); // the SDK's public default pair: not secret, and plain words in page text
+    const turnHosts = new Map(); // host -> 1, 2, ... so entries can be compared without printing hosts
+    // What each peer was given, without the secrets: per entry the schemes, transports and
+    // whether its host is the configured turnServerUrl host. `auth` groups entries that share
+    // one username (1, 2, ...); 0 means no auth.
+    const iceSummary = (cfg) => {
+      const groups = new Map();
+      return (cfg?.iceServers || []).map((s) => {
+        const urls = [].concat(s.urls || s.url || []).map(String);
+        const user = String(s.username || '');
+        for (const [kind, v] of [['username', user], ['credential', String(s.credential || '')]]) if (v && !BUILTIN_TURN.has(v) && !turnSecrets.has(v)) turnSecrets.set(v, `${kind}#${turnSecrets.size + 1}`);
+        if (user && !groups.has(user)) groups.set(user, groups.size + 1);
+        const hostOf = (u) => u.replace(/^[a-z]+:/, '').replace(/[?].*$/, '').replace(/:\d+$/, '');
+        return {
+          urls: urls.length,
+          schemes: [...new Set(urls.map((u) => u.split(':')[0]))],
+          transports: [...new Set(urls.map((u) => (/transport=(\w+)/.exec(u) || [])[1] || 'default'))],
+          hosts: [...new Set(urls.map((u) => { const h = hostOf(u); if (!turnHosts.has(h)) turnHosts.set(h, turnHosts.size + 1); return turnHosts.get(h); }))],
+          configuredHost: !!window.__turnHost && urls.some((u) => hostOf(u) === window.__turnHost),
+          auth: user ? groups.get(user) : 0,
+        };
+      });
+    };
     class RecordingPC extends RTCPeerConnection {
       constructor(...args) {
         super(...args);
         window.__pcs.push(this);
         const n = window.__pcs.length;
-        rec('pc:created', { n });
+        rec('pc:created', { n, ice: iceSummary(args[0]) });
         this.addEventListener('iceconnectionstatechange', () => rec('pc:state', { n, ice: this.iceConnectionState }));
         this.addEventListener('connectionstatechange', () => rec('pc:state', { n, connection: this.connectionState }));
         this.addEventListener('icegatheringstatechange', () => rec('pc:state', { n, gathering: this.iceGatheringState }));
@@ -291,6 +316,7 @@
 
     // ---- build the session -----------------------------------------------
     const init = await (await fetch('/init')).json();
+    window.__turnHost = String(init.turnServerUrl || '').replace(/^[a-z]+:/, '').replace(/:\d+$/, '');
     if (init.error) { rec('init:error', { error: init.error }); throw new Error(init.error); }
     // badKs=1 spoils the end of the avatar token, so the server refuses the session.
     if (q.get('badKs') === '1') init.ks = init.ks.slice(0, -8) + 'AAAAAAAA';
@@ -300,6 +326,7 @@
       conversationManagerUrl: init.conversationManagerUrl,
       srsBaseUrl: init.srsBaseUrl,
       turnServerUrl: init.turnServerUrl,
+      ...(init.turnCredentials ? { turnCredentials: init.turnCredentials } : {}),
       // The avatar session also talks to genie (session-completed signal, tool responses), so a
       // non-default environment must be passed here too, not only on the chat config.
       ...(init.genieUrl ? { genieUrl: init.genieUrl } : {}),
@@ -401,6 +428,21 @@
     window.testSwitch = async (target) => { rec('switch:call', { target }); await session.switchMode(target); rec('switch:resolved', { mode: session.mode }); };
     window.testDisconnect = async () => { rec('disconnect:call', {}); await session.disconnect(); rec('disconnect:resolved', { state: session.state }); };
     window.testKickoff = () => (mode.startsWith('agent') ? session.transport?.kickoff : session.kickoff) ?? null;
+    // Where each TURN secret shows up. `public` places are the event log, `session.clientConfig` and the
+    // page text. `state` is the session object's own fields (the app's own settings live there).
+    window.testTurnLeaks = () => {
+      const dump = (v) => { const seen = new WeakSet(); return JSON.stringify(v, (k, x) => (typeof x === 'object' && x !== null ? (seen.has(x) ? undefined : (seen.add(x), x)) : x)); };
+      const places = { events: dump(window.__events), clientConfig: dump(session.clientConfig ?? null), page: document.body.innerText, state: dump(session) };
+      const found = {};
+      for (const [place, hay] of Object.entries(places)) found[place] = [...turnSecrets].filter(([v]) => hay.includes(v)).map(([, label]) => label);
+      const pub = new Set([...found.events, ...found.clientConfig, ...found.page]);
+      return { secrets: turnSecrets.size, leaked: pub.size, found };
+    };
+    // The host of the TURN entry the server sent (harness only: reads a private field, never recorded).
+    window.testServerTurnHost = () => {
+      const u = String(avatarTransport()?._serverTurn?.entry?.urls?.[0] || '');
+      return u.replace(/^[a-z]+:/, '').replace(/[?].*$/, '').replace(/:\d+$/, '') || null;
+    };
     window.testState = () => ({ state: session.state, mode: session.mode, paused: avatarTransport()?.paused ?? null, threadId: session.threadId ?? null });
     // Resource Timing for every cross-origin request plus the SDK module graph. Servers that
     // do not send Timing-Allow-Origin expose only start + duration (tao: false); the

@@ -93,6 +93,12 @@ export class FakeRTCPeerConnection {
   /** Test helper: suppress the auto ontrack (to test the playability gate manually). */
   disableAutoTrack() { this._autoTrackDisabled = true; return this; }
   async addIceCandidate() { /* no-op */ }
+  getConfiguration() { return { ...this.config }; }
+  /** Like a real peer: a changed `bundlePolicy` throws. Each accepted config is kept in `configHistory`. */
+  setConfiguration(c) {
+    if (this.config?.bundlePolicy && c.bundlePolicy !== this.config.bundlePolicy) throw Object.assign(new Error('Attempted to modify the PeerConnection\'s configuration in an unsupported way.'), { name: 'InvalidModificationError' });
+    this.config = c; (this.configHistory ||= []).push(c);
+  }
   /** ICE restart (R7): real RTCPeerConnection re-gathers candidates; here just record it. */
   restartIce() { this.iceRestarted = (this.iceRestarted || 0) + 1; }
   /** Like a real peer: a local `close()` changes the states but fires no `connectionstatechange`. */

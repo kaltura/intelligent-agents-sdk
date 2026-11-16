@@ -46,7 +46,8 @@ export class AvatarSessions {
    * `.isExpired()`/`.secondsRemaining()` below). It authenticates every
    * other call on THIS session and grants full control of it, so keep it
    * server-side next to your admin secret. The browser only ever needs the
-   * non-secret `{whepUrl, turn}` pair from {@link initClient}.
+   * `{whepUrl, turn}` pair from {@link initClient}. `turn` carries TURN
+   * credentials for this session: keep it out of logs.
    *
    * WRITE — NOT idempotent; always opens a new session (a new WHEP egress
    * resource on the server). The `visualConfig.id` is the same avatar
@@ -96,7 +97,7 @@ export class AvatarSessions {
    * after {@link create}.
    *
    * @param {{sessionId:string, token:string}} session  From {@link create}.
-   * @returns {Promise<{whepUrl:string, turn:{url:string, username?:string, credential?:string}}>}
+   * @returns {Promise<{whepUrl:string, turn:{url:string, username?:string, credential?:string, ttl?:number}}>}
    * @throws {KalturaError} `bad_request` if `session` isn't a `{sessionId, token}` receipt.
    * @example
    * const { whepUrl, turn } = await k.avatarSessions.initClient(session);

@@ -121,9 +121,11 @@ test('audit hook is crash-safe: a throwing sink never breaks connect', async () 
 
 test('turnCredentials override the default TURN credentials', () => {
   const { s } = mk({ turnServerUrl: 'turn.example', turnCredentials: { username: 'own-user', credential: 'own-cred', expiry: 9999 } });
-  // Reach into the resolved ICE for the ASR channel via the stored turn config.
-  assert.equal(s._turn.username, 'own-user');
-  assert.equal(s._turn.credential, 'own-cred');
+  // The ICE servers a new peer gets, with no server TURN entry yet.
+  const [only, ...rest] = s._iceServers();
+  assert.equal(rest.length, 0);
+  assert.equal(only.username, 'own-user');
+  assert.equal(only.credential, 'own-cred');
 });
 
 test('no [security] TURN warning when turnCredentials is omitted', () => {

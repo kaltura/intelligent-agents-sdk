@@ -1,6 +1,6 @@
 {
   "name": "@kaltura/intelligent-agents",
-  "version": "1.41.0",
+  "version": "1.42.0",
   "private": true,
   "description": "Zero-dependency SDK for Kaltura conversational avatar agents — Management (provision/configure/measure) + Experience (live interactive runtime). Grounded only in what the public APIs deliver today.",
   "license": "MIT",
@@ -77,6 +77,7 @@
     "live-verify:limits": "node scripts/live-verify-limits.mjs",
     "live-verify:kickoff": "node scripts/live-verify-kickoff.mjs",
     "live-verify:opening-phrase": "node scripts/live-verify-opening-phrase.mjs",
+    "live-verify:turn": "node scripts/live-verify-turn.mjs",
     "live-verify:startup-faults": "node scripts/live-verify-startup-faults.mjs",
     "live-verify:reconnect": "node scripts/live-verify-reconnect.mjs",
     "live-verify:unload": "node scripts/live-verify-unload.mjs",
