@@ -1026,6 +1026,10 @@ export class KalturaAvatarSession extends Emitter {
     const st = this._serverTurn;
     if (!st || st.bad || st.refreshUsed || st.expiresAt == null || st.ttlSec == null || st.ttlSec <= TURN_REFRESH_MIN_TTL_S) return false;
     if (st.expiresAt - this._now() >= TURN_REFRESH_MARGIN_MS) return false;
+    // Caller credentials for another host leave the server entry out of new peers: a fresh socket would change nothing.
+    const e = st.entry;
+    if (!iceServersFor({ server: e, turnServerUrl: this._turnServerUrl, turnCredentials: this._turnCredentials, fallbackRefused: this._fallbackBad })
+      .some((s) => s.username === e.username && s.credential === e.credential)) return false;
     st.refreshUsed = true;
     return true;
   }
@@ -2906,7 +2910,7 @@ export class KalturaAvatarSession extends Emitter {
   disconnect(opts = {}) {
     if (this.state === 'disconnected') {
       // A prepare() after the last session: close its socket and drop what it received.
-      if (this._prep) { this._dropPrepared(); this._serverTurn = null; this._fallbackBad = false; this._token = null; }
+      if (this._prep) { this._dropPrepared(); this._fallbackBad = false; this._token = null; }
       return;
     }
     this._setState('disconnecting');

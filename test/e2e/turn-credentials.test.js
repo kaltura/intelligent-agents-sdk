@@ -885,5 +885,34 @@ test('an older server that sends the fixed pair for the configured host: listed 
   const { session } = await connected({ perSocket: () => ({ turn: { url: HOST, username: 'kaltura', credential: 'avatar' } }) });
   assert.deepEqual(stvPeer().config.iceServers, [FALLBACK]);
   assert.equal(session._turnRenewTimer ?? null, null);
+  assert.equal(session._serverTurn.expiresAt, null);
+  assert.equal(session._takeTurnRefresh(), false);
+  session.disconnect();
+});
+
+test('caller credentials for another host leave the server entry out: near expiry the recovery restarts ICE, with no new socket', async () => {
+  const c = clock();
+  const { session, sockets } = await connected({
+    cfg: { now: c.now, turnServerUrl: 'own.example.org', turnCredentials: { username: 'u', credential: 'p' } },
+    perSocket: () => ({ turn: serverTurn({ ttl: 600 }) }),
+  });
+  assert.deepEqual(stvPeer().config.iceServers.map((s) => s.credential), ['p'], 'only the caller entry is used');
+  const asr = asrPeer();
+  c.t += 590_000;
+  assert.equal(session._takeTurnRefresh(), false);
+  asr.setIce('failed');
+  await until(() => asr.iceRestarted === 1);
+  assert.equal(sockets.length, 1);
+  session.disconnect();
+});
+
+test('prepare() then connect() with time left: one socket, the server entry on both peers, no secret in events or logs', async () => {
+  const { session, sockets, events, logs } = await connected({ connect: false });
+  await session.prepare();
+  await session.connect();
+  assert.equal(sockets.length, 1);
+  for (const pc of [asrPeer(), stvPeer()]) assert.deepEqual(pc.config.iceServers, [{ urls: SERVER_URLS, username: SECRET_USER, credential: SECRET_CRED }, FALLBACK]);
+  const text = JSON.stringify([events, logs]);
+  assert.ok(!text.includes(SECRET_CRED) && !text.includes(SECRET_USER), 'no secret leaked');
   session.disconnect();
 });

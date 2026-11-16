@@ -116,6 +116,9 @@ function stripTool(v) { return typeof v === 'string' ? v.trim().replace(/-tool$/
 /** First non-empty trimmed string among candidates, else ''. @param {...unknown} cands */
 function pickStr(...cands) { for (const c of cands) if (typeof c === 'string' && c.trim()) return c.trim(); return ''; }
 
+/** The SDK's default TURN credentials, used when the caller gives none. */
+export const DEFAULT_TURN_CREDENTIALS = Object.freeze({ username: 'kaltura', credential: 'avatar' });
+
 /**
  * Build the 4-URL TURN block. Explicit ports+transports are REQUIRED — a bare
  * `turn:host` yields no relay candidate and the uplink silently sends 0 packets
@@ -134,8 +137,8 @@ export function turnServers(turnServerUrl, creds = {}) {
       `turn:${host}:80?transport=tcp`,
       `turns:${host}:443?transport=tcp`,
     ],
-    username: creds.username || 'kaltura',
-    credential: creds.credential || 'avatar',
+    username: creds.username || DEFAULT_TURN_CREDENTIALS.username,
+    credential: creds.credential || DEFAULT_TURN_CREDENTIALS.credential,
   };
 }
 
@@ -173,7 +176,7 @@ function expandTurnUrl(item) {
 }
 
 /** Lower-case host of a `turn:`/`turns:` URL, or `''`. @param {string} url */
-function turnHost(url) { return (/^turns?:(\[[^\]]+\]|[^:?/]+)/i.exec(url)?.[1] || '').toLowerCase(); }
+function turnHost(url) { return /^turns?:(.+):\d+:(?:udp|tcp)$/.exec(turnUrlKeys(url)[0] || '')?.[1] || ''; }
 
 /**
  * Keys that compare a `turn:`/`turns:` URL however a browser spells it: `scheme:host:port:transport`,
@@ -251,9 +254,8 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
  */
 export function iceServersFor({ server = null, turnServerUrl = '', turnCredentials, fallbackRefused = false } = {}) {
   const fallback = turnServers(turnServerUrl, turnCredentials || {});
-  const builtin = /** @type {{username:string, credential:string}} */ (turnServers('-'));
   // Compare the resolved pair, so a caller field filled in with a default still counts as the caller's.
-  const ownCreds = !!fallback && !(fallback.username === builtin.username && fallback.credential === builtin.credential);
+  const ownCreds = !!fallback && !(fallback.username === DEFAULT_TURN_CREDENTIALS.username && fallback.credential === DEFAULT_TURN_CREDENTIALS.credential);
   let s = server;
   if (s && !s.urls.length) s = !ownCreds && fallback ? { ...s, urls: fallback.urls } : null;
   if (!s) return fallback ? [fallback] : [];
@@ -266,10 +268,7 @@ export function iceServersFor({ server = null, turnServerUrl = '', turnCredentia
 }
 
 /** Lower-case `host:port` of a plain UDP `turn:` URL (port 3478 when none), or `''`. @param {string} url */
-function udpAddress(url) {
-  const m = /^turn:(\[[^\]]+\]|[^:?/]+)(?::(\d+))?(?:\?transport=(udp|tcp))?$/i.exec(url);
-  return m && (m[3] || 'udp').toLowerCase() === 'udp' ? `${m[1].toLowerCase()}:${m[2] || '3478'}` : '';
-}
+function udpAddress(url) { return /^turn:(.+:\d+):udp$/.exec(turnUrlKeys(url)[0] || '')?.[1] || ''; }
 
 /**
  * Give each UDP relay address both entries list to one entry only. Browsers share one UDP socket
