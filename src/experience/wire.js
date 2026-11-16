@@ -178,6 +178,13 @@ function expandTurnUrl(item) {
 /** Lower-case host of a `turn:`/`turns:` URL, or `''`. @param {string} url */
 function turnHost(url) { return /^turns?:(.+):\d+:(?:udp|tcp)$/.exec(turnUrlKeys(url)[0] || '')?.[1] || ''; }
 
+/** `[, host, port]` for an unbracketed IPv6 host with a port (`::1:3478`), else `null`. Plain string scans: no regex backtracking on library input. @param {string} h */
+function unbracketedV6(h) {
+  const i = h.lastIndexOf(':');
+  const host = h.slice(0, i);
+  return i > 0 && /^\d+$/.test(h.slice(i + 1)) && host.slice(1, -1).includes(':') ? [h, host, h.slice(i + 1)] : null;
+}
+
 /**
  * Keys that compare a `turn:`/`turns:` URL however a browser spells it: `scheme:host:port:transport`,
  * with the scheme and host in lower case, an IPv6 host with or without brackets, port 3478
@@ -193,7 +200,7 @@ export function turnUrlKeys(url, reported = false) {
   if (!m) return [];
   const scheme = m[1].toLowerCase();
   // `[v6]:port`, unbracketed `v6:port` (Chromium), `host:port`, or a host alone.
-  const hp = /^\[([^\]]+)\](?::(\d+))?$/.exec(m[2]) || /^(.+:.+):(\d+)$/.exec(m[2]) || /^([^:]+)(?::(\d+))?$/.exec(m[2]);
+  const hp = /^\[([^\]]+)\](?::(\d+))?$/.exec(m[2]) || unbracketedV6(m[2]) || /^([^:]+)(?::(\d+))?$/.exec(m[2]);
   if (!hp) return [];
   const port = Number(hp[2] || (scheme === 'turns' ? 5349 : 3478));
   const transport = /(?:^|&)transport=(udp|tcp)(?:&|$)/i.exec(m[3] || '')?.[1].toLowerCase();

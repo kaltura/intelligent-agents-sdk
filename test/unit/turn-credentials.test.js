@@ -282,6 +282,12 @@ for (const [url, reported, keys] of [
   });
 }
 
+test('turnUrlKeys: a long run of "a:" is read in linear time', () => {
+  const t0 = performance.now();
+  for (const url of [`turn:${'a:'.repeat(50000)}x`, `turn:${'a:'.repeat(50000)}`, `turns:${':'.repeat(50000)}1`]) turnUrlKeys(url);
+  assert.ok(performance.now() - t0 < 500, `took ${Math.round(performance.now() - t0)} ms`);
+});
+
 test('iceServersFor: a server entry equal to the configured one is listed once', () => {
   const same = turnServers('relay.example');
   assert.deepEqual(iceServersFor({ server: { ...same, urls: [...same.urls].reverse() }, turnServerUrl: 'relay.example' }).length, 1);
