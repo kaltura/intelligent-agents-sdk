@@ -373,11 +373,11 @@ test('doctor: a 401 on a tool read rejects the run', async () => {
   await assert.rejects(() => mgmt.doctor(ADMIN_KS), (e) => e.status === 401);
 });
 
-test('doctor: skipping the intellect group and the speed checks reads no tools or skills', async () => {
+test('doctor: skipping the intellect, speed and tools groups reads no tools or skills', async () => {
   const { mgmt, ff } = refsHarness({
     intellects: { 10: { id: 10, type: 'brain', tool_ids: ['t1'] }, 11: { id: 11, type: 'brain' } },
     toolGet: (req) => ({ body: slowStart(req.body.id) }),
   });
-  await mgmt.doctor(ADMIN_KS, { skip: ['intellect', 'speed'] });
+  await mgmt.doctor(ADMIN_KS, { skip: ['intellect', 'speed', 'tools'] });
   assert.equal(calls(ff, 'v1/tool/get') + calls(ff, 'v1/skill/get'), 0);
 });

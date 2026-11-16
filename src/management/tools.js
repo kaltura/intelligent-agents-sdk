@@ -293,6 +293,30 @@ export function unusedApiArgs(config) {
 }
 
 /**
+ * The `{argName}` placeholders in an `api` tool's URL that model text can use to
+ * change the request. The server puts the arg value into the URL as the model
+ * sent it, with no percent-encoding. A placeholder is safe only as the last
+ * query value. In the host or path, or followed by more of the URL, a value
+ * with `/`, `?`, `#` or `&` adds, drops or moves URL parts.
+ * `{{ }}` and `{% %}` template spans are ignored. PURE, never throws.
+ * @param {unknown} url A tool's `request.url`.
+ * @returns {Array<{name:string, where:'host-or-path'|'before-more-url'}>}
+ */
+export function unsafeUrlArgs(url) {
+  if (typeof url !== 'string') return [];
+  const text = stripTemplateSpans(url);
+  const query = text.indexOf('?');
+  /** @type {Array<{name:string, where:'host-or-path'|'before-more-url'}>} */
+  const out = [];
+  for (const m of text.matchAll(/\{([A-Za-z0-9_-]+)\}/g)) {
+    const at = m.index ?? 0;
+    if (query === -1 || at < query) out.push({ name: m[1], where: 'host-or-path' });
+    else if (at + m[0].length < text.length) out.push({ name: m[1], where: 'before-more-url' });
+  }
+  return out;
+}
+
+/**
  * The server fills `{argName}` placeholders in an `api` tool's `request.url`
  * and in its `request.body` (when the body is an object, each string value).
  * Brace text that is not a declared `{argName}` fails the call at run time
@@ -426,6 +450,9 @@ function buildResponseFields(cfg, tool, kind) {
  * variables and is dot-path-checked. `responseChapters` is
  * `{iterate_on, content, link}`: `iterate_on` is the dot-path to a list, and
  * `content` and `link` are dot-paths read from each item.
+ * An `{arg}` in `request.url` is filled with the model's value as sent, with no
+ * percent-encoding. Use one only as the last query value, never in the host or
+ * path. See {@link unsafeUrlArgs}.
  * `waitForResponse` (optional boolean) is sent as `wait_for_response` and kept by
  * `tools.update`. PURE. Returns a wire-ready
  * {@link GenieToolConfig}; throws {@link KalturaError} on bad input.

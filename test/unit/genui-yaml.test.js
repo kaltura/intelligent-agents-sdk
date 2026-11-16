@@ -173,3 +173,16 @@ test('yaml: a flow list or map closes at the key indentation without eating the 
   assert.deepStrictEqual(parseContent('q:\n  r: [\n    1,\n    2\n  ]\n  s: 2'), { q: { r: [1, 2], s: 2 } });
   assert.deepStrictEqual(parseContent('a: [1,\n  2\nb: 3'), { a: '[1, 2', b: 3 });
 });
+
+test('a key line with a long run of blanks is read in linear time', () => {
+  for (const sep of ['\t', ' ', ' \t']) {
+    for (const tail of ['', '\u2028', '\r']) {
+      const body = `a:${sep.repeat(40000)}${tail}`;
+      const start = performance.now();
+      parseContent(body);
+      assert.ok(performance.now() - start < 1000, `slow on ${JSON.stringify(sep)} then ${JSON.stringify(tail)}`);
+    }
+  }
+  assert.deepStrictEqual(parseContent('a:\t \t b'), { a: 'b' });
+  assert.deepStrictEqual(parseContent('a  :   b c'), { a: 'b c' });
+});

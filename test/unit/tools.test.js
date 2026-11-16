@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tools, TOOL_TYPES, api, csv, code, client, clientToolReadiness, unusedApiArgs, validate, validateArgs, applyResponseMapping } from '../../src/management/tools.js';
+import { tools, TOOL_TYPES, api, csv, code, client, clientToolReadiness, unusedApiArgs, validate, validateArgs, applyResponseMapping, unsafeUrlArgs } from '../../src/management/tools.js';
 import { fakeFetch } from '../fakes/fetch.js';
 import { Management } from '../../src/management/client.js';
 
@@ -990,4 +990,16 @@ test('round trip: re-saving a stored bare-form tool rewrites client_secret to {{
   stored.request.authentication.client_secret = 'secrets.myOauth'; // as saved by an older release
   const { second } = await roundTrip({ id: 'old-1', name: stored.name, config: serverEcho(stored) }, 'old-1');
   assert.equal(second.config.request.authentication.client_secret, '{{secrets.myOauth}}');
+});
+
+test('unsafeUrlArgs: flags an {arg} in the host or path, or before more of the URL, and nothing else', () => {
+  assert.deepEqual(unsafeUrlArgs('https://x.io/a/{id}'), [{ name: 'id', where: 'host-or-path' }]);
+  assert.deepEqual(unsafeUrlArgs('https://{h}.x.io/a'), [{ name: 'h', where: 'host-or-path' }]);
+  assert.deepEqual(unsafeUrlArgs('https://x.io/a?c={v}&scope=1'), [{ name: 'v', where: 'before-more-url' }]);
+  assert.deepEqual(unsafeUrlArgs('https://x.io/{a}?b={b}&c={c}'), [{ name: 'a', where: 'host-or-path' }, { name: 'b', where: 'before-more-url' }]);
+  assert.deepEqual(unsafeUrlArgs('https://x.io/a?scope=1&c={v}'), []);
+  assert.deepEqual(unsafeUrlArgs('https://x.io/{{ sys__thread_id }}/a?k={{secrets.K}}&c={v}'), []);
+  assert.deepEqual(unsafeUrlArgs('https://x.io/a'), []);
+  assert.deepEqual(unsafeUrlArgs(undefined), []);
+  assert.deepEqual(unsafeUrlArgs(42), []);
 });

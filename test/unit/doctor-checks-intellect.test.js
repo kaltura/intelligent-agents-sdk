@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
+  apiToolUrlArgUnsafe, clientToolFireAndForget, clientToolWaitBlocks, conditionUnquotedName, latencyOutputTokens, latencyPreloadedSkills,
   latencyPromptSize, latencyThinking, openingPhraseMayRenderEmpty, threadStartToolBlocks, toolSurfaceLarge,
 } from '../../src/management/doctor/checks/intellect.js';
 import { DEFAULT_THRESHOLDS } from '../../src/management/doctor/model.js';
@@ -181,4 +181,28 @@ test('opening_phrase_may_render_empty: silent with an else, an elif, text outsid
     undefined,
   ]) assert.deepEqual(run(openingPhraseMayRenderEmpty, view({ opening_phrase })), [], String(opening_phrase));
   assert.deepEqual(run(openingPhraseMayRenderEmpty, view({ type: 'external', opening_phrase: '{% if a %}Hi{% endif %}' })), []);
+});
+
+test('api_tool_url_arg_unsafe: an {arg} in the host, the path or before more of the URL is a warn', () => {
+  const at = (url) => run(apiToolUrlArgUnsafe, view({ tool_ids: ['t1'] }, { tools: [apiTool({ request: { url } })] }));
+  const path = at('https://api.example.com/v1/items/{id}');
+  assert.deepEqual(codes(path), ['warn:api_tool_url_arg_unsafe']);
+  assert.match(path[0].message, /\{id\} in the host or path/);
+  assert.equal(path[0].field, 'tool_ids t1');
+  assert.match(at('https://{host}/v1')[0].message, /\{host\} in the host or path/);
+  assert.match(at('https://api.example.com/v1?c={v}&scope=1')[0].message, /\{v\} before more of the URL/);
+  assert.match(at('https://api.example.com/{a}?c={b}&d=1')[0].message, /\{a\} in the host or path and \{b\} before more of the URL/);
+  const start = run(apiToolUrlArgUnsafe, view({ thread_start_tools: [{ id: 't1' }] }, { tools: [apiTool({ request: { url: 'https://x.io/{id}' } })] }));
+  assert.deepEqual(codes(start), ['warn:api_tool_url_arg_unsafe'], 'a thread-start tool counts too');
+});
+
+test('api_tool_url_arg_unsafe: silent for the last query value, a fixed URL, template spans, other tool types and an unread tool', () => {
+  const at = (url, extra = {}, v = {}) => run(apiToolUrlArgUnsafe, view({ tool_ids: ['t1'] }, { tools: [apiTool({ request: { url }, ...extra })], ...v }));
+  assert.deepEqual(at('https://api.example.com/v1?scope=1&c={v}'), []);
+  assert.deepEqual(at('https://api.example.com/v1'), []);
+  assert.deepEqual(at('https://api.example.com/{{ sys__thread_id }}/x?key={{secrets.K}}&c={v}'), []);
+  assert.deepEqual(at('https://x.io/{id}', { type: 'client' }), []);
+  assert.deepEqual(at('https://x.io/{id}', {}, { refs: 'unread' }), []);
+  assert.deepEqual(at('https://x.io/{id}', {}, { tools: [] }), [], 'a missing tool is tool_not_found, not this');
+  assert.deepEqual(run(apiToolUrlArgUnsafe, view({ tool_ids: ['t1', 't1'] }, { tools: [apiTool({ request: { url: 'https://x.io/{id}' } })] })).length, 1, 'one finding per tool');
 });

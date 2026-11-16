@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import {
   dominantScript, normalizeLanguage, sameLanguage, scriptFits, scriptOfLanguage, stripTemplateSyntax,
 } from '../../src/management/doctor/language.js';
@@ -68,4 +69,18 @@ test('scriptFits lets Han and Japanese stand for each other, and nothing else', 
   assert.equal(scriptFits('Han', 'Japanese'), true);
   assert.equal(scriptFits('Japanese', 'Han'), true);
   assert.equal(scriptFits('Han', 'Hangul'), false);
+});
+
+test('stripTemplateSyntax removes template code, comments, tags and URLs, and keeps the prose', () => {
+  assert.equal(stripTemplateSyntax('a {{ x }} b {% if y %}c{% endif %} d {# n #} e <b>f</b> g https://x.io/p?q=1 h'), 'a   b  c  d   e  f  g   h');
+  assert.equal(stripTemplateSyntax('http://a.b and https://c.d'), '  and  ');
+  assert.equal(stripTemplateSyntax('{{ open only, <open only, {% open only, {# open only, https:// alone'), '{{ open only, <open only, {% open only, {# open only, https:// alone');
+});
+
+test('stripTemplateSyntax runs in linear time on openers that never close', () => {
+  for (const input of ['{{%'.repeat(60000), '{{{{'.repeat(60000), '{{#'.repeat(60000), '<'.repeat(200000), '{%'.repeat(100000), '{#'.repeat(100000)]) {
+    const start = performance.now();
+    assert.equal(stripTemplateSyntax(input), input);
+    assert.ok(performance.now() - start < 1000, `slow on ${input.slice(0, 6)}`);
+  }
 });

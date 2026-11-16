@@ -103,7 +103,38 @@ const MIN_LETTERS = 5;
  * @returns {string}
  */
 export function stripTemplateSyntax(text) {
-  return text.replace(/\{%[\s\S]*?%\}|\{\{[\s\S]*?\}\}|\{#[\s\S]*?#\}|<[^>]*>|https?:\/\/\S+/g, ' ');
+  // One left-to-right scan. A closer that is missing once is missing for every later opener of the
+  // same kind, so each kind is searched at most once after a miss: linear time on any input.
+  /** @type {Record<string, boolean>} */
+  const missing = {};
+  /** @param {string} close @param {number} from */
+  const find = (close, from) => {
+    if (missing[close]) return -1;
+    const at = text.indexOf(close, from);
+    if (at < 0) missing[close] = true;
+    return at;
+  };
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    let end = -1;
+    if (c === '{') {
+      const kind = text[i + 1];
+      if (kind === '%') end = find('%}', i + 2);
+      else if (kind === '{') end = find('}}', i + 2);
+      else if (kind === '#') end = find('#}', i + 2);
+      if (end >= 0) end += 2;
+    } else if (c === '<') {
+      end = find('>', i + 1);
+      if (end >= 0) end += 1;
+    } else if (c === 'h' && /^https?:\/\/\S/.test(text.slice(i, i + 9))) {
+      end = i;
+      while (end < text.length && !/\s/.test(text[end])) end++;
+    }
+    if (end >= 0) { out += ' '; i = end; } else { out += c; i++; }
+  }
+  return out;
 }
 
 /**
