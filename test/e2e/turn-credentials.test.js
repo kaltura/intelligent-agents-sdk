@@ -202,7 +202,7 @@ test('a browser that refuses the server entry: peers use the configured entry, o
 test('a browser that refuses the configured entry still fails as before', async () => {
   class Broken extends FakeRTCPeerConnection { constructor() { throw new TypeError('no WebRTC'); } }
   const { session } = await connected({ perSocket: () => ({}), rtc: Broken, connect: false });
-  await assert.rejects(() => session.connect());
+  await assert.rejects(() => session.connect(), (e) => e instanceof Error && /no WebRTC|connect_failed/.test(`${e.code} ${e.message} ${e.cause?.message}`));
 });
 
 test('401 on a server-only URL sets the server entry aside for later peers', async () => {
@@ -331,6 +331,8 @@ test('media recovery near expiry rebuilds on a fresh socket instead of an ICE re
   await until(() => sockets.length === 2 && session.state === 'connected');
   assert.equal(asr.iceRestarted, undefined);
   assert.equal(asrPeer().config.iceServers[0].credential, 'cred-1');
+  assert.equal(sockets[0]._h.size, 0, 'the old socket has no handlers left');
+  assert.equal(sockets[0]._any.length, 0, 'the old socket has no catch-all listener left');
   session.disconnect();
 });
 
@@ -455,6 +457,17 @@ test('the third ASR recovery with no ICE up in between ends with reconnect_faile
   assert.equal(pc.iceRestarted, 2);
 });
 
+test('the third STV recovery with no ICE up in between ends with reconnect_failed', async () => {
+  const { session, events } = await connected({ perSocket: () => ({}) });
+  const pc = stvPeer();
+  const errs = [];
+  session.on('error', (e) => errs.push(e));
+  for (let i = 0; i < 2; i++) { pc.setIce('failed'); await until(() => events.filter((e) => e.ev === 'mediaRecovered').length === i + 1); }
+  pc.setIce('failed');
+  await until(() => session.state !== 'connected');
+  assert.equal(errs.at(-1)?.code, 'reconnect_failed');
+});
+
 test('ICE coming back up resets the recovery count', async () => {
   const { session, events } = await connected({ perSocket: () => ({}) });
   const pc = asrPeer();
@@ -561,7 +574,7 @@ test('a browser that refuses the configured entry: peers use the server entry al
 test('a browser that refuses both entries alone fails the connect, as before', async () => {
   class Neither extends FakeRTCPeerConnection { constructor(cfg) { if (cfg.iceServers.length) throw new TypeError('Invalid TURN server'); super(cfg); } }
   const { session } = await connected({ rtc: Neither, connect: false });
-  await assert.rejects(() => session.connect());
+  await assert.rejects(() => session.connect(), (e) => e instanceof Error && /Invalid TURN server|connect_failed/.test(`${e.code} ${e.message} ${e.cause?.message}`));
 });
 
 test('no turnServerUrl and a refused server entry: the warnings agree', async () => {
