@@ -487,6 +487,7 @@ jobs:
               - 'src/management/lifecycle.js'
               - 'src/management/client.js'
               - 'src/core/stream.js'
+              - 'src/core/opening.js'
               - '.github/workflows/live-verify.yml'
               - *shared
             lifecycle-audit:
@@ -933,7 +934,7 @@ jobs:
           AGENTIC_ADMIN_SECRET: ${{ secrets.AGENTIC_ADMIN_SECRET }}
         run: node scripts/live-step.mjs --log live-verify-lifecycle-audit-output.log -- npm run live-verify:lifecycle-audit
 
-      # Scratch agent → planted ASR and token-limit defects → doctor, doctorFix (dry run, apply, undo), doctorProbe and the doctor CLI → cleanup
+      # Scratch agents (default voice and a Cartesia voice) → planted ASR, token-limit and silent-opening defects → doctor, doctorFix (dry run, apply, undo), doctorProbe and the doctor CLI → cleanup
       - name: Resources · Doctor
         id: live_verify_doctor
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && (needs.changes.outputs.all == 'true' || needs.changes.outputs['doctor'] == 'true') }}

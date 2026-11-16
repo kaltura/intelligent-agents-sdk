@@ -7,8 +7,8 @@
  * is a one-character phrase that ElevenLabs voices render as silence: the opening turn
  * still runs and the session stays on the normal path, but nothing is spoken, so the
  * turn ends in well under a second and the agent is ready for input almost immediately.
- * On other voice providers the opening turn may never end. The doctor flags that
- * (`silent_opening_unsupported_voice`).
+ * On a Cartesia voice the opening turn did not end in our measurements, so the doctor
+ * flags it (`silent_opening_unsupported_voice`).
  *
  * The raw phrase is a control token, not something to show a person. The session
  * classes surface the opening turn as `SILENT_OPENING_LABEL` (`[silence]`) on

@@ -78,7 +78,8 @@ try {
   await kaltura.intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, admin.ks);
   const dash = await kaltura.doctor(admin.ks, { agentIds: [agentId] });
   report.check('2b-silent-opening-on-the-default-voice-is-quiet', !dash.findings.some((f) => f.agentId === agentId && f.code.startsWith('silent_opening_')), codes(dash, agentId));
-  const created = await kaltura.provision({ brief: 'A scratch agent for a doctor check.', ks: admin.ks, openingPhrase: SILENT_OPENING, voiceId: CARTESIA_VOICE });
+  const created = await kaltura.provision({ brief: 'A scratch agent for a doctor check.', ks: admin.ks, openingPhrase: SILENT_OPENING, voiceId: CARTESIA_VOICE })
+    .catch((err) => { cartesiaStack = err?.body?.createdSoFar; throw err; });
   cartesiaStack = { configId: created.configId, agentId: created.agentId, widgetId: created.widgetId, avatarId: created.avatarId ?? created.avatarIds?.[0] };
   const cartesia = await kaltura.doctor(admin.ks, { agentIds: [cartesiaStack.agentId] });
   report.check('2b-silent-opening-on-a-cartesia-voice-is-an-error', cartesia.findings.some((f) => f.agentId === cartesiaStack.agentId && f.code === 'silent_opening_unsupported_voice' && f.severity === 'error'), codes(cartesia, cartesiaStack.agentId));

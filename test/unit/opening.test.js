@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SILENT_OPENING, SILENT_OPENING_LABEL, isSilentOpening } from '../../src/core/opening.js';
+import { SILENT_OPENING, SILENT_OPENING_LABEL, LEGACY_SILENT_OPENING, isSilentOpening } from '../../src/core/opening.js';
 import * as management from '../../src/management/index.js';
 import * as experience from '../../src/experience/index.js';
 
@@ -31,5 +31,7 @@ test('SILENT_OPENING, SILENT_OPENING_LABEL and isSilentOpening are exported from
     assert.equal(entry.SILENT_OPENING, SILENT_OPENING);
     assert.equal(entry.SILENT_OPENING_LABEL, SILENT_OPENING_LABEL);
     assert.equal(entry.isSilentOpening, isSilentOpening);
+    assert.equal('LEGACY_SILENT_OPENING' in entry, false, 'the older phrase stays out of the public API');
   }
+  assert.equal(LEGACY_SILENT_OPENING, '<blank>');
 });

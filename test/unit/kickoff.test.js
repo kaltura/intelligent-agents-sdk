@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KalturaAvatarSession, SILENT_OPENING, SILENT_OPENING_LABEL } from '../../src/experience/index.js';
+import { LEGACY_SILENT_OPENING } from '../../src/core/opening.js';
 import { FakeSocket, scriptHappyPath, textsEntered as sentTexts } from '../fakes/socket.js';
 import { FakeRTCPeerConnection, FakeVideoEl, FakeMediaStreamCtor, fakeGetUserMedia } from '../fakes/rtc.js';
 
@@ -375,6 +376,24 @@ test(`silent opening: '${SILENT_OPENING}' on the opening speechId surfaces as '$
   socket.server('stvStartedTalking', {});
   socket.server('stvFinishedTalking', { agentContent: 'Hi there.' });
   assert.deepEqual(stops[1], { text: 'Hi there.' });
+});
+
+test(`silent opening: a stored '${LEGACY_SILENT_OPENING}' on the opening speechId is still relabelled '${SILENT_OPENING_LABEL}', and only there`, async () => {
+  const { session, socket } = newSession();
+  scriptHappyPath(socket);
+  await session.connect();
+  const transcripts = collect(session, 'transcript');
+  const chunks = collect(session, 'speechChunk');
+  const stops = collect(session, 'avatarStopTalking');
+  socket.server('generatingSpeech', { speechId: OPENING_ID, text: LEGACY_SILENT_OPENING });
+  socket.server('stvStartedTalking', {});
+  socket.server('stvSpeechChunk', { speechId: OPENING_ID, text: LEGACY_SILENT_OPENING, durationMs: 10 });
+  socket.server('stvFinishedTalking', { agentContent: '' });
+  assert.ok(transcripts.length >= 1 && transcripts.every((t) => t.text === SILENT_OPENING_LABEL));
+  assert.equal(chunks[0].text, SILENT_OPENING_LABEL);
+  assert.deepEqual(stops, [{ text: SILENT_OPENING_LABEL }]);
+  socket.server('generatingSpeech', { speechId: 'reply-1', text: LEGACY_SILENT_OPENING });
+  assert.equal(transcripts.at(-1).text, LEGACY_SILENT_OPENING, 'a normal reply is never relabelled');
 });
 
 test(`silent opening: '${SILENT_OPENING}' as agentContent alone never relabels a stop`, async () => {

@@ -35,7 +35,7 @@ Medians in live runs, measured from the moment `connect()` resolves (headless Ch
 |---|---|---|
 | First words (first `speechChunk`) | about 0.2 s | about 1 s |
 | First sound heard | about 0.7 s | about 1.6 s |
-| Opening turn holds the floor | its whole length, about 3 s for two sentences | about 0.3 s |
+| Opening turn holds the floor | its whole length, about 3 s for two sentences | under 0.5 s |
 | Interruptible | no | yes |
 | Written by | you, as a template | the model, from your prompt and the kickoff text |
 | Can call tools | no | yes |
@@ -46,7 +46,7 @@ Trade-offs:
 
 - A scripted opening makes sound about 0.9 s sooner. But the user cannot interrupt it, and a `kickoff` or a typed `speak()` waits until the whole line has been spoken. Keep it to one or two short sentences.
 - `SILENT_OPENING` + `kickoff` starts later, but the first reply is an ordinary model turn: it follows your whole prompt, can use tools, and stops the moment the user talks.
-- `SILENT_OPENING` works on ElevenLabs voices. On a Cartesia voice the opening turn can run for ever: every `speak()` and the kickoff wait for it, and the agent never answers. Use a short spoken opening on those voices. `mgmt.doctor` flags it as `silent_opening_unsupported_voice`.
+- `SILENT_OPENING` works on ElevenLabs voices. On a Cartesia voice none of the silent phrases we tried ended the opening turn, so every `speak()` and the kickoff stay held and get no reply. Use a short spoken opening on a Cartesia voice. `mgmt.doctor` flags it as `silent_opening_unsupported_voice`.
 - Do not combine a spoken scripted line with a `kickoff`. The user hears the line, then waits for the kickoff reply. For a preset question, use [§ Open with a preset question](#open-with-a-preset-question).
 
 ## Where the opening phrase lives
@@ -121,7 +121,7 @@ const session = new KalturaAvatarSession({
 await session.connect();
 ```
 
-The opening is silent, so the kickoff goes out about 0.3 s after `connect()` resolves and the first reply answers the question. The flag stays set on the thread (rule 4), so clear it once the answer has started with `session.updateRequestVars({ preset_question: '' })`. Otherwise a later join of that thread opens silently too.
+The opening is silent, so the kickoff goes out under 0.5 s after `connect()` resolves and the first reply answers the question. The flag stays set on the thread (rule 4), so clear it once the answer has started with `session.updateRequestVars({ preset_question: '' })`. Otherwise a later join of that thread opens silently too.
 
 ## The `kickoff` option
 
@@ -172,7 +172,7 @@ Event order for an avatar session with `SILENT_OPENING` and a `kickoff`, with ty
 | 5 | `responsePending` fires when the server acknowledges the turn. Show a "thinking" indicator here. |
 | 6 | `speechChunk` / `transcript {type:'final'}` / `avatarStartTalking` for the agent's first real words. `responseSettled` fires. |
 
-Step 3 ends about 0.3 s after step 2. The agent's first words come about 1 s after step 2.
+Step 3 ends under 0.5 s after step 2. The agent's first words come about 1 s after step 2.
 
 With a scripted opening, step 3 carries the rendered line instead of `[silence]`. Its first `speechChunk` arrives about 0.2 s after step 2, and the turn ends when the whole line has been spoken.
 
@@ -227,7 +227,7 @@ With `micStartMode: 'deferred'` the SDK does not touch the mic at all until you 
 | The kickoff text shows up as a user message | `echo: true`, or an `onBeforeSend` hook added to the text, so the added part surfaces on its own | Use `echo: false` (the default) and put the wording in the kickoff text itself instead of adding it in `onBeforeSend`. |
 | `warning` with code `kickoff_failed` | A guardrail or the disclosure gate rejected the send. `detail` says which. | Fix the guardrail, or call `speak()` yourself after the gate opens. |
 | The agent speaks a scripted line before the kickoff reply | The intellect's `opening_phrase` is not `SILENT_OPENING`, or the intellect has none and the avatar still carries its own `openingPhrase` | `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`; clear the avatar's copy with `avatars.update({ id, openingPhrase: null }, ks)`. |
-| The session connects, but the agent never answers, and no kickoff reply comes | The opening is silent and the voice is not an ElevenLabs voice, or the opening is the older `<blank>` phrase | Run `mgmt.doctor`. Write a short spoken opening, or set `SILENT_OPENING` on an ElevenLabs voice: `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`. |
+| The session connects, but no kickoff reply or `speak()` reply comes | The opening is silent and the voice is a Cartesia voice, or the opening is `<blank>` | Run `mgmt.doctor`. On a Cartesia voice, write a short spoken opening. Otherwise set `SILENT_OPENING`: `intellectConfig.setOpeningPhrase(configId, SILENT_OPENING, ks)`. |
 | The agent speaks a default greeting instead of your line | One template branch rendered empty text | Make every branch render text; use `SILENT_OPENING` for a silent branch. |
 | A returning user hears the first-visit greeting after a reconnect or `switchMode('avatar')` | The opening plays on every join | Guard the first-visit branch with `{% if sys__is_new_thread %}`. |
 | A flag branch still plays after you stopped sending the flag | Request variables stay set on the thread | Turn the flag off: [DYNAMIC-DATA-INJECTION.md § The context channel](DYNAMIC-DATA-INJECTION.md#the-context-channel-request-variables). |

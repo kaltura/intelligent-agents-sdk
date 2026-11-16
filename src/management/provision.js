@@ -17,6 +17,7 @@
  */
 import { meta, uuidv4 } from '../core/ids.js';
 import { KalturaError } from '../core/errors.js';
+import { isSilentOpening } from '../core/opening.js';
 import { resolveIntellectId } from './agents.js';
 import { findIntellectsReferencingTool } from './tools.js';
 import { lintPersonaIdentity } from './prompt-lint.js';
@@ -26,7 +27,7 @@ import { lintPersonaIdentity } from './prompt-lint.js';
  * @param {object} opts
  * @param {string} opts.brief                Plain-English description of the agent.
  * @param {string} opts.ks                   Admin token.
- * @param {string} [opts.voiceId]            Override the auto-picked preset voice.
+ * @param {string} [opts.voiceId]            Override the auto-picked preset voice. With a silent `openingPhrase` the pick skips Cartesia voices, where a silent opening does not end.
  * @param {string} [opts.visualId]           Override the auto-picked preset visual.
  * @param {string} [opts.openingPhrase]      The opening line, written to the intellect's `opening_phrase` only. The avatar is created without a phrase, so the intellect decides what the first turn says. Wins over the generated profile's phrase. Defaults to the profile's phrase, then `'Hello!'`. May be a Jinja2 template (see docs/START-THE-CONVERSATION.md § Personalize the opening). Pass `SILENT_OPENING` for a silent opening turn and start the conversation from the client with `kickoff` instead. Must be a non-empty string when given.
  * @param {string[]} [opts.adminTags]   Tags on the agent (default `['provisioned']`).
@@ -63,7 +64,8 @@ export async function provision(mgmt, opts) {
     created.configId = configId;
 
     step = 'pick catalog';
-    const voiceId = opts.voiceId || (await firstPreset(mgmt, 'Voice', opts.ks));
+    // A silent opening does not end on a Cartesia voice, so the auto-picked voice skips them.
+    const voiceId = opts.voiceId || (await firstPreset(mgmt, 'Voice', opts.ks, isSilentOpening(opening) ? isCartesia : undefined));
     const visualId = opts.visualId || (await firstPreset(mgmt, 'Visual', opts.ks));
     if (!voiceId || !visualId) throw new Error('no preset catalog items available');
 
@@ -153,10 +155,16 @@ function intellectBody(configId, profile, opening) {
   };
 }
 
-/** @param {import('./client.js').Management} mgmt @param {'Voice'|'Visual'} type @param {string} ks */
-async function firstPreset(mgmt, type, ks) {
-  for await (const item of mgmt.catalog.list(ks, { type, pageSize: 1 })) return item.itemId;
+/** @param {import('./client.js').Management} mgmt @param {'Voice'|'Visual'} type @param {string} ks @param {(item:any)=>boolean} [skip] Items to pass over. */
+async function firstPreset(mgmt, type, ks, skip) {
+  for await (const item of mgmt.catalog.list(ks, { type, pageSize: 1 })) if (!skip?.(item)) return item.itemId;
   return undefined;
+}
+
+/** True for a catalog voice whose TTS provider is Cartesia (compared in lower case, punctuation ignored). @param {any} item */
+function isCartesia(item) {
+  const raw = item?.attributes?.voice?.ttsProvider;
+  return typeof raw === 'string' && raw.toLowerCase().replace(/[^a-z0-9]/g, '') === 'cartesia';
 }
 
 /** Short, redaction-safe reason string from any thrown error (never leaks a KS/body). @param {unknown} e */

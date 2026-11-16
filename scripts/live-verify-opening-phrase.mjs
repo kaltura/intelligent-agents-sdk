@@ -38,7 +38,7 @@ import {
   browserChoice, launchBrowser, contextOptions, openHarness, whepSummary, netProblems, redact, waitFor, find, all, isOpeningSpeechId, sleep, SILENT_OPENING, textsSent,
 } from './live-verify-kickoff-shared.mjs';
 import { callHook } from './live-verify-hooks-shared.mjs';
-import { SILENT_OPENING_LABEL } from '../src/core/opening.js';
+import { SILENT_OPENING_LABEL, isSilentOpening } from '../src/core/opening.js';
 
 const { args, target, runId, outDir } = bootstrap(process.argv.slice(2), 'opening-phrase');
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s) => s.trim().toUpperCase())) : null;
@@ -104,7 +104,7 @@ const openingText = (/** @type {Ev[]} */ evs) => all(evs, 'speechChunk', (d) => 
 /** The server's end-of-opening marker. */
 const openingEnd = (/** @type {Ev[]} */ evs, from = 0) => find(evs, 'socket:in', { from, where: (d) => d.ev === 'stvFinishedTalking' });
 /** Any surfaced text carrying the silent marker. */
-const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && e.detail.text.includes(SILENT_OPENING));
+const leaks = (/** @type {Ev[]} */ evs) => [...all(evs, 'transcript'), ...all(evs, 'speechChunk')].filter((e) => typeof e.detail?.text === 'string' && isSilentOpening(e.detail.text));
 
 /** Every speechChunk text from event index `from` up to `to`, concatenated. */
 const chunkText = (/** @type {Ev[]} */ evs, from = 0, to = evs.length) => all(evs.slice(from, to), 'speechChunk', (d) => typeof d?.text === 'string')

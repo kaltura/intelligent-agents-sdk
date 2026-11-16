@@ -496,7 +496,8 @@ export class IntellectConfig {
    *
    * The rendered text reaches the client as the opening turn's `speechChunk` /
    * `transcript` and is stored on the thread as an `opening` message. Pass
-   * `SILENT_OPENING` for a silent opening turn. `null` clears the phrase.
+   * `SILENT_OPENING` for a silent opening turn (ElevenLabs voices only, not Cartesia: see
+   * docs/START-THE-CONVERSATION.md § Choose an opening). `null` clears the phrase.
    * See docs/START-THE-CONVERSATION.md § Personalize the opening. WRITE, idempotent.
    * @param {number} configId @param {string|null} phrase @param {string} ks (admin)
    * @returns {Promise<{applied:boolean, result?:any, sent?:object, _meta:object}>}
