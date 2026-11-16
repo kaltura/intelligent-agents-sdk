@@ -837,3 +837,52 @@ test('the per-peer ICE server maps are not enumerable', async () => {
   for (const k of ['_peerServers', '_peerNextServers']) assert.ok(!Object.keys(session).includes(k), k);
   session.disconnect();
 });
+
+// ── what each environment sends: the same SDK must work on all of them ──
+
+const sid = 'sock-abc123';
+const backendTurn = (host, over = {}) => ({ url: host, username: `1900000000:${sid}`, credential: 'c2Vj+cmV0/8=', ttl: 86400, ...over });
+const peerUrls = (pc) => pc.config.iceServers.map((s) => s.urls);
+
+test('environment that sends nothing: the configured entry alone, no [turn] warning for a configured host', async () => {
+  const { session, logs } = await connected({ perSocket: () => ({}) });
+  assert.deepEqual(stvPeer().config.iceServers, [FALLBACK]);
+  assert.equal(logs.filter((l) => l.msg.includes('[turn]')).length, 0);
+  session.disconnect();
+});
+
+test('environment that sends short-lived credentials for a bare host: server entry first, base64 credential kept exactly', async () => {
+  const { session } = await connected({ perSocket: () => ({ turn: backendTurn('relay.example.net') }) });
+  const [first, second] = stvPeer().config.iceServers;
+  assert.deepEqual(first, { urls: turnServers('relay.example.net').urls, username: `1900000000:${sid}`, credential: 'c2Vj+cmV0/8=' });
+  assert.deepEqual(second, FALLBACK);
+  session.disconnect();
+});
+
+test('the server moves to a new relay host: the next session uses it and the old host is not kept', async () => {
+  const { session, sockets } = await connected({ perSocket: (n) => ({ turn: backendTurn(n === 0 ? 'relay.example.net' : 'relay-v2.example.net', { credential: `cred-${n}` }) }) });
+  assert.deepEqual(peerUrls(stvPeer())[0], turnServers('relay.example.net').urls);
+  await session._coldReconnect('test');
+  assert.equal(sockets.length, 2);
+  assert.deepEqual(peerUrls(stvPeer())[0], turnServers('relay-v2.example.net').urls);
+  assert.equal(stvPeer().config.iceServers[0].credential, 'cred-1');
+  assert.ok(!peerUrls(stvPeer()).flat().some((u) => u.includes('relay.example.net')), 'the old host is gone');
+  session.disconnect();
+});
+
+test('a new relay host that refuses the credentials: later peers use the configured entry, one warning', async () => {
+  const { session, logs } = await connected({ perSocket: () => ({ turn: backendTurn('relay-v2.example.net') }) });
+  const urls = turnServers('relay-v2.example.net').urls;
+  stvPeer().fireCandidateError({ errorCode: 401, url: urls[0] });
+  assert.equal(session._serverTurn.bad, true);
+  assert.deepEqual(session._iceServers(), [FALLBACK]);
+  assert.equal(logs.filter((l) => l.msg.includes('[turn]')).length, 1);
+  session.disconnect();
+});
+
+test('an older server that sends the fixed pair for the configured host: listed once, no renewal timer', async () => {
+  const { session } = await connected({ perSocket: () => ({ turn: { url: HOST, username: 'kaltura', credential: 'avatar' } }) });
+  assert.deepEqual(stvPeer().config.iceServers, [FALLBACK]);
+  assert.equal(session._turnRenewTimer ?? null, null);
+  session.disconnect();
+});
