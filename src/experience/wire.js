@@ -211,7 +211,7 @@ export function turnUrlKeys(url, reported = false) {
 }
 
 /**
- * Limited Availability. Read the TURN credentials a server message carries, without trusting its shape. Accepts an
+ * Read the TURN credentials a server message carries, without trusting its shape. Accepts an
  * object or a JSON string; `url`, `urls` or `uri` (a bare host, `host:port`, full `turn:`/`turns:`
  * URLs, a list, or a comma- or space-separated string); `credential` or `password`. Bad URLs are
  * dropped one by one and at most 8 are kept. An entry with no URL keeps `urls: []`: the caller
@@ -248,7 +248,7 @@ export function normalizeServerTurn(raw, receivedAt = Date.now()) {
 }
 
 /**
- * Limited Availability. The ICE server list for one peer. The server's per-session entry comes first, so it wins ties,
+ * The ICE server list for one peer. The server's per-session entry comes first, so it wins ties,
  * and the configured entry (`turnServerUrl` with `turnCredentials` or the SDK default) follows as
  * a fallback, so a peer connects whichever one the relay accepts. Both are gathered in parallel.
  * A server entry with no host uses `turnServerUrl`, unless the caller passed its own credentials, even one field

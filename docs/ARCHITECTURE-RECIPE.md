@@ -31,6 +31,7 @@ A from-scratch reimplementation of the live avatar runtime, using nothing but `s
 ```
 <!-- /nova-target -->
 
+`onServerConnected` can carry `turn` (per-session relay credentials). How to use it: [audio-channels.md §5](wire-protocol/audio-channels.md#5-asr-uplink-pc1-microphone--server).
 
 Step 4 follows the [full connect sequence](architecture-reference/connection-and-handshake.md#full-connect-sequence-state-machine-order).
 
