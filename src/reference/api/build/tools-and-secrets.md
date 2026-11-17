@@ -112,7 +112,7 @@ What the builder rejects:
 | Rule | Fix |
 |---|---|
 | Port 80 or 443 only. `http://example.com:8080/x` is not called | Serve the endpoint on 80 or 443 |
-| No `@` anywhere, including one from an arg value such as an email | Send the value in `body`, or percent-encode it (see [argument rules](/guides/external-api-integrations/#what-the-agent-can-say)) |
+| No `@` anywhere, including one from an arg value such as an email | Send the value in `body` |
 | No `%00` | Remove it |
 | No `../` | Use the final path |
 | Redirects are not followed | Point the url at the final location |
