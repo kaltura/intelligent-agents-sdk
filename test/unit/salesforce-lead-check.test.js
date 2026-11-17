@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderTemplate, renderRequest, encodeKeyArg, callTool, runLeadChecks, orgUrlProblem } from '../../scripts/lib/salesforce-lead-check.mjs';
+import { renderTemplate, renderRequest, callTool, runLeadChecks, orgUrlProblem } from '../../scripts/lib/salesforce-lead-check.mjs';
 import { salesforceLeadUpsert } from '../../src/management/crm-recipes.js';
 import { fakeFetch } from '../fakes/fetch.js';
 
@@ -14,26 +14,45 @@ import { fakeFetch } from '../fakes/fetch.js';
 const INSTANCE = 'https://fake.develop.my.salesforce.com';
 const TOKEN = 'fake-token-' + 'x'.repeat(8);
 
-/** A fake org: upsert by email (201 insert, 200 update, 300 for two matches), required-field and email validation, bad-token 401, create, query, get, delete. */
+/** A fake org: collections upsert by email (200 with one entry per record, success false for a refused record), required-field and email validation, bad-token 401, create, query, get, delete. */
 function fakeOrg() {
   /** @type {Map<string, Record<string,string>>} */
   const leads = new Map();
+  /** @type {Map<string, Record<string,string>>} */
+  const contacts = new Map();
   let seq = 0;
   const routes = [
     {
-      match: /\/sobjects\/Lead\/Email\//,
+      match: /\/composite\/sobjects\/Contact\/Email$/,
+      respond: (/** @type {any} */ req) => {
+        if (req.headers.authorization !== `Bearer ${TOKEN}`) return { status: 401, body: [{ errorCode: 'INVALID_SESSION_ID' }] };
+        const { attributes: _a, ...fields } = req.body.records[0];
+        const found = [...contacts.entries()].find(([, c]) => c.Email === fields.Email);
+        if (found) { contacts.set(found[0], { ...found[1], ...fields }); return { body: [{ id: found[0], success: true, errors: [], created: false }] }; }
+        const id = `003${++seq}`;
+        contacts.set(id, fields);
+        return { body: [{ id, success: true, errors: [], created: true }] };
+      },
+    },
+    { match: /\/sobjects\/Contact\/003\d+$/, respond: (/** @type {any} */ req) => (contacts.delete(req.url.split('/').pop()) ? { status: 204 } : { status: 404, body: [{ errorCode: 'ENTITY_IS_DELETED' }] }) },
+    {
+      match: /\/composite\/sobjects\/Lead\/Email$/,
       respond: (/** @type {any} */ req) => {
         if (req.headers.authorization !== `Bearer ${TOKEN}`) return { status: 401, body: [{ message: 'Session expired or invalid', errorCode: 'INVALID_SESSION_ID' }] };
-        const email = decodeURIComponent(req.url.split('/Lead/Email/')[1]);
-        if (!/^[^@\s]+@[^@\s]+\.\w+$/.test(email)) return { status: 400, body: [{ message: 'Email: invalid email address', errorCode: 'INVALID_EMAIL_ADDRESS', fields: ['Email'] }] };
-        const missing = ['LastName', 'Company'].filter((f) => !req.body[f]);
-        if (missing.length) return { status: 400, body: [{ message: `Required fields are missing: [${missing}]`, errorCode: 'REQUIRED_FIELD_MISSING', fields: missing }] };
-        const matches = [...leads.entries()].filter(([, l]) => l.Email === email);
-        if (matches.length > 1) return { status: 300, body: matches.map(([id]) => `/services/data/v68.0/sobjects/Lead/${id}`) };
-        if (matches.length === 1) { leads.set(matches[0][0], { ...matches[0][1], ...req.body }); return { status: 200, body: { id: matches[0][0], success: true, errors: [], created: false } }; }
+        const rec = req.body.records[0];
+        const refuse = (/** @type {string} */ statusCode, /** @type {string[]} */ fields) => ({ status: 200, body: [{ success: false, errors: [{ statusCode, message: statusCode, fields }] }] });
+        if (req.body.records.length !== 1 || rec.attributes?.type !== 'Lead') return { status: 400, body: [{ errorCode: 'JSON_PARSER_ERROR' }] };
+        if (!/^[^@\s]+@[^@\s]+\.\w+$/.test(rec.Email)) return refuse('INVALID_EMAIL_ADDRESS', ['Email']);
+        const missing = ['LastName', 'Company'].filter((f) => !rec[f]);
+        const { attributes: _a, ...fields } = rec;
+        const matches = [...leads.entries()].filter(([, l]) => l.Email === rec.Email);
+        // A real org returns the matched record's id even when the update is refused.
+        if (missing.length) return { status: 200, body: [{ ...(matches.length === 1 ? { id: matches[0][0] } : {}), success: false, errors: [{ statusCode: 'REQUIRED_FIELD_MISSING', message: 'missing', fields: missing }] }] };
+        if (matches.length > 1) return refuse('DUPLICATE_VALUE', ['Email']);
+        if (matches.length === 1) { leads.set(matches[0][0], { ...matches[0][1], ...fields }); return { status: 200, body: [{ id: matches[0][0], success: true, errors: [], created: false }] }; }
         const id = `00Q${++seq}`;
-        leads.set(id, { Email: email, ...req.body });
-        return { status: 201, body: { id, success: true, errors: [] } };
+        leads.set(id, fields);
+        return { status: 200, body: [{ id, success: true, errors: [], created: true }] };
       },
     },
     {
@@ -47,7 +66,8 @@ function fakeOrg() {
     { match: '/query?q=', respond: (/** @type {any} */ req) => {
       const q = decodeURIComponent(req.url.split('q=')[1]);
       const addr = /Email = '([^']+)'/.exec(q)?.[1];
-      return { body: { records: [...leads.entries()].filter(([, l]) => l.Email === addr).map(([Id]) => ({ Id })) } };
+      const table = /FROM Contact/.test(q) ? contacts : leads;
+      return { body: { records: [...table.entries()].filter(([, l]) => l.Email === addr).map(([Id]) => ({ Id })) } };
     } },
     { match: /\/sobjects\/Lead\/00Q\d+$/, respond: (/** @type {any} */ req) => {
       const id = req.url.split('/').pop();
@@ -55,7 +75,7 @@ function fakeOrg() {
       return { body: leads.get(id) };
     } },
   ];
-  return { leads, fetch: fakeFetch(routes) };
+  return { leads, contacts, fetch: fakeFetch(routes) };
 }
 
 test('renderTemplate fills {{ vars }} and {args}, and writes "None" for an omitted arg', () => {
@@ -68,44 +88,50 @@ test('renderTemplate fills {{ vars }} and {args}, and writes "None" for an omitt
 
 test('renderRequest builds the exact request the tool config describes', () => {
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  const req = renderRequest(tool, { args: { Email: 'a%40b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 'thr-1' });
+  const req = renderRequest(tool, { args: { Email: 'a@b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 'thr-1' });
   assert.equal(req.method, 'PATCH');
-  assert.equal(req.url, `${INSTANCE}/services/data/v68.0/sobjects/Lead/Email/a%40b.co`);
+  assert.equal(req.url, `${INSTANCE}/services/data/v68.0/composite/sobjects/Lead/Email`);
   assert.equal(req.headers.Authorization, `Bearer ${TOKEN}`);
-  assert.equal(req.body.LastName, 'L');
-  assert.equal(req.body.Phone, 'None', 'an omitted optional arg is written as the text None');
-  assert.equal(req.body.LeadSource, 'Web');
-  assert.match(req.body.Description, /Thread: thr-1\. Consent to be contacted: true\./);
+  assert.equal(req.body.allOrNone, true);
+  const rec = req.body.records[0];
+  assert.deepEqual(rec.attributes, { type: 'Lead' });
+  assert.equal(rec.Email, 'a@b.co', 'the key goes in the body as is');
+  assert.equal(rec.LastName, 'L');
+  assert.equal(rec.Phone, 'None', 'an omitted optional arg is written as the text None');
+  assert.equal(rec.LeadSource, 'Web');
+  assert.match(rec.Description, /Thread: thr-1\. Consent to be contacted: true\./);
 });
 
-test('encodeKeyArg encodes every @, + and / (not just the first)', () => {
-  assert.equal(encodeKeyArg('a@b@c.co'), 'a%40b%40c.co');
-  assert.equal(encodeKeyArg('a+b/c@d.co'), 'a%2Bb%2Fc%40d.co');
+test('a value with URL characters stays in the body and the URL never changes', () => {
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  const req = renderRequest(tool, { args: { Email: encodeKeyArg('x@y@z.co') }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' });
-  assert.ok(!req.url.includes('@'), 'no raw @ survives in the URL');
+  const email = 'a+b/c?d#e&f@x.co';
+  const req = renderRequest(tool, { args: { Email: email, LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' });
+  assert.equal(req.url, `${INSTANCE}/services/data/v68.0/composite/sobjects/Lead/Email`);
+  assert.equal(req.body.records[0].Email, email);
 });
 
-test('renderRequest refuses a raw @ in the URL', () => {
+test('renderRequest refuses a tool whose URL holds an {arg}', () => {
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  assert.throws(() => renderRequest(tool, { args: { Email: 'a@b.co' }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' }), /raw @/);
+  const old = { ...tool, request: { ...tool.request, url: `${tool.request.url}/{Email}` } };
+  assert.throws(() => renderRequest(/** @type {any} */ (old), { args: { Email: 'a@b.co' }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' }), /holds an \{arg\}/);
 });
 
-test('callTool maps a 201 and a 200, and exposes the raw error body', async () => {
+test('callTool maps an insert and an update, and a refused update is success false even with an id', async () => {
   const org = fakeOrg();
   const tool = salesforceLeadUpsert({ secretName: 'SF_TOKEN', instanceUrl: INSTANCE });
-  const ctx = { args: { Email: 'a%40b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' };
+  const ctx = { args: { Email: 'a@b.co', LastName: 'L', Company: 'C', consent: true }, secrets: { SF_TOKEN: TOKEN }, threadId: 't' };
   const first = await callTool(org.fetch, tool, ctx);
-  assert.equal(first.status, 201);
+  assert.equal(first.status, 200);
   assert.equal(first.mapped.success, true);
   assert.ok(first.mapped.result);
   const second = await callTool(org.fetch, tool, ctx);
-  assert.equal(second.status, 200);
   assert.deepEqual(second.mapped, { result: first.mapped.result, success: true });
   const failed = await callTool(org.fetch, tool, { ...ctx, args: { ...ctx.args, Company: '' } });
-  assert.equal(failed.status, 400);
-  assert.equal(failed.json[0].errorCode, 'REQUIRED_FIELD_MISSING');
-  assert.deepEqual(failed.json[0].fields, ['Company']);
+  assert.equal(failed.status, 200);
+  assert.equal(failed.mapped.success, false);
+  assert.equal(failed.mapped.result, first.mapped.result, 'a refused update still carries the matched id');
+  assert.equal(failed.json[0].errors[0].statusCode, 'REQUIRED_FIELD_MISSING');
+  assert.deepEqual(failed.json[0].errors[0].fields, ['Company']);
 });
 
 test('runLeadChecks passes every step against the fake org and deletes its Leads', async () => {
@@ -115,7 +141,9 @@ test('runLeadChecks passes every step against the fake org and deletes its Leads
   assert.deepEqual(failing, [], JSON.stringify(failing));
   assert.ok(results.length >= 10);
   assert.equal(results.find((r) => r.step === '2d-two-leads-one-email')?.ok, true);
+  assert.equal(results.find((r) => r.step === '8b-contact-update-same-email')?.ok, true);
   assert.equal(org.leads.size, 0, 'cleanup left no Leads');
+  assert.equal(org.contacts.size, 0, 'cleanup left no Contacts');
   assert.equal(cleanup.failed, 0);
   assert.ok(cleanup.deleted >= 1);
 });

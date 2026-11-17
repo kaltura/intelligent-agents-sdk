@@ -1,5 +1,5 @@
 /**
- * Checks for the `salesforceLeadUpsert` tool against a Salesforce org.
+ * Checks for the `salesforceLeadUpsert` and `salesforceContactUpsert` tools against a Salesforce org.
  * Used by `scripts/live-verify-salesforce-lead.mjs`. It takes `fetch` as an
  * argument, so a fake `fetch` can test it offline (see
  * `test/unit/salesforce-lead-check.test.js`).
@@ -11,7 +11,7 @@
  *
  * Never prints the token. Every Lead it creates is deleted at the end.
  */
-import { salesforceLeadUpsert, tools } from '../../src/management/index.js';
+import { salesforceLeadUpsert, salesforceContactUpsert, tools } from '../../src/management/index.js';
 
 const SECRET_NAME = 'SF_TOKEN';
 const DEV_HOST = /(\.develop\.|\.sandbox\.|\.scratch\.|-dev-ed\.)/;
@@ -37,18 +37,9 @@ export function orgUrlProblem(instanceUrl, confirmNonProd = false) {
 }
 
 /**
- * Percent-encode every reserved character in an upsert key, the way the key
- * arg prompt asks the model to (`@` as `%40`, `+` as `%2B`, `/` as `%2F`).
- * @param {string} value
- */
-export function encodeKeyArg(value) {
-  return encodeURIComponent(value);
-}
-
-/**
  * Fill a tool template the way the tool runtime does. `{{ path }}` reads
  * request variables and secrets (`secrets.NAME`, `sys__thread_id`). `{Name}`
- * reads a tool arg, inserted raw with no percent-encoding. An omitted arg
+ * reads a tool arg, inserted as is. An omitted arg
  * becomes the text "None" and an empty string becomes blank, as on the runtime.
  * A missing `{{ }}` value becomes ''.
  * @param {string} text @param {{args:Record<string,unknown>, vars:Record<string,any>}} scope
@@ -64,9 +55,21 @@ export function renderTemplate(text, scope) {
 }
 
 /**
- * Render a tool's `request` block. Throws when the URL still has a raw `@`,
- * because the tool call fails in that case. Header values get request
- * variables and secrets only, never args.
+ * Fill every string in a JSON value (nested objects and lists included).
+ * @param {unknown} node @param {{args:Record<string,unknown>, vars:Record<string,any>}} scope
+ * @returns {unknown}
+ */
+function renderDeep(node, scope) {
+  if (typeof node === 'string') return renderTemplate(node, scope);
+  if (Array.isArray(node)) return node.map((n) => renderDeep(n, scope));
+  if (node && typeof node === 'object') return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, renderDeep(v, scope)]));
+  return node;
+}
+
+/**
+ * Render a tool's `request` block. Header values get request variables and
+ * secrets only, never args. The URL holds no arg, so the check throws if one
+ * ever appears there.
  * @param {import('../../src/management/tools.js').GenieToolConfig} tool
  * @param {{args:Record<string,unknown>, secrets:Record<string,string>, threadId:string}} ctx
  */
@@ -75,13 +78,13 @@ export function renderRequest(tool, ctx) {
   const vars = { secrets: ctx.secrets, sys__thread_id: ctx.threadId };
   const scope = { args: ctx.args, vars };
   const noArgs = { args: {}, vars };
+  if (/\{\w+\}/.test(req.url)) throw new Error('the tool URL holds an {arg}. The Salesforce tools keep every arg in the body.');
   const url = renderTemplate(req.url, scope);
-  if (url.includes('@')) throw new Error('the rendered URL has a raw @, which makes the tool call fail. Write it as %40.');
   return {
     url,
     method: req.method,
     headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, renderTemplate(String(v), noArgs)])),
-    body: Object.fromEntries(Object.entries(req.body).map(([k, v]) => [k, renderTemplate(String(v), scope)])),
+    body: renderDeep(req.body, scope),
   };
 }
 
@@ -119,14 +122,16 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   const email = `sdk-live-verify-${tag}@example.com`;
   const base = `${instanceUrl}/services/data/${API_VERSION}`;
   const auth = { Authorization: `Bearer ${token}` };
-  // The upsert key goes into the URL, where a raw @ fails: the model writes it as %40.
-  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: encodeKeyArg(email), Phone: '555-0100', Country: 'United States', consent: true };
+  const full = { FirstName: 'Sdk', LastName: 'LiveVerify', Company: 'Live Verify Co', Email: email, Phone: '555-0100', Country: 'United States', consent: true };
 
   /** @type {{step:string, ok:boolean, detail?:unknown}[]} */
   const results = [];
   const check = (/** @type {string} */ step, /** @type {boolean} */ ok, /** @type {unknown} */ detail) => results.push({ step, ok, detail });
   const toDelete = new Set();
   const multiEmail = `sdk-live-verify-${tag}-twins@example.com`;
+  const contactEmail = `sdk-live-verify-${tag}-contact@example.com`;
+  const contactTool = salesforceContactUpsert({ secretName: SECRET_NAME, instanceUrl });
+  const toDeleteContacts = new Set();
   /** @type {string[]} */
   const multi = [];
 
@@ -137,67 +142,90 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
     const res = await fetchFn(`${base}/sobjects/Lead`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json', 'Sforce-Duplicate-Rule-Header': 'allowSave=true' }, body: JSON.stringify({ LastName, Company, Email: multiEmail }) });
     return /** @type {string} */ ((await res.json()).id);
   };
-  const leadsFor = async (/** @type {string} */ addr) => {
-    const res = await fetchFn(`${base}/query?q=${encodeURIComponent(`SELECT Id FROM Lead WHERE Email = '${addr}'`)}`, { headers: auth });
+  const recordsFor = async (/** @type {string} */ sobject, /** @type {string} */ addr) => {
+    const res = await fetchFn(`${base}/query?q=${encodeURIComponent(`SELECT Id FROM ${sobject} WHERE Email = '${addr}'`)}`, { headers: auth });
     const body = await res.json();
     return /** @type {string[]} */ ((body.records || []).map((/** @type {any} */ r) => r.Id));
   };
+  const leadsFor = (/** @type {string} */ addr) => recordsFor('Lead', addr);
 
   try {
+    // The collections upsert answers 200 with one entry per record, for insert and update.
+    // A refused record has success false. When it matched an existing record it still carries that record's id,
+    // so the agent must read `success`, never the id alone.
+    /** @param {{status:number, mapped:Record<string,any>}} r */
+    const notSaved = (r) => r.mapped.success !== true;
+    /** @param {any} r */
+    const errorCode = (r) => r.json?.[0]?.errors?.[0]?.statusCode ?? r.json?.[0]?.errors?.[0]?.errorCode;
+
     // 1 create
     const created = await callTool(fetchFn, tool, { args: full, secrets, threadId });
     if (created.mapped.result) toDelete.add(created.mapped.result);
-    check('1-create-lead', created.status === 201 && created.mapped.success === true && !!created.mapped.result, { status: created.status, mapped: created.mapped });
+    check('1-create-lead', created.status === 200 && created.mapped.success === true && !!created.mapped.result, { status: created.status, mapped: created.mapped });
     if (created.mapped.result) {
       const lead = await getLead(created.mapped.result);
       check('1b-fields-and-tags', lead.Company === full.Company && lead.LeadSource === 'Web' && String(lead.Description).includes(threadId) && /consent to be contacted: true/i.test(String(lead.Description)),
         { LeadSource: lead.LeadSource, Description: lead.Description });
     }
 
-    // 2 update with the same email: no second Lead, 200 with the same id
+    // 2 update with the same email: no second Lead, same id
     const updated = await callTool(fetchFn, tool, { args: { ...full, Company: 'Live Verify Co 2' }, secrets, threadId });
     const ids = await leadsFor(email);
     ids.forEach((id) => toDelete.add(id));
-    check('2-update-same-email', updated.status === 200 && updated.mapped.success === true && updated.mapped.result === created.mapped.result && updated.json?.created === false, { status: updated.status, mapped: updated.mapped });
+    check('2-update-same-email', updated.status === 200 && updated.mapped.success === true && updated.mapped.result === created.mapped.result, { status: updated.status, mapped: updated.mapped });
     check('2b-no-duplicate-lead', ids.length === 1, { leadsWithThisEmail: ids.length });
     if (ids[0]) check('2c-company-updated', (await getLead(ids[0])).Company === 'Live Verify Co 2', undefined);
 
-    // 2d two Leads with one email: Salesforce answers 300 with their URLs and writes nothing
+    // 2d two Leads with one email: the upsert is ambiguous. Whatever status Salesforce uses,
+    // the agent must not get success true, and neither Lead may change.
     multi.push(await createLead('TwinA', 'Twin A Co'), await createLead('TwinB', 'Twin B Co'));
     multi.forEach((id) => toDelete.add(id));
-    const ambiguous = await callTool(fetchFn, tool, { args: { ...full, Email: encodeKeyArg(multiEmail), Company: 'Live Verify Co 3' }, secrets, threadId });
+    const ambiguous = await callTool(fetchFn, tool, { args: { ...full, Email: multiEmail, Company: 'Live Verify Co 3' }, secrets, threadId });
     const twins = await Promise.all(multi.map(getLead));
-    check('2d-two-leads-one-email', ambiguous.status === 300 && Array.isArray(ambiguous.json) && ambiguous.json.length === 2 && twins.every((l) => /^Twin [AB] Co$/.test(l.Company)),
-      { status: ambiguous.status, matches: Array.isArray(ambiguous.json) ? ambiguous.json.length : undefined, mapped: ambiguous.mapped });
+    check('2d-two-leads-one-email', notSaved(ambiguous) && twins.every((l) => /^Twin [AB] Co$/.test(l.Company)),
+      { status: ambiguous.status, errorCode: errorCode(ambiguous), mapped: ambiguous.mapped });
 
     // 3 and 4 missing required fields (an empty string is written as blank; an omitted arg would be written as "None")
     for (const field of ['Company', 'LastName']) {
       const missing = await callTool(fetchFn, tool, { args: { ...full, [field]: '' }, secrets, threadId });
       if (missing.mapped.result) toDelete.add(missing.mapped.result);
-      check(`3-missing-${field}`, missing.status === 400 && missing.json?.[0]?.errorCode === 'REQUIRED_FIELD_MISSING' && String(missing.json?.[0]?.fields).includes(field), { status: missing.status, errorCode: missing.json?.[0]?.errorCode });
+      check(`3-missing-${field}`, notSaved(missing) && errorCode(missing) === 'REQUIRED_FIELD_MISSING', { status: missing.status, errorCode: errorCode(missing), mapped: missing.mapped });
     }
 
     // 5 invalid email
     const bad = await callTool(fetchFn, tool, { args: { ...full, Email: 'not-an-email' }, secrets, threadId });
-    check('5-invalid-email', bad.status === 400 && bad.json?.[0]?.errorCode === 'INVALID_EMAIL_ADDRESS', { status: bad.status, errorCode: bad.json?.[0]?.errorCode });
+    check('5-invalid-email', notSaved(bad) && errorCode(bad) === 'INVALID_EMAIL_ADDRESS', { status: bad.status, errorCode: errorCode(bad), mapped: bad.mapped });
 
-    // 6 bad token: Salesforce answers 401. In the tool runtime the agent only sees a generic error status.
+    // 6 bad token: the whole call fails with 401. In the tool runtime the agent only sees a generic error status.
     const expired = await callTool(fetchFn, tool, { args: full, secrets: { [SECRET_NAME]: 'invalid-token' }, threadId });
     check('6-bad-token', expired.status === 401 && expired.json?.[0]?.errorCode === 'INVALID_SESSION_ID', { status: expired.status, errorCode: expired.json?.[0]?.errorCode });
+
+    // 8 Contact tool (its own API version): create, then update the same email with no second Contact
+    const contactArgs = { Email: contactEmail, FirstName: 'Sdk', LastName: 'ContactOne' };
+    const c1 = await callTool(fetchFn, contactTool, { args: contactArgs, secrets, threadId });
+    if (c1.mapped.result) toDeleteContacts.add(c1.mapped.result);
+    check('8-contact-create', c1.status === 200 && c1.mapped.success === true && !!c1.mapped.result, { status: c1.status, mapped: c1.mapped });
+    const c2 = await callTool(fetchFn, contactTool, { args: { ...contactArgs, LastName: 'ContactTwo' }, secrets, threadId });
+    const contactIds = await recordsFor('Contact', contactEmail);
+    contactIds.forEach((id) => toDeleteContacts.add(id));
+    check('8b-contact-update-same-email', c2.status === 200 && c2.mapped.success === true && c2.mapped.result === c1.mapped.result && contactIds.length === 1, { status: c2.status, mapped: c2.mapped, contactsWithThisEmail: contactIds.length });
   } catch (err) {
     check('unexpected-error', false, { message: err instanceof Error ? err.message : String(err) });
   } finally {
     // Cleanup runs even after a failure. A leftover by email is caught too.
     try { for (const addr of [email, multiEmail]) (await leadsFor(addr)).forEach((id) => toDelete.add(id)); } catch { /* best effort */ }
+    try { (await recordsFor('Contact', contactEmail)).forEach((id) => toDeleteContacts.add(id)); } catch { /* best effort */ }
   }
 
   let deleted = 0;
   let failed = 0;
-  for (const id of toDelete) {
-    try {
-      const res = await fetchFn(`${base}/sobjects/Lead/${id}`, { method: 'DELETE', headers: auth });
-      if (res.status === 204 || res.status === 404) deleted++; else failed++;
-    } catch { failed++; }
+  for (const [sobject, ids] of /** @type {[string, Set<string>][]} */ ([['Lead', toDelete], ['Contact', toDeleteContacts]])) {
+    for (const id of ids) {
+      try {
+        const res = await fetchFn(`${base}/sobjects/${sobject}/${id}`, { method: 'DELETE', headers: auth });
+        if (res.status === 204 || res.status === 404) deleted++; else failed++;
+      } catch { failed++; }
+    }
   }
   check('7-cleanup', failed === 0, { deleted, failed });
   return { results, cleanup: { deleted, failed } };

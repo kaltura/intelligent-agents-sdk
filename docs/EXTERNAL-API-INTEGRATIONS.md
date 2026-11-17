@@ -153,17 +153,17 @@ The tool maps `result` (the record id) and `success`. The default description te
 
 | Salesforce answer | Tool result | Agent says |
 |---|---|---|
-| `201` with an id (new record) | `success: true`, `result` is the id | Saved |
-| `200` with an id (existing record) | `success: true`, `result` is the id | Saved |
-| Any error status (missing field, invalid email, expired token, `300`) | No mapped values. The agent gets only the generic error line. | Could not save |
+| Record saved (new or existing) | `success: true`, `result` is the id | Saved |
+| Record refused (missing field, invalid email, two Leads with the email) | `success: false`. `result` can still hold the id of the record it matched. | Could not save |
+| Whole call fails (expired token, malformed request) | No mapped values. The agent gets only the generic error line. | Could not save |
 
-An empty result is never treated as saved. A custom `description` replaces the default guidance, so keep these rules in it.
+Only `success: true` counts as saved, never an id alone. An empty result is never treated as saved. A custom `description` replaces the default guidance, so keep these rules in it.
 
-If two or more Leads share the email, an `Email`-keyed upsert is ambiguous. Salesforce answers `300` and changes nothing. Merge or delete the duplicates.
+If two or more Leads share the email, an `Email`-keyed upsert is ambiguous. Salesforce does not save the record, and the agent does not get `success: true`. Merge or delete the duplicates.
 
 Two argument rules apply to every `api` tool:
 
-- The server puts an arg into a URL as the model sent it, with no percent-encoding. The recipe prompts ask the agent to encode the upsert key (`@` as `%40`, `+` as `%2B`, `/` as `%2F`), but a prompt does not enforce it. Use an `{arg}` in your own URLs only as the last query value, and see [the placeholder rules](api/build/tools-and-secrets.md#api-tool).
+- The server puts an arg into a URL as the model sent it, with no percent-encoding, and a prompt cannot enforce encoding. The Salesforce recipes send every value in the JSON body for that reason. In your own tools, use an `{arg}` in a URL only as the last query value, and see [the placeholder rules](api/build/tools-and-secrets.md#api-tool).
 - Mark an arg `required` when the call cannot work without it. The recipe prompts ask the agent to send an empty string for optional args. Do the same in your own tools. An arg sent without `required` is saved as required (`tools.get` shows `required: true`), so pass `required: false` for an optional one.
 
 Placeholder rules for args: [Tools and Secrets](api/build/tools-and-secrets.md#api-tool). Headers take `{{secrets.NAME}}` and request variables such as `{{ sys__thread_id }}`.
@@ -177,7 +177,7 @@ These builders use a static secret, not the OAuth2 block. A Salesforce access to
 | **Customer endpoint (recommended)** | The agent calls your own HTTPS endpoint. It holds the Salesforce credentials, refreshes the token and does the upsert. The tool holds only a long-lived secret for your endpoint. | Production. Kaltura never holds a Salesforce token. |
 | Scheduled refresh | Your server refreshes the token and calls `mgmt.intellects.secrets.set(...)` again before it expires. The SDK does not ship this job. | You want the agent to call Salesforce directly and can run the refresh well inside the token lifetime. |
 
-The direct tools put the visitor's email into the URL path, and the visitor controls that text. Salesforce takes the upsert key in the path, so the SDK cannot move it. Use the direct tools for a quick start and for dev orgs, and expect `mgmt.doctor` to report `api_tool_url_arg_unsafe` for them. In production, use the customer endpoint: it validates and encodes the email before it calls Salesforce.
+The direct tools call Salesforce's sObject Collections upsert (`PATCH /services/data/<version>/composite/sobjects/<Object>/<key field>`). The visitor's text, the upsert key included, goes in the JSON body and never in the URL, so `mgmt.doctor` has nothing to report for them. Use the direct tools for a quick start and for dev orgs. In production, prefer the customer endpoint: it holds the Salesforce credentials and refreshes the token, and it can validate the fields before it calls Salesforce.
 
 A customer endpoint is a plain `api` tool. It takes the fields as JSON and answers `200` with `{ "saved": true, "lead_id": "..." }` or `{ "saved": false }`. A `4xx` or `5xx` reaches the agent only as the generic error line, so use `200` with `saved: false` for failures the agent should handle:
 

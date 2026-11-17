@@ -22,21 +22,29 @@ import { api } from './tools.js';
 
 const HUBSPOT_RESULT_RULES = 'Tell the visitor the contact is saved ONLY if the result has a contact_id. If the call fails or returns an error status (for example the email already exists), say you could not save it. Never say it is saved otherwise.';
 
-const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if the result shows success true or an id. If the call fails or returns an error status, say you could not save it. If the result is empty, you cannot confirm the save: say you could not confirm it. Never say it is saved otherwise.';
+const SALESFORCE_RESULT_RULES = 'Tell the visitor the details are saved ONLY if the result shows success true. If success is false, or the call fails or returns an error status, say you could not save it. If the result is empty, you cannot confirm the save: say you could not confirm it. Never say it is saved otherwise.';
 
 // An omitted optional arg is written as the text "None", while an empty string
 // is written as blank. So optional args ask for an empty string instead.
 const OPTIONAL_ARG_HINT = ' Optional. If the visitor did not give it, pass an empty string.';
 
 /**
- * Response mapping shared by the Salesforce builders. A successful insert
- * or update returns `{id, success}`. An error status never reaches the
- * mapping: the agent only gets a generic "API returned error status" line.
+ * Response mapping shared by the Salesforce builders. The collections upsert
+ * answers with a list, one `{id, success, errors}` entry per record, and the
+ * tool sends one record. A record that is refused (a missing field, an invalid
+ * value, duplicate matches) comes back as `success: false`. It can still carry
+ * the id of the existing record it matched, so only `success` proves a save. A call
+ * that fails as a whole (an expired token, a malformed request) reaches the
+ * agent only as a generic "API returned error status" line.
  */
 const SALESFORCE_RESPONSE_MAPPING = {
-  result: 'id',
-  success: 'success',
+  result: '0.id',
+  success: '0.success',
 };
+
+// Salesforce field API names: letters, digits and underscores. The upsert key
+// goes into the URL, so anything else is refused at build time.
+const SALESFORCE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 /**
  * Build a validated HubSpot Contacts v3 CREATE tool (the name says "upsert"
@@ -105,7 +113,9 @@ function parseInstanceUrl(fn, value) {
 
 /**
  * Shared builder for the Salesforce sobject upsert tools. Validates the
- * common config, then builds `PATCH {instanceUrl}/services/data/{apiVersion}/sobjects/{sobject}/{key}/{value}`.
+ * common config, then builds the sObject Collections upsert
+ * `PATCH {instanceUrl}/services/data/{apiVersion}/composite/sobjects/{sobject}/{key}`.
+ * The URL holds no tool arg. The visitor's values, the key included, go in the JSON body.
  * @param {object} o
  * @param {string} o.fn                 Public builder name, for error messages.
  * @param {string} o.sobject            Salesforce object (`Contact`, `Lead`).
@@ -127,6 +137,9 @@ function buildSalesforceUpsert(o) {
   if (!cfg.instanceUrl || typeof cfg.instanceUrl !== 'string') throw new TypeError(`${fn}: cfg.instanceUrl is required (e.g. "https://yourorg.my.salesforce.com").`);
   const instanceUrl = parseInstanceUrl(fn, cfg.instanceUrl);
   const externalIdField = cfg.externalIdField || 'Email';
+  if (typeof externalIdField !== 'string' || !SALESFORCE_FIELD_NAME.test(externalIdField)) {
+    throw new TypeError(`${fn}: cfg.externalIdField must be a Salesforce field API name (letters, digits and underscores).`);
+  }
   const fields = cfg.fieldsToCapture || o.defaultFields;
   if (!Array.isArray(fields) || fields.length === 0 || fields.some((f) => typeof f !== 'string' || !f.trim())) {
     throw new TypeError(`${fn}: fieldsToCapture must be a non-empty string array.`);
@@ -147,7 +160,7 @@ function buildSalesforceUpsert(o) {
   const args = {};
   for (const field of fields) {
     const prompt = field === externalIdField
-      ? `${sobject} ${field}. It goes into a URL: pass it percent-encoded: "@" as "%40", "+" as "%2B", "/" as "%2F".`
+      ? `${sobject} ${field}. Upsert key: an existing record with this value is updated.`
       : `${sobject} ${field}${o.fieldHints?.[field] ? `. ${o.fieldHints[field]}` : ''}${required.has(field) ? '' : OPTIONAL_ARG_HINT}`;
     args[field] = { type: 'str', prompt, required: required.has(field) };
   }
@@ -158,19 +171,25 @@ function buildSalesforceUpsert(o) {
     description: cfg.description || o.describe(fields, externalIdField),
     args,
     request: {
-      url: `${instanceUrl}/services/data/${o.apiVersion}/sobjects/${sobject}/${externalIdField}/{${externalIdField}}`,
+      url: `${instanceUrl}/services/data/${o.apiVersion}/composite/sobjects/${sobject}/${externalIdField}`,
       method: 'PATCH',
       headers: {
         Authorization: `Bearer {{secrets.${secretName}}}`,
         'Content-Type': 'application/json',
       },
       body: {
-        ...Object.fromEntries(fields.filter((f) => f !== externalIdField).map((f) => [f, `{${f}}`])),
-        ...o.fixedBody,
+        allOrNone: true,
+        records: [{
+          attributes: { type: sobject },
+          ...Object.fromEntries(fields.map((f) => [f, `{${f}}`])),
+          ...o.fixedBody,
+        }],
       },
     },
-    // An upsert PATCH returns 201 + {id, success} on insert and 200 + {id, success}
-    // on update (API v46.0 and later). An empty result is "unconfirmed", never "saved".
+    // The call answers 200 with one {id, success, errors} entry per record, for an
+    // insert and for an update. A refused record has success false (it can still
+    // carry the id of the record it matched).
+    // An empty result is "unconfirmed", never "saved".
     responseMapping: { ...SALESFORCE_RESPONSE_MAPPING },
   });
 }
@@ -181,13 +200,13 @@ function buildSalesforceUpsert(o) {
  * External ID field. Requires a Salesforce Connected App OAuth2 access token
  * stored as a secret. Salesforce access tokens expire (about 2 hours by
  * default), so see docs/EXTERNAL-API-INTEGRATIONS.md for the token options.
- * The result carries `result` (the id) and `success` on insert and on update.
- * A failure reaches the agent only as a generic error status. The default
- * description tells the agent not to say "saved" on an empty or failed result.
- *
- * Tool args are filled into the URL and body as `{Name}`. They go in raw, and
- * a raw `@` in the URL makes the call fail, so the upsert key arg tells the
- * model to pass it percent-encoded (`@` as `%40`, `+` as `%2B`, `/` as `%2F`).
+ * It calls the sObject Collections endpoint (`PATCH .../composite/sobjects/Contact/{externalIdField}`)
+ * with one record, so no tool arg goes into the URL. The result carries `result`
+ * (the id) and `success` on insert and on update. A record Salesforce refuses
+ * comes back as `success: false`, and can still carry the id of the record it
+ * matched. A call that fails as a whole
+ * reaches the agent only as a generic error status. The default description
+ * tells the agent not to say "saved" on an empty or failed result.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`) — REQUIRED (checked at runtime; declared optional in the JSDoc only so an omitted `cfg` degrades to the same TypeError below instead of crashing on `undefined.secretName`).
@@ -213,7 +232,8 @@ export function salesforceContactUpsert(cfg = {}) {
 
 /**
  * Build a validated Salesforce Lead upsert tool.
- * Upserts a Lead with `PATCH /sobjects/Lead/{externalIdField}/{value}`. A new
+ * Upserts a Lead with `PATCH /composite/sobjects/Lead/{externalIdField}` (one
+ * record in the body, so no tool arg goes into the URL). A new
  * Lead needs `LastName` and `Company`, so both are required tool args with the
  * upsert key (default `Email`, which Salesforce accepts as an upsert key on
  * Lead). The builder sets two body fields the agent cannot change:
@@ -228,8 +248,8 @@ export function salesforceContactUpsert(cfg = {}) {
  * Salesforce access tokens expire (about 2 hours by default). See
  * docs/EXTERNAL-API-INTEGRATIONS.md for the token options. The result fields are
  * the same as {@link salesforceContactUpsert}. If two Leads already have the
- * same email, Salesforce answers 300 and writes nothing, and the agent gets a
- * generic error status.
+ * same email, the upsert is ambiguous and Salesforce writes nothing. The agent
+ * does not get `success: true`.
  *
  * @param {object} [cfg]
  * @param {string} [cfg.secretName]       Name of the Salesforce access-token secret (set via `setSecrets`). REQUIRED (runtime-checked, like `salesforceContactUpsert`).

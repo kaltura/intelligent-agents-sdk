@@ -111,7 +111,7 @@ jsDelivr serves any file straight from a pushed tag by its real repo path. It ha
 
 ```html
 <script type="module">
-  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.42.0/src/experience/index.js';
+  import { KalturaAvatarSession } from 'https://cdn.jsdelivr.net/gh/kaltura/intelligent-agents-sdk@v1.43.0/src/experience/index.js';
 </script>
 ```
 
