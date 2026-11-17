@@ -189,3 +189,7 @@ test('runLeadChecks refuses an unsafe org URL before any request', async () => {
   await assert.rejects(runLeadChecks({ fetch: org.fetch, instanceUrl: 'https://fake.example.com', token: TOKEN, tag: 'x', confirmNonProd: true }), /refusing to run/);
   assert.equal(org.fetch.calls.length, 0);
 });
+
+test('runLeadChecks refuses a tag that could widen the cleanup query', async () => {
+  await assert.rejects(() => runLeadChecks({ fetch: /** @type {any} */ (() => { throw new Error('no network'); }), instanceUrl: INSTANCE, token: TOKEN, tag: "x' OR Email LIKE '%" }), /tag must be/);
+});

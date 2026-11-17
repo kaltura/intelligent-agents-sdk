@@ -134,15 +134,22 @@ function buildSalesforceUpsert(o) {
   const { fn, sobject, cfg } = o;
   const secretName = cfg.secretName;
   if (!secretName || typeof secretName !== 'string') throw new TypeError(`${fn}: cfg.secretName is required (the Salesforce access-token secret name).`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secretName)) throw new TypeError(`${fn}: cfg.secretName must be a secret name (letters, digits and underscores, not starting with a digit).`);
   if (!cfg.instanceUrl || typeof cfg.instanceUrl !== 'string') throw new TypeError(`${fn}: cfg.instanceUrl is required (e.g. "https://yourorg.my.salesforce.com").`);
   const instanceUrl = parseInstanceUrl(fn, cfg.instanceUrl);
-  const externalIdField = cfg.externalIdField || 'Email';
+  const externalIdField = cfg.externalIdField ?? 'Email';
   if (typeof externalIdField !== 'string' || !SALESFORCE_FIELD_NAME.test(externalIdField)) {
     throw new TypeError(`${fn}: cfg.externalIdField must be a Salesforce field API name (letters, digits and underscores).`);
   }
   const fields = cfg.fieldsToCapture || o.defaultFields;
   if (!Array.isArray(fields) || fields.length === 0 || fields.some((f) => typeof f !== 'string' || !f.trim())) {
     throw new TypeError(`${fn}: fieldsToCapture must be a non-empty string array.`);
+  }
+  const seen = new Set();
+  for (const f of fields) {
+    if (!SALESFORCE_FIELD_NAME.test(f) || f.toLowerCase() === 'attributes') throw new TypeError(`${fn}: fieldsToCapture entry "${f}" must be a Salesforce field API name (letters, digits and underscores).`);
+    if (seen.has(f.toLowerCase())) throw new TypeError(`${fn}: fieldsToCapture lists "${f}" twice (Salesforce field names are not case-sensitive).`);
+    seen.add(f.toLowerCase());
   }
   if (!fields.includes(externalIdField)) throw new TypeError(`${fn}: fieldsToCapture must include the externalIdField "${externalIdField}".`);
   for (const f of o.alsoRequired || []) {

@@ -69,12 +69,24 @@ test('the Salesforce tools pass the doctor URL rule', () => {
 test('externalIdField must be a plain Salesforce field name', () => {
   for (const build of [salesforceContactUpsert, salesforceLeadUpsert]) {
     for (const externalIdField of ['Email/x', 'a b', '../x', 'A?b', '1abc', '']) {
-      if (!externalIdField) continue;
       assert.throws(() => build({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com', externalIdField, fieldsToCapture: [externalIdField, 'LastName', 'Company'] }), /externalIdField must be a Salesforce field API name/, externalIdField);
     }
     const ok = build({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com', externalIdField: 'Ext_Id__c', fieldsToCapture: ['Ext_Id__c', 'LastName', 'Company'] });
     assert.match(ok.request.url, /\/composite\/sobjects\/(Contact|Lead)\/Ext_Id__c$/);
     assert.equal(ok.request.body.records[0].Ext_Id__c, '{Ext_Id__c}');
+  }
+});
+
+test('the Salesforce builders validate secretName and fieldsToCapture entries', () => {
+  const base = { instanceUrl: 'https://x.my.salesforce.com' };
+  for (const build of [salesforceContactUpsert, salesforceLeadUpsert]) {
+    for (const secretName of ['A}}x{{secrets.B', 'has space', '1ABC', 'a-b']) {
+      assert.throws(() => build({ ...base, secretName }), /secretName must be a secret name/, secretName);
+    }
+    for (const bad of ['attributes', 'Attributes', 'Phone ', 'a.b', '']) {
+      assert.throws(() => build({ ...base, secretName: 'SF', fieldsToCapture: ['Email', 'LastName', 'Company', bad] }), /fieldsToCapture/, JSON.stringify(bad));
+    }
+    assert.throws(() => build({ ...base, secretName: 'SF', fieldsToCapture: ['Email', 'LastName', 'Company', 'email'] }), /twice/);
   }
 });
 

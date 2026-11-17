@@ -134,16 +134,18 @@ const { id } = await mgmt.tools.add(tool, adminKs);
 await mgmt.intellectConfig.setToolIds(configId, [id], adminKs);
 ```
 
-`instanceUrl` must be an `https:` origin with no path, query or credentials. The table lists the Lead defaults. `salesforceContactUpsert` takes `externalIdField` and `fieldsToCapture` (default `Email, FirstName, LastName`) and has no consent arg, `LeadSource` or `Description`.
+`instanceUrl` must be an `https:` origin with no path, query or credentials. The table lists the Lead defaults. `salesforceContactUpsert` takes `externalIdField` and `fieldsToCapture` (default `Email, FirstName, LastName`). It uses API `v59.0`, has no `apiVersion` option, and has no consent arg, `LeadSource` or `Description`.
 
 | Item | Default | Option |
 |---|---|---|
 | Captured fields | `FirstName, LastName, Company, Email, Phone, Country` | `fieldsToCapture` (must keep `LastName`, `Company` and the key) |
-| Upsert key | `Email` | `externalIdField` (a custom External ID field needs field access for the integration user) |
+| Upsert key | `Email` | `externalIdField` (a custom key must be an External ID field, and the integration user needs field access to it) |
 | `LeadSource` | `Web` | `leadSource` (must be a valid value in your org) |
 | `Description` | `Captured by a Kaltura AI agent. Thread: <thread id>. Consent to be contacted: <answer>.` | not configurable |
 | Consent | A required boolean `consent` arg. The agent calls the tool only after the visitor agrees. | `requireConsent: false` |
 | API version | `v68.0` | `apiVersion` |
+
+The access token comes from a Salesforce Connected App with the `api` scope, issued for a dedicated integration user. That user needs create and edit rights on Lead (or Contact) and field access to every captured field, including `Description`. Tokens expire, see [Access tokens](#access-tokens).
 
 Salesforce has no standard Lead consent field, so consent is recorded in `Description`. `Country` takes the full name, such as `United States`. An org with country picklists rejects a code such as `US` with `FIELD_INTEGRITY_EXCEPTION`.
 
@@ -159,7 +161,7 @@ The tool maps `result` (the record id) and `success`. The default description te
 
 Only `success: true` counts as saved, never an id alone. An empty result is never treated as saved. A custom `description` replaces the default guidance, so keep these rules in it.
 
-If two or more Leads share the email, an `Email`-keyed upsert is ambiguous. Salesforce does not save the record, and the agent does not get `success: true`. Merge or delete the duplicates.
+If two or more Leads share the email, an `Email`-keyed upsert is ambiguous. Salesforce does not save the record, and the agent does not get `success: true`. Merge or delete the duplicates. A duplicate rule that blocks the save also gives `success: false`.
 
 Two argument rules apply to every `api` tool:
 

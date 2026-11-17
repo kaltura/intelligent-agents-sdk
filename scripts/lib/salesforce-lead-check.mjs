@@ -118,6 +118,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   if (problem) throw new Error(`refusing to run: ${problem}.`);
   const tool = salesforceLeadUpsert({ secretName: SECRET_NAME, instanceUrl, apiVersion: API_VERSION });
   const secrets = { [SECRET_NAME]: token };
+  if (!/^[a-z0-9]+$/.test(tag)) throw new TypeError('runLeadChecks: tag must be lowercase letters and digits only.');
   const threadId = `live-verify-${tag}`;
   const email = `sdk-live-verify-${tag}@example.com`;
   const base = `${instanceUrl}/services/data/${API_VERSION}`;
@@ -128,6 +129,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   const results = [];
   const check = (/** @type {string} */ step, /** @type {boolean} */ ok, /** @type {unknown} */ detail) => results.push({ step, ok, detail });
   const toDelete = new Set();
+  let sweepFailed = false;
   const multiEmail = `sdk-live-verify-${tag}-twins@example.com`;
   const contactEmail = `sdk-live-verify-${tag}-contact@example.com`;
   const contactTool = salesforceContactUpsert({ secretName: SECRET_NAME, instanceUrl });
@@ -140,7 +142,9 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
   // allowSave lets a second Lead with the same email past the standard duplicate rule.
   const createLead = async (/** @type {string} */ LastName, /** @type {string} */ Company) => {
     const res = await fetchFn(`${base}/sobjects/Lead`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json', 'Sforce-Duplicate-Rule-Header': 'allowSave=true' }, body: JSON.stringify({ LastName, Company, Email: multiEmail }) });
-    return /** @type {string} */ ((await res.json()).id);
+    const body = await res.json();
+    if (!res.ok || !body.id) throw new Error(`seed Lead failed: HTTP ${res.status}`);
+    return /** @type {string} */ (body.id);
   };
   const recordsFor = async (/** @type {string} */ sobject, /** @type {string} */ addr) => {
     const res = await fetchFn(`${base}/query?q=${encodeURIComponent(`SELECT Id FROM ${sobject} WHERE Email = '${addr}'`)}`, { headers: auth });
@@ -182,7 +186,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
     multi.forEach((id) => toDelete.add(id));
     const ambiguous = await callTool(fetchFn, tool, { args: { ...full, Email: multiEmail, Company: 'Live Verify Co 3' }, secrets, threadId });
     const twins = await Promise.all(multi.map(getLead));
-    check('2d-two-leads-one-email', notSaved(ambiguous) && twins.every((l) => /^Twin [AB] Co$/.test(l.Company)),
+    check('2d-two-leads-one-email', ambiguous.status === 200 && ambiguous.json?.[0]?.success === false && notSaved(ambiguous) && twins.every((l) => /^Twin [AB] Co$/.test(l.Company)),
       { status: ambiguous.status, errorCode: errorCode(ambiguous), mapped: ambiguous.mapped });
 
     // 3 and 4 missing required fields (an empty string is written as blank; an omitted arg would be written as "None")
@@ -213,8 +217,8 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
     check('unexpected-error', false, { message: err instanceof Error ? err.message : String(err) });
   } finally {
     // Cleanup runs even after a failure. A leftover by email is caught too.
-    try { for (const addr of [email, multiEmail]) (await leadsFor(addr)).forEach((id) => toDelete.add(id)); } catch { /* best effort */ }
-    try { (await recordsFor('Contact', contactEmail)).forEach((id) => toDeleteContacts.add(id)); } catch { /* best effort */ }
+    try { for (const addr of [email, multiEmail]) (await leadsFor(addr)).forEach((id) => toDelete.add(id)); } catch { sweepFailed = true; }
+    try { (await recordsFor('Contact', contactEmail)).forEach((id) => toDeleteContacts.add(id)); } catch { sweepFailed = true; }
   }
 
   let deleted = 0;
@@ -227,6 +231,7 @@ export async function runLeadChecks({ fetch: fetchFn, instanceUrl, token, tag, c
       } catch { failed++; }
     }
   }
-  check('7-cleanup', failed === 0, { deleted, failed });
+  if (sweepFailed) failed++;
+  check('7-cleanup', failed === 0, { deleted, failed, sweepFailed });
   return { results, cleanup: { deleted, failed } };
 }
