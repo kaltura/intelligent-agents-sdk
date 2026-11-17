@@ -1,2 +1,2 @@
 /** This SDK's version, sent to the server on connect. Bumped with `package.json` on every release. */
-export const SDK_VERSION = '1.42.0';
+export const SDK_VERSION = '1.43.0';

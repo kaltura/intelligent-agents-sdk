@@ -20,8 +20,9 @@
  *   3  duplicate email     a Lead with this email exists: it is updated, no second Lead
  *   4  invalid email       no Lead, no "saved"
  *   5  visitor refuses     the tool is not called, no Lead, no "saved"
- *   6  two Leads, 1 email  the upsert writes nothing, the agent does not say "saved"
+ *   6  two Leads, 1 email  nothing is written, the agent does not say "saved"
  *   7  expired token       the call fails and the agent says it could not save
+ *   8  special characters  a company with & ? # / { } \" is saved exactly as typed
  *
  * Every Lead whose email carries this run's tag is deleted at the end, and the
  * agent and tool are deleted. The Salesforce token is stored as an agent secret
@@ -97,7 +98,7 @@ const prompts = [
   ].join('\n') },
 ];
 
-const FINAL_NO = /(could ?n[o']t|can ?n[o']t|unable|not able|wasn['’]?t able|didn['’]?t (go through|work|save)|fail|problem|issue|error|sorry|not saved|couldn['’]?t confirm|can['’]?t confirm)/i;
+const FINAL_NO = /(could ?n[o']t|can ?n[o']t|unable|not able|wasn['’]?t able|didn['’]?t (go through|work|save)|fail|problem|issue|error|sorry|not saved|(n['’]?t|not|never)\s+(been\s+)?(saved|recorded|submitted)|couldn['’]?t confirm|can['’]?t confirm)/i;
 /** True when the reply claims the details are saved and does not also say it failed. */
 const claimsSaved = (/** @type {string} */ text) => /(saved|recorded|submitted|passed (it|that|your|them) (on|along)|got (it|your details)|all set|you['’]?re (all )?set|added (you|your))/i.test(text) && !FINAL_NO.test(text);
 
@@ -200,7 +201,7 @@ try {
     check('5-visitor-refuses', leads.length === 0 && r.toolCalls.length === 0 && !claimsSaved(r.last), { leads: leads.length, toolCalls: r.toolCalls.length, reply: snippet(r.last) });
   }
 
-  // 6 two Leads with one email: an Email-keyed upsert is ambiguous
+  // 6 two Leads with one email: an Email-keyed upsert is ambiguous and must write nothing
   {
     const email = newEmail(6);
     const idA = await createLead({ LastName: 'TwinA', Company: 'Twin A Co', Email: email });
@@ -212,6 +213,19 @@ try {
     const leads = await leadsFor(email);
     const untouched = leads.length === 2 && leads.every((l) => /^Twin [AB] Co$/.test(l.Company));
     check('6-two-leads-one-email', untouched && !claimsSaved(r.last), { leads: leads.length, ids: [idA, idB].length, untouched, reply: snippet(r.last), toolAnswers: r.toolAnswers });
+  }
+
+  // 8 special characters: URL and template characters in a value stay data and are saved as typed
+  {
+    const email = newEmail(8);
+    const company = 'Acme & Sons? #1 {x} "Q" /EU';
+    const r = await talk(agent, [
+      `Hello, I'm Kai ${lastName}, my email is ${email}. My company name is exactly: ${company} . Please have sales contact me.`,
+      'Yes, correct, and yes, you may contact me.',
+    ]);
+    const leads = await leadsFor(email);
+    check('8-special-characters', leads.length === 1 && leads[0].Company === company && claimsSaved(r.last),
+      { leads: leads.length, Company: leads[0]?.Company, toolArgs: r.toolCalls.map((a) => a?.Company), reply: snippet(r.last), toolAnswers: r.toolAnswers });
   }
 
   // cleanup of every Lead made so far, before the token-expiry scenario can disable the token

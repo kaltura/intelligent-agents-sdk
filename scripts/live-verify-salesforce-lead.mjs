@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live Salesforce Lead verification: checks `salesforceLeadUpsert` against a
+ * Live Salesforce verification: checks `salesforceLeadUpsert` and `salesforceContactUpsert` against a
  * real Salesforce org. It needs a Developer Edition org or a sandbox. Do not
  * point it at a production org: it creates, updates and deletes Leads.
  *
@@ -14,8 +14,8 @@
  * never relaxes the https and domain rules.
  *
  * Steps: create, update the same email (no second Lead), two Leads with one
- * email (the upsert answers 300 and writes nothing), missing Company, missing
- * LastName, invalid email, bad token, then cleanup of every Lead it made. The logic lives in `scripts/lib/salesforce-lead-check.mjs`.
+ * email (the agent gets no success and nothing is written), missing Company, missing
+ * LastName, invalid email, bad token, the Contact tool (create, update), then cleanup of every Lead and Contact it made. The logic lives in `scripts/lib/salesforce-lead-check.mjs`.
  *
  * This script checks Salesforce itself and the SDK's request shapes. It does
  * not check the agent tool runtime and it runs no agent conversation: see

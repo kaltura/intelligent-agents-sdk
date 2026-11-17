@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hubspotContactUpsert, salesforceContactUpsert, salesforceLeadUpsert } from '../../src/management/crm-recipes.js';
 import * as management from '../../src/management/index.js';
+import { unsafeUrlArgs } from '../../src/management/tools.js';
 
 test('hubspotContactUpsert builds a valid api tool targeting HubSpot CRM', () => {
   const tool = hubspotContactUpsert({ secretName: 'HUBSPOT_TOKEN' });
@@ -45,6 +46,48 @@ test('salesforceContactUpsert builds a valid PATCH api tool targeting Salesforce
 test('salesforceContactUpsert strips trailing slash from instanceUrl', () => {
   const tool = salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://myorg.salesforce.com/' });
   assert.ok(!tool.request.url.includes('//services'), 'double-slash from trailing / must not appear');
+});
+
+test('both Salesforce tools keep every arg out of the URL and send the key in the body', () => {
+  for (const [tool, sobject] of [[salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' }), 'Contact'], [salesforceLeadUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' }), 'Lead']]) {
+    assert.doesNotMatch(tool.request.url, /\{/, 'no placeholder in the URL');
+    assert.match(tool.request.url, new RegExp(`/composite/sobjects/${sobject}/Email$`));
+    assert.equal(tool.request.body.allOrNone, true);
+    assert.equal(tool.request.body.records.length, 1);
+    assert.deepEqual(tool.request.body.records[0].attributes, { type: sobject });
+    assert.equal(tool.request.body.records[0].Email, '{Email}');
+    assert.doesNotMatch(tool.args.Email.prompt, /percent|%40/, 'the key arg needs no encoding hint');
+  }
+});
+
+test('the Salesforce tools pass the doctor URL rule', () => {
+  for (const tool of [salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' }), salesforceLeadUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' })]) {
+    assert.deepEqual(unsafeUrlArgs(tool.request.url), []);
+  }
+});
+
+test('externalIdField must be a plain Salesforce field name', () => {
+  for (const build of [salesforceContactUpsert, salesforceLeadUpsert]) {
+    for (const externalIdField of ['Email/x', 'a b', '../x', 'A?b', '1abc', '']) {
+      assert.throws(() => build({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com', externalIdField, fieldsToCapture: [externalIdField, 'LastName', 'Company'] }), /externalIdField must be a Salesforce field API name/, externalIdField);
+    }
+    const ok = build({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com', externalIdField: 'Ext_Id__c', fieldsToCapture: ['Ext_Id__c', 'LastName', 'Company'] });
+    assert.match(ok.request.url, /\/composite\/sobjects\/(Contact|Lead)\/Ext_Id__c$/);
+    assert.equal(ok.request.body.records[0].Ext_Id__c, '{Ext_Id__c}');
+  }
+});
+
+test('the Salesforce builders validate secretName and fieldsToCapture entries', () => {
+  const base = { instanceUrl: 'https://x.my.salesforce.com' };
+  for (const build of [salesforceContactUpsert, salesforceLeadUpsert]) {
+    for (const secretName of ['A}}x{{secrets.B', 'has space', '1ABC', 'a-b']) {
+      assert.throws(() => build({ ...base, secretName }), /secretName must be a secret name/, secretName);
+    }
+    for (const bad of ['attributes', 'Attributes', 'Phone ', 'a.b', '']) {
+      assert.throws(() => build({ ...base, secretName: 'SF', fieldsToCapture: ['Email', 'LastName', 'Company', bad] }), /fieldsToCapture/, JSON.stringify(bad));
+    }
+    assert.throws(() => build({ ...base, secretName: 'SF', fieldsToCapture: ['Email', 'LastName', 'Company', 'email'] }), /twice/);
+  }
 });
 
 test('salesforceContactUpsert throws when instanceUrl is missing', () => {
@@ -98,10 +141,10 @@ test('hubspotContactUpsert says create, not upsert, and maps only the success fi
 
 test('salesforceContactUpsert maps success only and warns about an empty result', () => {
   const tool = salesforceContactUpsert({ secretName: 'SF', instanceUrl: 'https://x.my.salesforce.com' });
-  assert.deepEqual(tool.response_mapping, { result: 'id', success: 'success' });
+  assert.deepEqual(tool.response_mapping, { result: '0.id', success: '0.success' });
   assert.match(tool.description, /result is empty, you cannot confirm/);
   assert.match(tool.description, /never say it is saved/i);
-  assert.match(tool.request.url, /\/services\/data\/v59\.0\/sobjects\/Contact\/Email\//, 'Contact URL is unchanged');
+  assert.match(tool.request.url, /\/services\/data\/v59\.0\/composite\/sobjects\/Contact\/Email$/);
 });
 
 test('a custom description replaces the default guidance', () => {
@@ -122,17 +165,22 @@ test('salesforceLeadUpsert builds the exact request shape', () => {
   assert.equal(tool.type, 'api');
   assert.equal(tool.name, 'salesforce_lead_upsert');
   assert.equal(tool.request.method, 'PATCH');
-  assert.equal(tool.request.url, 'https://myorg.develop.my.salesforce.com/services/data/v68.0/sobjects/Lead/Email/{Email}');
+  assert.equal(tool.request.url, 'https://myorg.develop.my.salesforce.com/services/data/v68.0/composite/sobjects/Lead/Email');
   assert.equal(tool.request.headers.Authorization, 'Bearer {{secrets.SF_TOKEN}}');
   assert.equal(tool.request.headers['Content-Type'], 'application/json');
   assert.deepEqual(tool.request.body, {
-    FirstName: '{FirstName}',
-    LastName: '{LastName}',
-    Company: '{Company}',
-    Phone: '{Phone}',
-    Country: '{Country}',
-    LeadSource: 'Web',
-    Description: 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}. Consent to be contacted: {consent}.',
+    allOrNone: true,
+    records: [{
+      attributes: { type: 'Lead' },
+      FirstName: '{FirstName}',
+      LastName: '{LastName}',
+      Company: '{Company}',
+      Email: '{Email}',
+      Phone: '{Phone}',
+      Country: '{Country}',
+      LeadSource: 'Web',
+      Description: 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}. Consent to be contacted: {consent}.',
+    }],
   });
 });
 
@@ -144,9 +192,8 @@ test('salesforceLeadUpsert defaults: fields, required args, consent arg', () => 
   assert.equal(tool.args.consent.type, 'bool');
   assert.deepEqual(Object.keys(tool.response_mapping), ['result', 'success']);
   assert.match(tool.description, /upsert on Email/);
-  assert.match(tool.args.Email.prompt, /"@" as "%40", "\+" as "%2B", "\/" as "%2F"/, 'the key arg tells the model to percent-encode');
   assert.ok(!JSON.stringify(tool.request.headers).includes('{Email}'), 'headers never take args');
-  assert.match(tool.description, /ONLY if the result shows success true or an id/);
+  assert.match(tool.description, /ONLY if the result shows success true/);
 });
 
 test('optional args ask for an empty string, required args do not', () => {
@@ -171,16 +218,16 @@ test('salesforceLeadUpsert strips a trailing slash and accepts overrides', () =>
     fieldsToCapture: ['LastName', 'Company', 'Ext_Id__c'],
   });
   assert.equal(tool.name, 'my_lead_tool');
-  assert.equal(tool.request.url, 'https://myorg.my.salesforce.com/services/data/v70.0/sobjects/Lead/Ext_Id__c/{Ext_Id__c}');
-  assert.equal(tool.request.body.LeadSource, 'Partner Referral');
-  assert.ok(!('Ext_Id__c' in tool.request.body), 'the upsert key is in the URL, not the body');
+  assert.equal(tool.request.url, 'https://myorg.my.salesforce.com/services/data/v70.0/composite/sobjects/Lead/Ext_Id__c');
+  assert.equal(tool.request.body.records[0].LeadSource, 'Partner Referral');
+  assert.equal(tool.request.body.records[0].Ext_Id__c, '{Ext_Id__c}', 'the upsert key is in the body, not the URL');
   assert.equal(tool.args.Ext_Id__c.required, true);
 });
 
 test('salesforceLeadUpsert requireConsent:false drops the consent arg and its Description text', () => {
   const tool = salesforceLeadUpsert({ ...LEAD_CFG, requireConsent: false });
   assert.ok(!('consent' in tool.args));
-  assert.equal(tool.request.body.Description, 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}.');
+  assert.equal(tool.request.body.records[0].Description, 'Captured by a Kaltura AI agent. Thread: {{ sys__thread_id }}.');
   assert.doesNotMatch(tool.description, /agree to be contacted/);
 });
 
