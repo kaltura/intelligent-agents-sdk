@@ -1,0 +1,115 @@
+.scene { display: grid; gap: 1.2em; align-content: start; padding: 0.2em 0.2em 1em; }
+.scene.enter { animation: enter 0.45s var(--ease) both; }
+@keyframes enter { from { opacity: 0; transform: translateY(0.8em) scale(0.985); } }
+.scene-head h1, .scene h1 { margin: 0; font-size: 2.1em; letter-spacing: -0.02em; line-height: 1.1; }
+.scene-head p { margin: 0.3em 0 0; color: var(--ink-dim); }
+.muted { color: var(--ink-dim); }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.18em; font-size: max(0.8em, 12px); color: var(--accent); }
+.price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.price small { font-weight: 400; color: var(--ink-dim); }
+.price-lg { font-size: 1.7em; }
+.price-xl { font-size: 3em; line-height: 1; }
+
+.btn { min-height: max(2.9em, 44px); padding: 0.6em 1.4em; border-radius: 2em; border: 1px solid var(--line); background: var(--glass); cursor: pointer; font-weight: 600; transition: transform 0.15s var(--ease), background 0.15s; }
+.btn:hover { background: var(--glass-hi); }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn-primary:hover { background: #8df0c8; }
+.btn-quiet { border-color: transparent; background: transparent; color: var(--ink-dim); text-decoration: underline; min-height: max(2.75em, 44px); }
+.btn[aria-pressed="true"] { background: var(--ink); color: #0a0f24; border-color: var(--ink); }
+
+.scene-welcome { align-content: center; min-height: 100%; gap: 2em; }
+.hello h1 { font-size: 3.6em; }
+.hello p { font-size: 1.25em; color: var(--ink-dim); max-width: 24em; }
+.big-actions { display: flex; flex-wrap: wrap; gap: 0.8em; }
+.big-actions .btn { font-size: 1.15em; }
+
+.cards { display: grid; gap: 1em; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.cards-3 { --cols: 3; }
+.stage[data-layout="phone"] .cards { grid-template-columns: 1fr; }
+.card { display: grid; gap: 0.5em; align-content: start; justify-items: start; text-align: left; padding: 1.1em; border-radius: var(--radius); background: var(--glass); border: 1px solid var(--line); color: inherit; }
+button.card { cursor: pointer; transition: transform 0.2s var(--ease), background 0.2s; }
+button.card:hover { background: var(--glass-hi); transform: translateY(-0.15em); }
+.card strong { font-size: 1.15em; }
+.card-device .phone { justify-self: center; margin-bottom: 0.4em; }
+.card-plan.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.bullets { margin: 0; padding-left: 1.1em; color: var(--ink-dim); display: grid; gap: 0.25em; }
+
+.scene-device { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); align-items: center; }
+.stage[data-layout="phone"] .scene-device { grid-template-columns: 1fr; }
+.stage-phone { display: grid; place-items: center; padding: 1em; }
+.detail { display: grid; gap: 0.9em; }
+.opt-group { display: grid; gap: 0.4em; }
+.opt-label { color: var(--ink-dim); font-size: 0.9em; }
+.swatches, .segments, .buy-row { display: flex; flex-wrap: wrap; gap: 0.6em; align-items: center; }
+.swatch { width: max(2.75em, 44px); height: max(2.75em, 44px); min-height: 0; border-radius: 50%; border: 0.18em solid transparent; background: var(--sw); cursor: pointer; box-shadow: 0 0 0 1px var(--line) inset; }
+.swatch[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 0.18em var(--bg-0) inset; }
+
+.card-compare { justify-items: center; text-align: center; }
+.card-compare .bullets { text-align: left; }
+.acc-art { position: relative; width: 100%; aspect-ratio: 1; border-radius: 0.8em; background: linear-gradient(135deg, #2b3a8c, #14806a); display: grid; place-items: center; }
+.acc-art::after { content: ""; width: 2.6em; height: 2.6em; background: #ffffffdd; border-radius: 0.8em; }
+.acc-audio::after { border-radius: 50%; width: 1.9em; height: 2.4em; }
+.acc-power::after { width: 1.9em; height: 2.4em; clip-path: polygon(50% 0, 100% 40%, 70% 40%, 70% 100%, 30% 100%, 30% 40%, 0 40%); }
+.acc-guard::after { border: 0.25em solid #fff; background: transparent; }
+.qty { position: absolute; top: 0.5em; right: 0.5em; padding: 0.1em 0.6em; border-radius: 1em; background: var(--accent); color: var(--accent-ink); font-weight: 700; z-index: 1; }
+
+.estimate { display: grid; gap: 0.2em; padding: 1.2em; border-radius: var(--radius); background: var(--glass); border: 1px dashed var(--line); }
+.lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6em; }
+.line { display: grid; grid-template-columns: 1fr auto auto; gap: 1em; align-items: center; padding: 0.7em 1em; border-radius: var(--radius); background: var(--glass); border: 1px solid var(--line); }
+.line .muted { display: block; font-size: 0.9em; }
+.totals { display: grid; gap: 0.2em; }
+.totals > div:first-child { display: flex; justify-content: space-between; align-items: baseline; }
+
+.scene-done { justify-items: center; text-align: center; align-content: center; min-height: 100%; }
+.check { width: 5em; height: 5em; border-radius: 50%; background: var(--accent); position: relative; animation: pop 0.6s var(--ease) both; }
+.check::after { content: ""; position: absolute; left: 1.5em; top: 0.9em; width: 1.2em; height: 2.2em; border: solid var(--accent-ink); border-width: 0 0.4em 0.4em 0; transform: rotate(45deg); }
+@keyframes pop { from { transform: scale(0); } }
+
+/* ---- CSS phones ---- */
+.phone { position: relative; height: var(--h); width: calc(var(--h) * 0.49); border-radius: calc(var(--h) * 0.1); background: linear-gradient(150deg, color-mix(in srgb, var(--body) 80%, #fff), var(--body) 55%, color-mix(in srgb, var(--body) 70%, #000)); box-shadow: 0 1.4em 3em #0008, 0 0 0 0.18em #0003 inset; transition: background 0.35s; }
+.phone-sm { --h: 8em; } .phone-md { --h: 12em; } .phone-lg { --h: 20em; }
+.stage[data-layout="phone"] .phone-lg { --h: 13em; }
+.phone-screen { position: absolute; inset: 4%; border-radius: calc(var(--h) * 0.075); background: #060914; overflow: hidden; display: grid; place-items: center; }
+.phone-glow { position: absolute; inset: 0; background: radial-gradient(circle at 30% 20%, var(--body), transparent 70%); opacity: 0.55; }
+.phone-clock { position: relative; font-size: calc(var(--h) * 0.1); font-weight: 300; }
+.phone-cam { position: absolute; top: 4.5%; left: 50%; transform: translateX(-50%); display: flex; gap: 12%; z-index: 1; }
+.phone-cam i { width: calc(var(--h) * 0.028); height: calc(var(--h) * 0.028); border-radius: 50%; background: #000; }
+.phone-flip { height: calc(var(--h) * 0.85); }
+.phone-hinge { position: absolute; left: 3%; right: 3%; top: 50%; height: 0.15em; background: #0007; z-index: 2; }
+.phone-compact { width: calc(var(--h) * 0.47); }
+@supports not (background: color-mix(in srgb, red, blue)) { .phone { background: var(--body); } }
+
+/* Accessory cards: one compact row each (icon, name and note, price and button). */
+.card-acc { grid-template-columns: 5em 1fr auto; grid-template-areas: "art name price" "art note btn"; column-gap: 1em; row-gap: 0.2em; align-items: center; justify-items: start; }
+.card-acc .acc-art { grid-area: art; width: 5em; aspect-ratio: 1; }
+.card-acc > strong { grid-area: name; }
+.card-acc > .muted { grid-area: note; }
+.card-acc > .price { grid-area: price; justify-self: end; }
+.card-acc > .btn { grid-area: btn; justify-self: end; }
+.cards:has(.card-acc) { --cols: 2; }
+.stage[data-layout="tall"] .cards:has(.card-acc), .stage[data-layout="phone"] .cards:has(.card-acc) { --cols: 1; }
+.card-acc { padding: 0.7em 1em; }
+.card-acc .acc-art { width: 4em; }
+.card-acc { grid-template-columns: 4em 1fr auto; }
+.card-acc > .btn { min-height: max(2.4em, 44px); padding: 0.3em 1.2em; }
+
+/* Suggested questions: the SDK's followups widget (kgenui classes), styled to match the stage. */
+.suggest:empty, .suggest:not(:empty) + .hint { display: none; }
+.suggest .kgenui { display: grid; gap: 0.4em; }
+.suggest .kgenui__chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6em; }
+.suggest .kgenui__chip { min-height: max(2.6em, 44px); padding: 0.4em 1.1em; border-radius: 2em; border: 1px solid var(--accent); background: transparent; color: var(--ink); cursor: pointer; font-size: 0.95em; transition: background 0.15s, transform 0.15s var(--ease); animation: enter 0.35s var(--ease) both; }
+.suggest .kgenui__chip:hover { background: var(--glass-hi); }
+.suggest .kgenui__chip:active { transform: scale(0.97); }
+/* Phones are short. The chips become one swipeable row, so the scene keeps its room. */
+.stage[data-layout="phone"] .suggest .kgenui__chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -1em; padding: 0.2em 1em; }
+.stage[data-layout="phone"] .suggest .kgenui__chip { flex: none; white-space: nowrap; }
+/* Wide portrait screens fit two accessory columns. This leaves more of a kiosk for the figure. */
+@media (min-width: 800px) { .stage[data-layout="tall"] .cards:has(.card-acc) { --cols: 2; } }
+
+/* Tall kiosk: the panel is a narrow column beside the figure, with plenty of height. Stack like a phone, at kiosk size. */
+@media (max-aspect-ratio: 0.62) {
+  .stage[data-layout="tall"] .cards, .stage[data-layout="tall"] .cards:has(.card-acc) { grid-template-columns: 1fr; }
+  .stage[data-layout="tall"] .scene-device { grid-template-columns: 1fr; }
+}

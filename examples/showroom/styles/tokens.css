@@ -1,0 +1,18 @@
+:root {
+  --bg-0: #070a18;
+  --bg-1: #0f1530;
+  --ink: #f2f5ff;
+  --ink-dim: #a8b2d4;
+  --line: rgba(255, 255, 255, 0.12);
+  --glass: rgba(255, 255, 255, 0.07);
+  --glass-hi: rgba(255, 255, 255, 0.13);
+  --accent: #6ee7b7;
+  --accent-ink: #04140d;
+  --warn: #ffb86b;
+  --radius: 1.1em;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+@media (prefers-contrast: more) {
+  :root { --ink-dim: #d6dcf2; --line: rgba(255, 255, 255, 0.4); --glass: rgba(255, 255, 255, 0.14); }
+}
