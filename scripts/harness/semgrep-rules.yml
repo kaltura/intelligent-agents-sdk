@@ -68,4 +68,5 @@ rules:
     paths:
       exclude:
         - '**/src/core/http.js'
+        - '**/examples/**'
     pattern: fetch(...)
