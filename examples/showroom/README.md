@@ -22,6 +22,16 @@ Requirements: Node 18 or newer (the live voice script's `--env-file` needs 20.6)
 
 Juno's face is `agent/juno.jpg`, an AI-generated portrait of a fictional person. The first run uploads it as a custom visual (`catalog.createVisual`) and builds the avatar from it. Swap the file and the attributes in `AVATAR_LOOKS` (`agent/spec.mjs`) to change the face. Portrait rules: square, at least 2048 px, head about a quarter of the height, centered, front-facing, mouth closed, plain background to every edge.
 
+## Put it on a static host
+
+The agent is public through its widget, so the page can start its own session. No server and no secret are needed.
+
+```bash
+node scripts/pack-showroom.mjs <outDir> --partner=<partnerId> --widget=<widgetId>
+```
+
+`<outDir>` must be outside the repo and empty. It gets `examples/showroom/` (with `config.json`), `src/` and a root `index.html`, about 11 MB. Only the phone-size body ships, and it is used on every screen. `widgetId` is in the `agent/agent.json` that `provision.mjs` wrote. Upload the folder to any file host. The host must answer byte-range requests, or Safari cannot play the body.
+
 ## Query flags
 
 | Flag | Effect |

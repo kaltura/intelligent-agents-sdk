@@ -16,6 +16,7 @@ import { reducer, initialState } from './reducer.js';
 import { pickLayout, unitFor } from './layout.js';
 import { createRig } from './rig/rig.js';
 import { loadClipBody } from './rig/clip-body.js';
+import { loadInit } from './init.js';
 import { createDirector } from './rig/director.js';
 import { createPanel } from './panel.js';
 import { createCaptions } from './captions.js';
@@ -37,10 +38,10 @@ const store = createStore(reducer, initialState());
 const requested = params.get('body') ?? 'guide';
 const bodyName = /^[\w-]+$/.test(requested) && requested !== 'rig' ? requested : null;
 // A clip body that cannot load falls back to the SVG robot, so the demo never opens empty.
-// Narrow screens load the smaller `<name>-lite` copy when it exists (and fall back to the full one).
+// Narrow screens load the smaller `<name>-lite` copy when it exists (and fall back to the full one). A host that ships only the lite copy gets it on every screen.
 const tryBody = (name) => loadClipBody(`bodies/${name}`, { reduced }).catch((e) => { console.warn(e.message); return null; });
 const narrow = matchMedia('(max-width: 599px)').matches;
-const body = (bodyName && ((narrow && await tryBody(`${bodyName}-lite`)) || await tryBody(bodyName))) || createRig({ reduced });
+const body = (bodyName && ((narrow && await tryBody(`${bodyName}-lite`)) || await tryBody(bodyName) || (!narrow && await tryBody(`${bodyName}-lite`)))) || createRig({ reduced });
 // The director adds the unprompted moves (hand gestures while she talks, nods while the customer does) and passes the rest through.
 const rig = createDirector(body, { reduced });
 const captions = createCaptions();
@@ -134,11 +135,7 @@ const loadLibs = () => (libsPromise ??= Promise.all([import('../../../src/experi
 // A token is asked for as soon as the page opens, so a quick tap on "Meet Juno" skips that round trip. It is used once, only while fresh.
 const TOKEN_FRESH_MS = 60_000;
 let early = null;
-const fetchInit = async () => {
-  const res = await fetch('/appInit');
-  if (!res.ok) throw new Error('The token server said no. Run the provision script first.');
-  return res.json();
-};
+const fetchInit = () => loadInit();
 function takeInit() {
   const taken = early;
   early = null;

@@ -34,3 +34,4 @@ manual-testing/feature-pages/out/
 
 # Showroom example: ids of the agent each user provisions for themselves
 examples/showroom/agent/agent.json
+examples/showroom/config.json

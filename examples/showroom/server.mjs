@@ -18,7 +18,8 @@ import { Management } from '../../src/management/index.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
 const PORT = Number(process.env.PORT || 8092);
-const ROOTS = [path.join(REPO, 'examples', 'showroom'), path.join(REPO, 'src')].map((d) => d + path.sep);
+// URL prefix -> folder. Nothing outside these two folders is served.
+const MOUNTS = [['/examples/showroom/', path.join(REPO, 'examples', 'showroom') + path.sep], ['/src/', path.join(REPO, 'src') + path.sep]];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 
 function widgetId() {
@@ -50,13 +51,16 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (urlPath === '/') { res.writeHead(302, { Location: '/examples/showroom/index.html' }); return res.end(); }
-  const rel = urlPath.replace(/^\/+/, '');
-  const file = path.resolve(REPO, rel);
+  const mount = MOUNTS.find(([prefix]) => urlPath.startsWith(prefix));
   const notFound = () => { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); };
-  const hasDot = path.relative(REPO, file).split(path.sep).some((seg) => seg.startsWith('.'));
+  if (!mount) return notFound();
+  const root = mount[1];
+  const file = path.resolve(root, urlPath.slice(mount[0].length));
+  if (!file.startsWith(root)) return notFound();
+  const hasDot = path.relative(root, file).split(path.sep).some((seg) => seg.startsWith('.'));
   // `agent/` holds the provisioning script and its saved ids, which the browser never needs.
   const inAgent = file.startsWith(path.join(HERE, 'agent') + path.sep);
-  if (!ROOTS.some((r) => file.startsWith(r)) || hasDot || inAgent) return notFound();
+  if (hasDot || inAgent) return notFound();
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return notFound();
     const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'Accept-Ranges': 'bytes' };
