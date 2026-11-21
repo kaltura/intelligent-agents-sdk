@@ -31,3 +31,6 @@ app-builder-skill/evals/results/
 # Emotions eval output (raw results and HTML reports), never committed
 /out/
 manual-testing/feature-pages/out/
+
+# Showroom example: ids of the agent each user provisions for themselves
+examples/showroom/agent/agent.json

@@ -58,8 +58,22 @@ const browserGlobals = {
   BroadcastChannel: 'readonly',
 };
 
+/** Page globals for the browser examples only. SDK code under src/experience must not rely on them. */
+const pageGlobals = {
+  location: 'readonly',
+  matchMedia: 'readonly',
+  innerWidth: 'readonly',
+  innerHeight: 'readonly',
+  ResizeObserver: 'readonly',
+  performance: 'readonly',
+  CSS: 'readonly',
+  addEventListener: 'readonly',
+  removeEventListener: 'readonly',
+};
+
 const testGlobals = {
   ...browserGlobals,
+  ...pageGlobals,
 };
 
 export default [
