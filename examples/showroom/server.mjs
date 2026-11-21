@@ -12,6 +12,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { Management } from '../../src/management/index.js';
 
@@ -59,19 +60,20 @@ const server = http.createServer(async (req, res) => {
   if (!file.startsWith(root)) return notFound();
   const hasDot = path.relative(root, file).split(path.sep).some((seg) => seg.startsWith('.'));
   // `agent/` holds the provisioning script and its saved ids, which the browser never needs.
-  const inAgent = file.startsWith(path.join(HERE, 'agent') + path.sep);
+  // Compared in lower case: macOS and Windows file systems ignore case.
+  const inAgent = file.toLowerCase().startsWith((path.join(HERE, 'agent') + path.sep).toLowerCase());
   if (hasDot || inAgent) return notFound();
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return notFound();
     const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'Accept-Ranges': 'bytes' };
     // Safari only plays video from servers that answer byte-range requests.
     const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
-    if (!range) { res.writeHead(200, { ...headers, 'Content-Length': st.size }); return fs.createReadStream(file).pipe(res); }
+    if (!range) { res.writeHead(200, { ...headers, 'Content-Length': st.size }); return pipeline(fs.createReadStream(file), res, () => {}); }
     const start = range[1] === '' ? Math.max(0, st.size - Number(range[2])) : Number(range[1]);
     const end = range[1] === '' || range[2] === '' ? st.size - 1 : Math.min(Number(range[2]), st.size - 1);
     if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
     res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 });
-    fs.createReadStream(file, { start, end }).pipe(res);
+    pipeline(fs.createReadStream(file, { start, end }), res, () => {});
   });
 });
 

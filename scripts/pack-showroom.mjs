@@ -26,15 +26,16 @@ const out = path.resolve(outDir);
 if (out === REPO || out.startsWith(REPO + path.sep)) { console.error('<outDir> must be outside the repository.'); process.exit(2); }
 if (existsSync(out) && readdirSync(out).length) { console.error(`${out} is not empty.`); process.exit(2); }
 
-const show = path.join(REPO, 'examples', 'showroom') + path.sep;
+// Dotfiles never ship. The provisioning script and the saved agent ids stay home. The full-size body is too big for most hosts.
 const skip = (src) => {
-  const rel = src.startsWith(show) ? src.slice(show.length) : '';
-  // The provisioning script and the saved agent ids stay home. The full-size body is too big for most hosts.
-  return !(rel === 'agent' || rel.startsWith(`agent${path.sep}`) || rel === 'bodies/guide' || rel.startsWith(`bodies${path.sep}guide${path.sep}`)) && !/(^|\/)\.[^/]/.test(path.relative(REPO, src));
+  const parts = path.relative(REPO, src).split(path.sep);
+  if (parts.some((seg) => seg.startsWith('.'))) return false;
+  const [top, app, a, b] = parts;
+  return !(top === 'examples' && app === 'showroom' && (a === 'agent' || (a === 'bodies' && b === 'guide')));
 };
 mkdirSync(path.join(out, 'examples'), { recursive: true });
 cpSync(path.join(REPO, 'examples', 'showroom'), path.join(out, 'examples', 'showroom'), { recursive: true, filter: skip });
-cpSync(path.join(REPO, 'src'), path.join(out, 'src'), { recursive: true });
+cpSync(path.join(REPO, 'src'), path.join(out, 'src'), { recursive: true, filter: skip });
 writeFileSync(path.join(out, 'examples', 'showroom', 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 writeFileSync(path.join(out, 'index.html'), '<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0; url=examples/showroom/index.html">\n<title>Showroom</title>\n<a href="examples/showroom/index.html">Open the Showroom</a>\n');
 console.log(`Packed to ${out}`);

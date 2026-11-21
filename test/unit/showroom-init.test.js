@@ -72,3 +72,18 @@ describe('pack-showroom', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('pack-showroom dotfiles', () => {
+  test('a dotfile in src/ or the app does not ship', async () => {
+    const { writeFileSync, unlinkSync } = await import('node:fs');
+    const REPO = path.resolve(new URL('../..', import.meta.url).pathname);
+    const planted = [path.join(REPO, 'src', '.planted-test'), path.join(REPO, 'examples/showroom/js/.planted-test')];
+    const out = path.join(mkdtempSync(path.join(tmpdir(), 'pack-')), 'site');
+    try {
+      for (const f of planted) writeFileSync(f, 'x');
+      assert.equal(spawnSync(process.execPath, [new URL('../../scripts/pack-showroom.mjs', import.meta.url).pathname, out, '--partner=1', '--widget=1_a']).status, 0);
+      assert.ok(!existsSync(path.join(out, 'src/.planted-test')));
+      assert.ok(!existsSync(path.join(out, 'examples/showroom/js/.planted-test')));
+    } finally { for (const f of planted) try { unlinkSync(f); } catch { /* not created */ } rmSync(path.dirname(out), { recursive: true, force: true }); }
+  });
+});

@@ -288,7 +288,10 @@ export function createClipBody({ base, manifest, reduced = false, tracks = {}, j
   const idlePhase = () => ((frameTime(idle) * FPS) % joins.idle + joins.idle) % joins.idle;
 
   /** Load a gesture into the next slot, paused. It starts once it matches the idle pose. */
-  const startJob = ({ clip, rate, frames, style = null, marks = null, scale = 1 }) => {
+  const startJob = ({ clip, rate, frames, style = null, marks = null, scale = 1, gesture = '', styleName = '' }) => {
+    // Remember what actually plays, so a request that is replaced before it starts does not count.
+    if (gesture) lastClip.set(gesture, clip);
+    if (styleName) lastStyle.set(clip, styleName);
     lastSlot ^= 1;
     const v = overs[lastSlot];
     job = { clip, rate, frames, style, marks, scale, i: lastSlot, stage: 'load', age: 0, stall: 0, plan: null, exit: null, idleSeeked: false, primed: false, k0: 0 };
@@ -317,6 +320,7 @@ export function createClipBody({ base, manifest, reduced = false, tracks = {}, j
     mine.stage = 'play';
     const k0 = mine.plan?.k ?? 0;
     mine.k0 = k0;
+    if (mine.style) v.playbackRate = speedAt(k0, mine.marks, mine.style, mine.scale);
     mine.exit = joins ? planExit(joins, mine.clip, k0, { minAhead: EXIT_LEAD, target: mine.marks ? mine.marks.end : k0 + mine.frames }) : null;
   };
   /** Hand back to the idle loop, which was seeked to the pose this clip frame matches. */
@@ -367,13 +371,13 @@ export function createClipBody({ base, manifest, reduced = false, tracks = {}, j
       if (mine.style) {
         // A styled gesture follows its own speed curve: quick off the mark, slower on arrival, a hang, then home. The rate eases toward it, so it never steps.
         want = speedAt(k, mine.marks, mine.style, mine.scale);
-        want = v.playbackRate + (want - v.playbackRate) * Math.min(1, dtMs / 90);
+        want = v.playbackRate + (want - v.playbackRate) * (1 - Math.exp(-dtMs / 90));
       } else {
         // Ease the speed: slow where the hand lifts and settles, full in the middle. Constant speed reads as mechanical.
         const u = Math.max(0, Math.min(1, (k - mine.k0) / Math.max(1, e.k - mine.k0)));
         want = mine.rate * (0.72 + 0.28 * Math.sin(Math.PI * u));
       }
-      if (Math.abs(v.playbackRate - want) > 0.02) v.playbackRate = want;
+      if (Math.abs(v.playbackRate - want) > (mine.style ? 0.004 : 0.02)) v.playbackRate = want;
       if (!mine.idleSeeked && k >= e.k - EXIT_LEAD) { idle.pause(); idle.currentTime = (e.p + 0.5) / FPS; mine.idleSeeked = true; }
       if (mine.idleSeeked && k >= e.k - 0.5 && !idle.seeking && idle.readyState >= 2) leave();
     } else if (weights.slots[mine.i] === 0) {
@@ -480,7 +484,7 @@ export function createClipBody({ base, manifest, reduced = false, tracks = {}, j
      * and hands back at a frame that looks like an idle pose, so the join does not show. That can take up to about a second.
      * A gesture already playing runs on to its next exit first.
      * @param {string} name @param {'right'|'up'|'down'} [dir]
-     * @param {{rate?:number, length?:number}} [opts] `rate` speeds the clip up or down (1 = as filmed) and turns off the varied speed of a clip with `motion` marks. `length` is the wanted playing time in seconds
+     * @param {{rate?:number, length?:number}} [opts] `rate` speeds the clip up or down (1 = as filmed) and turns off the varied speed of a clip with `motion` marks. `length` is the wanted playing time in seconds (a clip with `motion` marks ends at its own home frame and ignores it)
      * @returns {boolean} false when the body has no such clip or motion is reduced
      */
     perform(name, dir = 'right', { rate, length } = {}) {
@@ -492,15 +496,13 @@ export function createClipBody({ base, manifest, reduced = false, tracks = {}, j
       if (Array.isArray(entry)) {
         const pool = entry.length > 1 ? entry.filter((c) => c !== lastClip.get(name)) : entry;
         clip = pool[Math.floor(rng() * pool.length)];
-        lastClip.set(name, clip);
       }
-      const req = { clip, rate: rate ?? 1, frames: length > 0 ? length * FPS : GESTURE_FRAMES };
+      const req = { clip, gesture: name, rate: rate ?? 1, frames: length > 0 ? length * FPS : GESTURE_FRAMES };
       // A clip with marks plays with a varied speed, unless the caller asked for one. The exit is the clip's own "home" frame.
       const marks = m.motion[clip];
       if (marks && rate === undefined) {
         const styleName = pickStyle(rng, lastStyle.get(clip));
-        lastStyle.set(clip, styleName);
-        Object.assign(req, { style: STYLES[styleName], marks, scale: 0.92 + rng() * 0.18, frames: marks.end });
+        Object.assign(req, { styleName, style: STYLES[styleName], marks, scale: 0.92 + rng() * 0.18, frames: marks.end });
       }
       if (!job) startJob(req);
       else if (job.stage === 'play') { queued = req; shorten(); } else if (job.stage === 'leave') queued = req;
